@@ -13,6 +13,7 @@ import (
 	"rostor.org/app/internal/authz"
 	"rostor.org/app/internal/devices"
 	"rostor.org/app/internal/directory"
+	"rostor.org/app/internal/update"
 )
 
 // ---- Devices ----------------------------------------------------------------
@@ -511,4 +512,33 @@ func (s *Server) handleAuditVerify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.writeJSON(w, 200, map[string]any{"intact": bad == 0, "first_bad_seq": bad})
+}
+
+// ---- Updates (Staged class, §13): the core reports and requests; the
+// privileged updater (systemd) does the work. -----------------------------
+
+func (s *Server) handleUpdateStatus(w http.ResponseWriter, r *http.Request) {
+	st := update.LoadState(s.StateDir)
+	if st.Current == "" {
+		st.Current = s.Version
+	}
+	s.writeJSON(w, 200, st)
+}
+
+func (s *Server) handleUpdateApply(w http.ResponseWriter, r *http.Request) {
+	st := update.LoadState(s.StateDir)
+	if st.Available == "" {
+		s.writeErr(w, r, 409, "request.conflict", map[string]any{"reason": "no_update_available"})
+		return
+	}
+	if err := update.RequestApply(s.StateDir); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	a := actorOf(r)
+	s.auditEvent(r.Context(), audit.Event{ActorKind: a.Kind, ActorID: a.ID, Action: "update.apply_requested",
+		TargetType: "release", TargetID: st.Available, Outcome: "ok",
+		Detail: map[string]any{"from": s.Version, "to": st.Available, "channel": st.Channel}, CorrelationID: corrOf(r)})
+	st.Requested = true
+	s.writeJSON(w, 202, st)
 }

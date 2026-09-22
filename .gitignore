@@ -9,3 +9,4 @@ bin/
 windows/credprov/build/
 windows/credprov/x64/
 .DS_Store
+dist/

@@ -1,0 +1,10 @@
+[Unit]
+Description=Rostor: check the release channel hourly
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=1h
+RandomizedDelaySec=10min
+
+[Install]
+WantedBy=timers.target

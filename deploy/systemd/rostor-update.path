@@ -1,0 +1,8 @@
+[Unit]
+Description=Rostor: run the updater when the core requests it
+
+[Path]
+PathExists=/var/lib/rostor/update.request
+
+[Install]
+WantedBy=multi-user.target

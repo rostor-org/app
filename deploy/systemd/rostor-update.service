@@ -1,0 +1,8 @@
+[Unit]
+Description=Rostor: apply a signed release (requested via the API)
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/rostor/env
+Environment=ROSTOR_SERVICE=rostor
+ExecStart=/usr/local/bin/rostor update apply

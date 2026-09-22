@@ -18,6 +18,13 @@ type Config struct {
 	DataDir     string // master key + TLS material for self-hosted PoC
 	Listen      string
 	TLSHosts    []string // SANs for the core's own certificate
+	// AdminListen is an optional plain-HTTP listener for traffic that arrives
+	// through a TLS-terminating reverse proxy (admin API, future UI). Device
+	// endpoints need a client certificate and so never work through it.
+	AdminListen    string
+	TrustedProxies []string // peers whose X-Forwarded-* headers are believed
+	StateDir       string   // runtime state (update requests/status); DataDir if empty
+	ReleasePubKey  string   // path to the pinned release-signing public key
 }
 
 func FromEnv() Config {
@@ -26,6 +33,15 @@ func FromEnv() Config {
 		DatabaseURL: getenv("ROSTOR_DATABASE_URL", "postgres:///rostor_dev?sslmode=disable"),
 		DataDir:     getenv("ROSTOR_DATA_DIR", filepath.Join(home, ".rostor")),
 		Listen:      getenv("ROSTOR_LISTEN", ":8443"),
+		AdminListen: os.Getenv("ROSTOR_ADMIN_LISTEN"),
+		StateDir:    os.Getenv("ROSTOR_STATE_DIR"),
+		ReleasePubKey: getenv("ROSTOR_RELEASE_PUBKEY", "/etc/rostor/release.pub"),
+	}
+	if p := os.Getenv("ROSTOR_TRUSTED_PROXIES"); p != "" {
+		c.TrustedProxies = strings.Split(p, ",")
+	}
+	if c.StateDir == "" {
+		c.StateDir = c.DataDir
 	}
 	if h := os.Getenv("ROSTOR_TLS_HOSTS"); h != "" {
 		c.TLSHosts = strings.Split(h, ",")

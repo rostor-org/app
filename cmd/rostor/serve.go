@@ -124,15 +124,26 @@ func runServe(ctx context.Context, args []string) error {
 	}
 	// The CLI on this machine trusts the core through this file.
 	_ = os.WriteFile(filepath.Join(c.cfg.DataDir, "ca.crt"), ca.CertPEM(), 0o644)
-	srv := &api.Server{DB: c.db, Auth: c.auth, Authz: c.authz, Devices: c.devices, Catalog: c.catalog, CA: ca, TenantID: c.tenantID, Log: c.log}
+	srv := &api.Server{DB: c.db, Auth: c.auth, Authz: c.authz, Devices: c.devices, Catalog: c.catalog, CA: ca, TenantID: c.tenantID, Log: c.log,
+		StateDir: c.cfg.StateDir, Version: version}
 	tlsCfg, err := srv.TLSConfig(certPEM, keyPEM)
 	if err != nil {
 		return err
 	}
 	hs := &http.Server{Addr: c.cfg.Listen, Handler: srv.Handler(), TLSConfig: tlsCfg,
 		ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second}
-	c.log.Info("rostor core listening", "addr", c.cfg.Listen, "tenant", c.tenantID, "provider", c.provider.Name(), "sans", c.cfg.TLSHosts)
-	return hs.ListenAndServeTLS("", "")
+	c.log.Info("rostor core listening", "addr", c.cfg.Listen, "tenant", c.tenantID, "provider", c.provider.Name(), "version", version)
+	errc := make(chan error, 2)
+	go func() { errc <- hs.ListenAndServeTLS("", "") }()
+	if c.cfg.AdminListen != "" {
+		// Plain HTTP for the reverse proxy. Same handler, so there is exactly
+		// one API; only the transport differs (spec §9).
+		ah := &http.Server{Addr: c.cfg.AdminListen, Handler: srv.ProxiedHandler(c.cfg.TrustedProxies),
+			ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second}
+		c.log.Info("rostor admin listener (behind proxy)", "addr", c.cfg.AdminListen, "trusted_proxies", c.cfg.TrustedProxies)
+		go func() { errc <- ah.ListenAndServe() }()
+	}
+	return <-errc
 }
 
 // serverCert issues (or reuses) the core's own TLS certificate from the CA.

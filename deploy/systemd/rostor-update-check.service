@@ -1,0 +1,8 @@
+[Unit]
+Description=Rostor: check the release channel
+After=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/rostor/env
+ExecStart=/usr/local/bin/rostor update check

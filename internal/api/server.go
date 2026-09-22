@@ -36,6 +36,8 @@ type Server struct {
 	CA       *pki.CA
 	TenantID string // single-tenant self-hosted (D4): one tenant per process
 	Log      *slog.Logger
+	StateDir string // where the updater leaves its state (update-state.json)
+	Version  string
 }
 
 func (s *Server) Handler() http.Handler {
@@ -61,6 +63,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/admin/why", s.adminAuth("authz.read", s.handleWhy))
 	mux.HandleFunc("GET /v1/admin/audit", s.adminAuth("audit.read", s.handleAudit))
 	mux.HandleFunc("GET /v1/admin/audit/verify", s.adminAuth("audit.read", s.handleAuditVerify))
+	mux.HandleFunc("GET /v1/admin/updates", s.adminAuth("updates.read", s.handleUpdateStatus))
+	mux.HandleFunc("POST /v1/admin/updates/apply", s.adminAuth("updates.write", s.handleUpdateApply))
 	return s.logging(mux)
 }
 
@@ -237,4 +241,33 @@ func (s *Server) auditEvent(ctx context.Context, e audit.Event) {
 	if err != nil {
 		s.Log.Error("audit append failed", "err", err)
 	}
+}
+
+// ProxiedHandler serves the same API over plain HTTP for a TLS-terminating
+// reverse proxy. Only connections from trusted proxies are accepted, and the
+// proxy's X-Forwarded-For is recorded as the client for logging. Device
+// endpoints still demand a client certificate, which cannot arrive this way,
+// so they fail closed with request.unauthorized.
+func (s *Server) ProxiedHandler(trusted []string) http.Handler {
+	h := s.Handler()
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		host, _, _ := strings.Cut(r.RemoteAddr, ":")
+		if len(trusted) > 0 && !contains(trusted, host) {
+			http.Error(w, `{"code":"request.forbidden","params":{"reason":"untrusted_proxy"}}`, 403)
+			return
+		}
+		if ff := r.Header.Get("X-Forwarded-For"); ff != "" {
+			r.Header.Set("X-Rostor-Client", strings.TrimSpace(strings.Split(ff, ",")[0]))
+		}
+		h.ServeHTTP(w, r)
+	})
+}
+
+func contains(list []string, s string) bool {
+	for _, v := range list {
+		if strings.TrimSpace(v) == s {
+			return true
+		}
+	}
+	return false
 }

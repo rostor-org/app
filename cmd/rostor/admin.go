@@ -44,11 +44,16 @@ func newClient() (*client, error) {
 		home, _ := os.UserHomeDir()
 		caPath = filepath.Join(getenvDefault("ROSTOR_DATA_DIR", filepath.Join(home, ".rostor")), "ca.crt")
 	}
-	if pem, err := os.ReadFile(caPath); err == nil {
-		pool := x509.NewCertPool()
-		pool.AppendCertsFromPEM(pem)
-		tlsCfg.RootCAs = pool
+	// System roots (a proxy with a public certificate) plus the core's own CA
+	// (talking to it directly).
+	pool, err := x509.SystemCertPool()
+	if err != nil || pool == nil {
+		pool = x509.NewCertPool()
 	}
+	if pem, err := os.ReadFile(caPath); err == nil {
+		pool.AppendCertsFromPEM(pem)
+	}
+	tlsCfg.RootCAs = pool
 	return &client{base: strings.TrimRight(base, "/"), token: tok,
 		http: &http.Client{Timeout: 15 * time.Second, Transport: &http.Transport{TLSClientConfig: tlsCfg}}}, nil
 }
@@ -109,7 +114,8 @@ func runAdmin(ctx context.Context, args []string) error {
   grant revoke --id GRANT_ID
   device token [--resource-type workstation] [--ttl 3600]
   why --user U --action A --resource-type T --resource-id ID
-  audit [--limit N] | audit verify`)
+  audit [--limit N] | audit verify
+  update status | update apply`)
 	}
 	c, err := newClient()
 	if err != nil {
@@ -135,6 +141,9 @@ func runAdmin(ctx context.Context, args []string) error {
 	action := fs.String("action", "logon", "")
 	ttl := fs.Int("ttl", 3600, "")
 	limit := fs.Int("limit", 50, "")
+	if obj == "update" {
+		rest = nil
+	}
 	if obj == "audit" && verb == "verify" {
 		rest = nil
 	}
@@ -182,6 +191,10 @@ func runAdmin(ctx context.Context, args []string) error {
 		out, err = c.do(ctx, "GET", fmt.Sprintf("/v1/admin/audit?limit=%d", *limit), nil)
 	case "audit verify":
 		out, err = c.do(ctx, "GET", "/v1/admin/audit/verify", nil)
+	case "update status":
+		out, err = c.do(ctx, "GET", "/v1/admin/updates", nil)
+	case "update apply":
+		out, err = c.do(ctx, "POST", "/v1/admin/updates/apply", nil)
 	default:
 		return fmt.Errorf("unknown command %q", obj+" "+verb)
 	}

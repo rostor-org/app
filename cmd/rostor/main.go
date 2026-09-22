@@ -8,6 +8,9 @@ import (
 	"os"
 )
 
+// version is set at build time (-ldflags "-X main.version=v1.2.3").
+var version = "dev"
+
 func main() {
 	if len(os.Args) < 2 {
 		usage()
@@ -25,7 +28,9 @@ func main() {
 	case "admin":
 		err = runAdmin(ctx, os.Args[2:])
 	case "version":
-		fmt.Println("rostor 0.0.1-mvp")
+		fmt.Println("rostor", version)
+	case "update":
+		err = runUpdate(ctx, os.Args[2:])
 	default:
 		usage()
 		os.Exit(2)
@@ -42,5 +47,7 @@ func usage() {
   serve        run the core (env: ROSTOR_DATABASE_URL, ROSTOR_DATA_DIR, ROSTOR_LISTEN, ROSTOR_TLS_HOSTS)
   migrate      apply database migrations
   bootstrap    create the tenant, CA, built-in roles and the first admin token
-  admin ...    administer via the API (env: ROSTOR_URL, ROSTOR_TOKEN)`)
+  admin ...    administer via the API (env: ROSTOR_URL, ROSTOR_TOKEN)
+  update       check | apply — signed release channel (see deploy/)
+  version      print the build version`)
 }
