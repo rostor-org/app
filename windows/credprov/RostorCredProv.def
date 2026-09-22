@@ -1,0 +1,4 @@
+LIBRARY RostorCredProv
+EXPORTS
+    DllGetClassObject   PRIVATE
+    DllCanUnloadNow     PRIVATE
