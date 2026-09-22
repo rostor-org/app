@@ -68,6 +68,14 @@ if ($existing) {
 }
 New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
 Copy-Item -Force $AgentExe (Join-Path $InstallDir 'rostor-agent.exe')
+$tile = Join-Path (Split-Path -Parent $PSCommandPath) 'tile.bmp'
+if (Test-Path $tile) { Copy-Item -Force $tile (Join-Path $InstallDir 'tile.bmp') }
+
+# Shared-workstation sign-in: never show the last user's tile. On a workgroup
+# machine this is also what makes Windows 10 offer the "Other user" form,
+# which is where a provider credential without a user SID is listed.
+$pol = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System'
+Set-ItemProperty -Path $pol -Name dontdisplaylastusername -Value 1 -Type DWord
 
 $svcArgs = @('install-service')
 if ($MockCore) { $svcArgs += '--mock-core' }

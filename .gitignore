@@ -1,6 +1,7 @@
 bin/
 *.exe
 *.dll
+!windows/install/tile.bmp
 *.obj
 *.pdb
 *.lib

@@ -37,6 +37,7 @@ IFACEMETHODIMP CRostorProvider::QueryInterface(REFIID riid, void** ppv)
     static const QITAB qit[] =
     {
         QITABENT(CRostorProvider, ICredentialProvider),
+        QITABENT(CRostorProvider, ICredentialProviderSetUserArray),
         { 0 },
     };
     return QISearch(this, qit, riid, ppv);
@@ -127,4 +128,13 @@ HRESULT CRostorProvider_CreateInstance(REFIID riid, void** ppv)
     HRESULT hr = pProvider->QueryInterface(riid, ppv);
     pProvider->Release();
     return hr;
+}
+
+// The user array is the set of tiles LogonUI will show. Rostor's credential is
+// identifier-first and belongs to no pre-existing tile (GetUserSid returns
+// S_FALSE), so nothing is kept here; implementing the interface is what makes
+// LogonUI enumerate the credential under "Other user".
+IFACEMETHODIMP CRostorProvider::SetUserArray(ICredentialProviderUserArray*)
+{
+    return S_OK;
 }

@@ -1,12 +1,12 @@
 // Client side of contract §2: connect to \\.\pipe\rostor-agent, write one
 // newline-terminated JSON request, read one newline-terminated reply, close.
-// The 10 s deadline is the contract's; on expiry the result is agent.timeout.
+// The 30 s deadline is the contract's (§2); on expiry the result is agent.timeout.
 #include "common.h"
 
 namespace {
 
 const wchar_t* kPipePath = L"\\\\.\\pipe\\rostor-agent";
-const DWORD kTimeoutMs = 10000;
+const DWORD kTimeoutMs = 30000;
 
 // Overlapped I/O lets us enforce the deadline without a worker thread.
 bool WaitIo(HANDLE h, OVERLAPPED& ov, DWORD& transferred, DWORD deadlineTick)

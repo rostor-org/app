@@ -28,7 +28,8 @@ enum FIELD_ID
     SFI_USERNAME  = 1,   // CPFT_EDIT_TEXT: identifier
     SFI_PASSWORD  = 2,   // CPFT_PASSWORD_TEXT: secret
     SFI_SUBMIT    = 3,   // CPFT_SUBMIT_BUTTON
-    SFI_NUM_FIELDS = 4,
+    SFI_TILEIMAGE = 4,   // CPFT_TILE_IMAGE: tile.bmp from the install dir
+    SFI_NUM_FIELDS = 5,
 };
 
 struct FIELD_STATE_PAIR
@@ -44,6 +45,7 @@ static const FIELD_STATE_PAIR s_rgFieldStatePairs[] =
     { CPFS_DISPLAY_IN_SELECTED_TILE, CPFIS_FOCUSED },  // SFI_USERNAME
     { CPFS_DISPLAY_IN_SELECTED_TILE, CPFIS_NONE    },  // SFI_PASSWORD
     { CPFS_DISPLAY_IN_SELECTED_TILE, CPFIS_NONE    },  // SFI_SUBMIT
+    { CPFS_DISPLAY_IN_BOTH,          CPFIS_NONE    },  // SFI_TILEIMAGE
 };
 
 static const CREDENTIAL_PROVIDER_FIELD_DESCRIPTOR s_rgFieldDescriptors[] =
@@ -52,6 +54,7 @@ static const CREDENTIAL_PROVIDER_FIELD_DESCRIPTOR s_rgFieldDescriptors[] =
     { SFI_USERNAME, CPFT_EDIT_TEXT,     const_cast<PWSTR>(L""), GUID_NULL },
     { SFI_PASSWORD, CPFT_PASSWORD_TEXT, const_cast<PWSTR>(L""), GUID_NULL },
     { SFI_SUBMIT,   CPFT_SUBMIT_BUTTON, const_cast<PWSTR>(L""), GUID_NULL },
+    { SFI_TILEIMAGE, CPFT_TILE_IMAGE,   const_cast<PWSTR>(L""), GUID_NULL },
 };
 
 // UI strings from the agent, keyed as in contract §2.1.

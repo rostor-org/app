@@ -57,6 +57,7 @@ HRESULT CRostorCredential::Initialize(CREDENTIAL_PROVIDER_USAGE_SCENARIO cpus,
     if (SUCCEEDED(hr)) hr = SHStrDupW(L"", &_rgFieldStrings[SFI_USERNAME]);
     if (SUCCEEDED(hr)) hr = SHStrDupW(L"", &_rgFieldStrings[SFI_PASSWORD]);
     if (SUCCEEDED(hr)) hr = SHStrDupW(_ui.submit_label.c_str(), &_rgFieldStrings[SFI_SUBMIT]);
+    if (SUCCEEDED(hr)) hr = SHStrDupW(L"", &_rgFieldStrings[SFI_TILEIMAGE]);
     return hr;
 }
 
@@ -131,11 +132,18 @@ IFACEMETHODIMP CRostorCredential::GetStringValue(DWORD dwFieldID, PWSTR* ppwsz)
     return SHStrDupW(_rgFieldStrings[dwFieldID], ppwsz);
 }
 
-IFACEMETHODIMP CRostorCredential::GetBitmapValue(DWORD, HBITMAP* phbmp)
+IFACEMETHODIMP CRostorCredential::GetBitmapValue(DWORD dwFieldID, HBITMAP* phbmp)
 {
-    // No tile image in the PoC; LogonUI shows its generic glyph.
-    if (phbmp) *phbmp = nullptr;
-    return E_INVALIDARG;
+    if (!phbmp) return E_INVALIDARG;
+    *phbmp = nullptr;
+    if (dwFieldID != SFI_TILEIMAGE) return E_INVALIDARG;
+    // The tile image ships beside the agent (install.ps1 copies it). A
+    // missing file just leaves LogonUI's generic glyph; never a failure.
+    HBITMAP h = static_cast<HBITMAP>(LoadImageW(nullptr, L"C:\\Program Files\\Rostor\\tile.bmp",
+        IMAGE_BITMAP, 0, 0, LR_LOADFROMFILE | LR_CREATEDIBSECTION));
+    if (!h) return E_FAIL;
+    *phbmp = h;
+    return S_OK;
 }
 
 IFACEMETHODIMP CRostorCredential::GetSubmitButtonValue(DWORD dwFieldID, DWORD* pdwAdjacentTo)

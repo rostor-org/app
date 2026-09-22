@@ -32,8 +32,16 @@ created and rotated by the agent, never managed by a human. Its secret is
 re-randomised on every successful logon and is never persisted anywhere.
 
 Out of scope for the PoC (explicitly): cached/offline logon, badge+PIN (planned;
-it is another credential type in the same `Verify` call), account hiding from
-the local user picker, Windows 11 validation.
+it is another credential type in the same `Verify` call), Windows 11 validation.
+
+Two Windows 10 facts the implementation depends on, learned the hard way:
+(1) a provider whose credentials implement `ICredentialProviderCredential2`
+must also implement `ICredentialProviderSetUserArray` or LogonUI never lists
+its credential; (2) on a workgroup machine LogonUI only offers the "Other user"
+form, where a credential without a user SID appears, when the
+`dontdisplaylastusername` policy is set. The installer sets it. The agent also
+hides its derived local accounts from the tile list via
+`Winlogon\\SpecialAccounts\\UserList`.
 
 ---
 
@@ -118,8 +126,10 @@ workstation as alive.
 Pipe: `\\.\pipe\rostor-agent`. Security: DACL grants full access to
 `SYSTEM` and `Administrators` only. The agent is the server. Message framing:
 one JSON object per request, newline-terminated; one JSON object reply,
-newline-terminated; then the client closes. Requests time out at 10 s on the
+newline-terminated; then the client closes. Requests time out at 30 s on the
 credprov side, after which it treats the result as `{"ok":false,"code":"agent.timeout"}`.
+(SAM writes on a loaded workstation have been measured at 10–20 s; the core
+round trip itself is well under a second.)
 
 ### 2.1 `ui` — fetch display strings (credprov calls once per LogonUI session)
 

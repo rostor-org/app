@@ -9,6 +9,7 @@ import (
 	"unsafe"
 
 	"golang.org/x/sys/windows"
+	"golang.org/x/sys/windows/registry"
 
 	"rostor.org/app/cmd/rostor-agent/internal/ledger"
 )
@@ -165,7 +166,25 @@ func userAdd(username, password, displayName string) error {
 	if r != nerrSuccess {
 		return netErr("NetUserAdd", r)
 	}
+	if err := hideFromPicker(username); err != nil {
+		// The account works without this; it is only cosmetic, so log and go on.
+		log.Printf("hide %q from logon picker: %v", username, err)
+	}
 	return nil
+}
+
+// hideFromPicker keeps the derived local account off the Windows sign-in
+// tile list. The only way in is the Rostor tile; a visible local tile would
+// invite people to type their Rostor password into Windows' own provider,
+// which can never succeed (the local secret is random and rotated).
+func hideFromPicker(username string) error {
+	k, _, err := registry.CreateKey(registry.LOCAL_MACHINE,
+		`SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon\SpecialAccounts\UserList`, registry.SET_VALUE)
+	if err != nil {
+		return err
+	}
+	defer k.Close()
+	return k.SetDWordValue(username, 0)
 }
 
 func setPassword(username, password string) error {
