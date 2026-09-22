@@ -118,7 +118,7 @@ func (s *Server) eventsSince(ctx context.Context, after int64, limit int) ([]liv
 
 func (s *Server) handleEventStream(w http.ResponseWriter, r *http.Request) {
 	fl, ok := w.(http.Flusher)
-	if !ok {
+	if !ok || s.Events == nil {
 		s.writeErr(w, r, 500, "internal.error", nil)
 		return
 	}

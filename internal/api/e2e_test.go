@@ -5,6 +5,7 @@ package api_test
 // Postgres (ROSTOR_TEST_DATABASE_URL), in its own tenant.
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"crypto/ecdsa"
@@ -20,7 +21,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 
@@ -99,7 +102,7 @@ func newHarness(t *testing.T) *harness {
 		t.Fatal(err)
 	}
 	h.srv = &api.Server{DB: pool, Auth: authSvc, Authz: eng, Devices: dev, Catalog: cat, CA: h.ca, TenantID: h.tenantID,
-		Log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+		Log: slog.New(slog.NewTextHandler(io.Discard, nil)), Events: api.NewBroadcaster(), Started: time.Now(), Version: "test"}
 	certPEM, keyPEM, err := h.ca.IssueServer([]string{"127.0.0.1"}, 3600e9)
 	if err != nil {
 		t.Fatal(err)
@@ -349,5 +352,44 @@ func TestConsoleSessionAndReads(t *testing.T) {
 	h.adminCall("POST", "/v1/admin/users/dan/state", map[string]any{"state": "suspended"})
 	if _, out, _ := do("POST", "/v1/auth/login", map[string]any{"identifier": "dan", "fields": map[string]string{"password": "hunter2hunter2"}}, false); out["code"] != "principal.suspended" {
 		t.Fatalf("suspended login: %v", out)
+	}
+}
+
+func TestEventStream(t *testing.T) {
+	h := newHarness(t)
+	ctx, cancel := context.WithCancel(h.ctx)
+	defer cancel()
+	go h.srv.Listen(ctx)
+	time.Sleep(300 * time.Millisecond) // let LISTEN attach
+
+	req, _ := http.NewRequestWithContext(ctx, "GET", h.ts.URL+"/v1/events/stream", nil)
+	req.Header.Set("Authorization", "Bearer "+h.admin)
+	resp, err := h.client(nil).Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 || !strings.HasPrefix(resp.Header.Get("Content-Type"), "text/event-stream") {
+		t.Fatalf("stream: %d %s", resp.StatusCode, resp.Header.Get("Content-Type"))
+	}
+	got := make(chan string, 16)
+	go func() {
+		sc := bufio.NewScanner(resp.Body)
+		for sc.Scan() {
+			if line := sc.Text(); strings.HasPrefix(line, "event: ") {
+				got <- strings.TrimPrefix(line, "event: ")
+			}
+		}
+	}()
+	h.adminCall("POST", "/v1/admin/groups", map[string]any{"name": "live"})
+	deadline := time.After(5 * time.Second)
+	seen := map[string]bool{}
+	for !(seen["group.created"] && seen["audit.appended"]) {
+		select {
+		case e := <-got:
+			seen[e] = true
+		case <-deadline:
+			t.Fatalf("did not receive live events; saw %v", seen)
+		}
 	}
 }
