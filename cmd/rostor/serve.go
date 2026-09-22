@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -19,6 +20,7 @@ import (
 	"rostor.org/app/internal/authz"
 	"rostor.org/app/internal/catalog"
 	"rostor.org/app/internal/config"
+	"rostor.org/app/internal/console"
 	"rostor.org/app/internal/crypto"
 	"rostor.org/app/internal/db"
 	"rostor.org/app/internal/devices"
@@ -125,7 +127,8 @@ func runServe(ctx context.Context, args []string) error {
 	// The CLI on this machine trusts the core through this file.
 	_ = os.WriteFile(filepath.Join(c.cfg.DataDir, "ca.crt"), ca.CertPEM(), 0o644)
 	srv := &api.Server{DB: c.db, Auth: c.auth, Authz: c.authz, Devices: c.devices, Catalog: c.catalog, CA: ca, TenantID: c.tenantID, Log: c.log,
-		StateDir: c.cfg.StateDir, Version: version}
+		StateDir: c.cfg.StateDir, Version: version, Events: api.NewBroadcaster(), Started: time.Now(), ReleaseKeyFP: releaseKeyFP(c.cfg.ReleasePubKey), Static: console.Handler()}
+	go srv.Listen(ctx)
 	tlsCfg, err := srv.TLSConfig(certPEM, keyPEM)
 	if err != nil {
 		return err
@@ -257,4 +260,13 @@ func runBootstrap(ctx context.Context, args []string) error {
 	fmt.Printf("admin token: %s\n", token)
 	fmt.Println("Store the token now; it is not shown again. Export it as ROSTOR_TOKEN for `rostor admin`.")
 	return nil
+}
+
+// releaseKeyFP shows which release key this appliance trusts.
+func releaseKeyFP(path string) string {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(raw))
 }

@@ -23,11 +23,11 @@ type Reason struct {
 }
 
 type Decision struct {
-	Allow     bool     `json:"-"`
-	Decision  string   `json:"decision"` // ALLOW | DENY
-	Reasons   []Reason `json:"reason"`
-	GrantID   string   `json:"grant_id,omitempty"`
-	AsOf      time.Time `json:"as_of"`
+	Allow    bool      `json:"-"`
+	Decision string    `json:"decision"` // ALLOW | DENY
+	Reasons  []Reason  `json:"reason"`
+	GrantID  string    `json:"grant_id,omitempty"`
+	AsOf     time.Time `json:"as_of"`
 }
 
 // Presented describes how the principal proved identity for this check.

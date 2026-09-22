@@ -201,7 +201,7 @@ func TestWindowsLogonSlice(t *testing.T) {
 	verify := func(identifier, secret string) map[string]any {
 		st, out := h.call(dev, "POST", "/v1/verify", "", map[string]any{
 			"credential": map[string]string{"type": "password", "identifier": identifier, "secret": secret},
-			"action": "logon", "resource": map[string]string{"type": "workstation", "id": "WS-TEST"}})
+			"action":     "logon", "resource": map[string]string{"type": "workstation", "id": "WS-TEST"}})
 		if st != 200 {
 			t.Fatalf("verify: %d %v", st, out)
 		}
@@ -252,7 +252,7 @@ func TestWindowsLogonSlice(t *testing.T) {
 	// A device may not verify against a resource it is not bound to.
 	st, out = h.call(dev, "POST", "/v1/verify", "", map[string]any{
 		"credential": map[string]string{"type": "password", "identifier": "dana", "secret": "x"},
-		"action": "logon", "resource": map[string]string{"type": "workstation", "id": "OTHER"}})
+		"action":     "logon", "resource": map[string]string{"type": "workstation", "id": "OTHER"}})
 	if st != 200 || code(out) != "request.forbidden" {
 		t.Fatalf("unbound resource: %d %v", st, out)
 	}
@@ -269,5 +269,85 @@ func TestWindowsLogonSlice(t *testing.T) {
 		if !h.srv.Catalog.Has(c) {
 			t.Fatalf("catalog missing %s", c)
 		}
+	}
+}
+
+func TestConsoleSessionAndReads(t *testing.T) {
+	h := newHarness(t)
+	h.adminCall("POST", "/v1/admin/users", map[string]any{"username": "dan", "display_name": map[string]string{"en": "Dan"}})
+	h.adminCall("POST", "/v1/admin/users/dan/bindings", map[string]any{"method": "password", "fields": map[string]string{"password": "hunter2hunter2"}})
+	h.adminCall("POST", "/v1/admin/grants", map[string]any{"subject_kind": "principal", "subject": "dan", "role": "admin", "resource_type": "directory", "resource_id": "root"})
+
+	c := h.client(nil)
+	jar := map[string]string{}
+	do := func(method, path string, body any, csrf bool) (int, map[string]any, []*http.Cookie) {
+		var rd io.Reader
+		if body != nil {
+			b, _ := json.Marshal(body)
+			rd = bytes.NewReader(b)
+		}
+		req, _ := http.NewRequest(method, h.ts.URL+path, rd)
+		if v, ok := jar["rostor_session"]; ok {
+			req.AddCookie(&http.Cookie{Name: "rostor_session", Value: v})
+		}
+		if csrf {
+			req.Header.Set("X-Requested-With", "rostor-console")
+		}
+		resp, err := c.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		out := map[string]any{}
+		raw, _ := io.ReadAll(resp.Body)
+		if len(raw) > 0 && raw[0] == '{' {
+			_ = json.Unmarshal(raw, &out)
+		}
+		for _, ck := range resp.Cookies() {
+			jar[ck.Name] = ck.Value
+		}
+		return resp.StatusCode, out, resp.Cookies()
+	}
+	// No session → 401.
+	if st, _, _ := do("GET", "/v1/auth/session", nil, false); st != 401 {
+		t.Fatalf("session without cookie: %d", st)
+	}
+	// Wrong password → 200 with auth.failed, no cookie.
+	if _, out, cks := do("POST", "/v1/auth/login", map[string]any{"identifier": "dan", "fields": map[string]string{"password": "nope"}}, false); out["code"] != "auth.failed" || len(cks) != 0 {
+		t.Fatalf("bad login: %v %v", out, cks)
+	}
+	// Right password → session cookie and permissions.
+	st, out, cks := do("POST", "/v1/auth/login", map[string]any{"identifier": "dan", "fields": map[string]string{"password": "hunter2hunter2"}}, false)
+	if st != 200 || len(cks) == 0 || out["assurance"] != "AL1" {
+		t.Fatalf("login: %d %v %v", st, out, cks)
+	}
+	if perms, _ := out["permissions"].([]any); len(perms) != 1 || perms[0] != "*" {
+		t.Fatalf("permissions: %v", out["permissions"])
+	}
+	// Cookie-authenticated reads work.
+	if st, out, _ := do("GET", "/v1/admin/users", nil, false); st != 200 || out["total"].(float64) < 1 {
+		t.Fatalf("list users: %d %v", st, out)
+	}
+	for _, p := range []string{"/v1/admin/summary", "/v1/admin/groups", "/v1/admin/grants", "/v1/admin/devices", "/v1/admin/audit", "/v1/admin/system", "/v1/admin/plugins", "/v1/admin/users/dan", "/v1/catalog", "/v1/brand"} {
+		if st, _, _ := do("GET", p, nil, false); st != 200 {
+			t.Fatalf("%s: %d", p, st)
+		}
+	}
+	// Cookie mutation without the CSRF marker → 403; with it → ok.
+	if st, _, _ := do("POST", "/v1/admin/groups", map[string]any{"name": "csrf"}, false); st != 403 {
+		t.Fatalf("csrf missing should be 403, got %d", st)
+	}
+	if st, _, _ := do("POST", "/v1/admin/groups", map[string]any{"name": "csrf"}, true); st != 201 {
+		t.Fatalf("csrf present should be 201, got %d", st)
+	}
+	// Logout revokes.
+	do("POST", "/v1/auth/logout", nil, true)
+	if st, _, _ := do("GET", "/v1/auth/session", nil, false); st != 401 {
+		t.Fatalf("after logout: %d", st)
+	}
+	// Suspended people cannot open a session even with the right secret.
+	h.adminCall("POST", "/v1/admin/users/dan/state", map[string]any{"state": "suspended"})
+	if _, out, _ := do("POST", "/v1/auth/login", map[string]any{"identifier": "dan", "fields": map[string]string{"password": "hunter2hunter2"}}, false); out["code"] != "principal.suspended" {
+		t.Fatalf("suspended login: %v", out)
 	}
 }

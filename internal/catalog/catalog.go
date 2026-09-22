@@ -77,3 +77,24 @@ func (c *Catalog) Has(code string) bool {
 	_, ok := c.locales["en"][code]
 	return ok
 }
+
+// Strings returns the full map for the best-matching locale, merged over the
+// "en" fallback so every code has a value, and the locale actually used.
+func (c *Catalog) Strings(locale string) (map[string]string, string) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	out := map[string]string{}
+	for k, v := range c.locales["en"] {
+		out[k] = v
+	}
+	used := "en"
+	for _, l := range []string{strings.SplitN(locale, "-", 2)[0], locale} {
+		if m, ok := c.locales[l]; ok && l != "en" {
+			for k, v := range m {
+				out[k] = v
+			}
+			used = l
+		}
+	}
+	return out, used
+}

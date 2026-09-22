@@ -1,9 +1,7 @@
 package api
 
 import (
-	"encoding/json"
 	"net/http"
-	"strconv"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -100,7 +98,7 @@ func (s *Server) handleVerify(w http.ResponseWriter, r *http.Request) {
 		}
 		s.auditEvent(r.Context(), audit.Event{ActorKind: "device", ActorID: dev.Principal.ID, Action: "verify",
 			TargetType: req.Resource.Type, TargetID: req.Resource.ID, CredentialType: req.Credential.Type, Outcome: "deny",
-			Detail: map[string]any{"action": req.Action, "identifier": req.Credential.Identifier, "principal_id": principalID, "reason": code},
+			Detail:        map[string]any{"action": req.Action, "identifier": req.Credential.Identifier, "principal_id": principalID, "reason": code},
 			CorrelationID: corr})
 		s.writeJSON(w, 200, verifyResponse{Decision: "DENY", Reason: []authz.Reason{{Code: code, Params: params}},
 			Message: s.Catalog.Render(req.Locale, code, params)})
@@ -344,8 +342,10 @@ func (s *Server) memberChange(w http.ResponseWriter, r *http.Request, remove boo
 	w.WriteHeader(204)
 }
 
-func (s *Server) handleAddMember(w http.ResponseWriter, r *http.Request)    { s.memberChange(w, r, false) }
-func (s *Server) handleRemoveMember(w http.ResponseWriter, r *http.Request) { s.memberChange(w, r, true) }
+func (s *Server) handleAddMember(w http.ResponseWriter, r *http.Request) { s.memberChange(w, r, false) }
+func (s *Server) handleRemoveMember(w http.ResponseWriter, r *http.Request) {
+	s.memberChange(w, r, true)
+}
 
 func (s *Server) handleCreateResource(w http.ResponseWriter, r *http.Request) {
 	var res directory.Resource
@@ -419,7 +419,9 @@ func (s *Server) handleCreateGrant(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleRevokeGrant(w http.ResponseWriter, r *http.Request) {
-	if err := s.tx(r, func(tx pgx.Tx) error { return directory.RevokeGrant(r.Context(), tx, s.TenantID, actorOf(r), r.PathValue("id")) }); err != nil {
+	if err := s.tx(r, func(tx pgx.Tx) error {
+		return directory.RevokeGrant(r.Context(), tx, s.TenantID, actorOf(r), r.PathValue("id"))
+	}); err != nil {
 		s.fail(w, r, err)
 		return
 	}
@@ -474,35 +476,6 @@ func (s *Server) handleWhy(w http.ResponseWriter, r *http.Request) {
 	s.auditEvent(r.Context(), audit.Event{ActorKind: actorOf(r).Kind, ActorID: actorOf(r).ID, Action: "why", TargetType: "principal", TargetID: p.ID,
 		Outcome: "ok", Detail: map[string]any{"action": q.Get("action"), "resource": q.Get("resource_type") + ":" + q.Get("resource_id")}, CorrelationID: corrOf(r)})
 	s.writeJSON(w, 200, ex)
-}
-
-func (s *Server) handleAudit(w http.ResponseWriter, r *http.Request) {
-	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	if limit <= 0 || limit > 500 {
-		limit = 50
-	}
-	rows, err := s.DB.Query(r.Context(), `SELECT seq, ts, actor_kind, actor_id, action, coalesce(target_type,''), coalesce(target_id,''),
-		coalesce(credential_type,''), coalesce(assurance,''), outcome, detail, correlation_id
-		FROM audit_events WHERE tenant_id=$1 ORDER BY seq DESC LIMIT $2`, s.TenantID, limit)
-	if err != nil {
-		s.fail(w, r, err)
-		return
-	}
-	defer rows.Close()
-	var out []map[string]any
-	for rows.Next() {
-		var seq int64
-		var ts time.Time
-		var ak, aid, action, tt, tid, ct, as, outcome, corr string
-		var detail json.RawMessage
-		if err := rows.Scan(&seq, &ts, &ak, &aid, &action, &tt, &tid, &ct, &as, &outcome, &detail, &corr); err != nil {
-			s.fail(w, r, err)
-			return
-		}
-		out = append(out, map[string]any{"seq": seq, "ts": ts, "actor": ak + ":" + aid, "action": action, "target": tt + ":" + tid,
-			"credential_type": ct, "assurance": as, "outcome": outcome, "detail": detail, "correlation_id": corr})
-	}
-	s.writeJSON(w, 200, map[string]any{"events": out})
 }
 
 func (s *Server) handleAuditVerify(w http.ResponseWriter, r *http.Request) {

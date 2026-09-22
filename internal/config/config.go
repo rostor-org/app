@@ -30,11 +30,11 @@ type Config struct {
 func FromEnv() Config {
 	home, _ := os.UserHomeDir()
 	c := Config{
-		DatabaseURL: getenv("ROSTOR_DATABASE_URL", "postgres:///rostor_dev?sslmode=disable"),
-		DataDir:     getenv("ROSTOR_DATA_DIR", filepath.Join(home, ".rostor")),
-		Listen:      getenv("ROSTOR_LISTEN", ":8443"),
-		AdminListen: os.Getenv("ROSTOR_ADMIN_LISTEN"),
-		StateDir:    os.Getenv("ROSTOR_STATE_DIR"),
+		DatabaseURL:   getenv("ROSTOR_DATABASE_URL", "postgres:///rostor_dev?sslmode=disable"),
+		DataDir:       getenv("ROSTOR_DATA_DIR", filepath.Join(home, ".rostor")),
+		Listen:        getenv("ROSTOR_LISTEN", ":8443"),
+		AdminListen:   os.Getenv("ROSTOR_ADMIN_LISTEN"),
+		StateDir:      os.Getenv("ROSTOR_STATE_DIR"),
 		ReleasePubKey: getenv("ROSTOR_RELEASE_PUBKEY", "/etc/rostor/release.pub"),
 	}
 	if p := os.Getenv("ROSTOR_TRUSTED_PROXIES"); p != "" {

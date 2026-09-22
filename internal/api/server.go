@@ -28,21 +28,31 @@ import (
 )
 
 type Server struct {
-	DB       *db.Pool
-	Auth     *auth.Service
-	Authz    *authz.Engine
-	Devices  *devices.Service
-	Catalog  *catalog.Catalog
-	CA       *pki.CA
-	TenantID string // single-tenant self-hosted (D4): one tenant per process
-	Log      *slog.Logger
-	StateDir string // where the updater leaves its state (update-state.json)
-	Version  string
+	DB           *db.Pool
+	Auth         *auth.Service
+	Authz        *authz.Engine
+	Devices      *devices.Service
+	Catalog      *catalog.Catalog
+	CA           *pki.CA
+	TenantID     string // single-tenant self-hosted (D4): one tenant per process
+	Log          *slog.Logger
+	StateDir     string // where the updater leaves its state (update-state.json)
+	Version      string
+	Events       *Broadcaster
+	Started      time.Time
+	ReleaseKeyFP string
+	Static       http.Handler // the embedded console; nil to serve API only
 }
 
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("ok\n")) })
+	mux.HandleFunc("GET /v1/catalog", s.handleCatalog)
+	mux.HandleFunc("GET /v1/brand", s.handleBrand)
+	mux.HandleFunc("POST /v1/auth/login", s.handleLogin)
+	mux.HandleFunc("GET /v1/auth/session", s.handleSession)
+	mux.HandleFunc("POST /v1/auth/logout", s.handleLogout)
+	mux.HandleFunc("GET /v1/events/stream", s.adminAuth("audit.read", s.handleEventStream))
 	mux.HandleFunc("POST /v1/devices/enroll", s.handleEnroll)
 	mux.HandleFunc("POST /v1/verify", s.deviceAuth(s.handleVerify))
 	mux.HandleFunc("POST /v1/devices/self/posture", s.deviceAuth(s.handlePosture))
@@ -61,10 +71,23 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /v1/admin/grants/{id}", s.adminAuth("grants.write", s.handleRevokeGrant))
 	mux.HandleFunc("POST /v1/admin/enrollment-tokens", s.adminAuth("devices.write", s.handleEnrollmentToken))
 	mux.HandleFunc("GET /v1/admin/why", s.adminAuth("authz.read", s.handleWhy))
-	mux.HandleFunc("GET /v1/admin/audit", s.adminAuth("audit.read", s.handleAudit))
+	mux.HandleFunc("GET /v1/admin/audit", s.adminAuth("audit.read", s.handleAuditList))
 	mux.HandleFunc("GET /v1/admin/audit/verify", s.adminAuth("audit.read", s.handleAuditVerify))
+	mux.HandleFunc("GET /v1/admin/summary", s.adminAuth("users.read", s.handleSummary))
+	mux.HandleFunc("GET /v1/admin/users", s.adminAuth("users.read", s.handleListUsers))
+	mux.HandleFunc("GET /v1/admin/users/{id}", s.adminAuth("users.read", s.handleGetUser))
+	mux.HandleFunc("DELETE /v1/admin/users/{id}/bindings/{bid}", s.adminAuth("credentials.write", s.handleRevokeBinding))
+	mux.HandleFunc("GET /v1/admin/groups", s.adminAuth("groups.read", s.handleListGroups))
+	mux.HandleFunc("GET /v1/admin/groups/{name}", s.adminAuth("groups.read", s.handleGetGroup))
+	mux.HandleFunc("GET /v1/admin/grants", s.adminAuth("grants.read", s.handleListGrants))
+	mux.HandleFunc("GET /v1/admin/devices", s.adminAuth("devices.read", s.handleListDevices))
+	mux.HandleFunc("GET /v1/admin/system", s.adminAuth("system.read", s.handleSystem))
+	mux.HandleFunc("GET /v1/admin/plugins", s.adminAuth("plugins.read", s.handlePlugins))
 	mux.HandleFunc("GET /v1/admin/updates", s.adminAuth("updates.read", s.handleUpdateStatus))
 	mux.HandleFunc("POST /v1/admin/updates/apply", s.adminAuth("updates.write", s.handleUpdateApply))
+	if s.Static != nil {
+		mux.Handle("/", s.Static)
+	}
 	return s.logging(mux)
 }
 
@@ -193,27 +216,42 @@ func (s *Server) deviceAuth(next http.HandlerFunc) http.HandlerFunc {
 // checks the named action on directory:root through the one engine.
 func (s *Server) adminAuth(action string, next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tok := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-		if tok == "" || tok == r.Header.Get("Authorization") {
-			s.writeErr(w, r, 401, "request.unauthorized", nil)
-			return
+		var p *directory.Principal
+		assurance, props := "AL1", []string{"possession"}
+		if tok := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "); tok != "" && tok != r.Header.Get("Authorization") {
+			// A static API token is a single possession factor: AL1.
+			tenantID, pid, err := auth.ResolveAPIToken(r.Context(), s.DB, tok)
+			if err != nil {
+				s.fail(w, r, err)
+				return
+			}
+			if pid == "" || tenantID != s.TenantID {
+				s.writeErr(w, r, 401, "request.unauthorized", nil)
+				return
+			}
+			p, err = directory.GetPrincipal(r.Context(), s.DB, tenantID, pid)
+			if err != nil {
+				s.fail(w, r, err)
+				return
+			}
+		} else {
+			// Console session cookie. Mutations must carry the CSRF marker.
+			sp, ses, err := s.sessionPrincipal(r.Context(), r)
+			if err != nil {
+				s.fail(w, r, err)
+				return
+			}
+			if sp == nil {
+				s.writeErr(w, r, 401, "request.unauthorized", nil)
+				return
+			}
+			if r.Method != "GET" && r.Method != "HEAD" && !isConsoleMutation(r) {
+				s.writeErr(w, r, 403, "request.forbidden", map[string]any{"reason": "csrf"})
+				return
+			}
+			p, assurance, props = sp, ses.Assurance, ses.Properties
 		}
-		tenantID, pid, err := auth.ResolveAPIToken(r.Context(), s.DB, tok)
-		if err != nil {
-			s.fail(w, r, err)
-			return
-		}
-		if pid == "" || tenantID != s.TenantID {
-			s.writeErr(w, r, 401, "request.unauthorized", nil)
-			return
-		}
-		p, err := directory.GetPrincipal(r.Context(), s.DB, tenantID, pid)
-		if err != nil {
-			s.fail(w, r, err)
-			return
-		}
-		// A static API token is a single possession factor: AL1.
-		d, err := s.Authz.Check(r.Context(), s.DB, tenantID, p, action, "directory", "root", authz.Presented{Assurance: "AL1", Properties: []string{"possession"}})
+		d, err := s.Authz.Check(r.Context(), s.DB, s.TenantID, p, action, "directory", "root", authz.Presented{Assurance: assurance, Properties: props})
 		if err != nil {
 			s.fail(w, r, err)
 			return
@@ -227,7 +265,10 @@ func (s *Server) adminAuth(action string, next http.HandlerFunc) http.HandlerFun
 	}
 }
 
-func actorOf(r *http.Request) directory.Actor { a, _ := r.Context().Value(ctxActor).(directory.Actor); return a }
+func actorOf(r *http.Request) directory.Actor {
+	a, _ := r.Context().Value(ctxActor).(directory.Actor)
+	return a
+}
 
 func (s *Server) tx(r *http.Request, fn func(pgx.Tx) error) error { return s.DB.Tx(r.Context(), fn) }
 

@@ -27,12 +27,12 @@ import (
 // Manifest is what a channel publishes. The signature covers the canonical
 // JSON of Manifest with Signature empty.
 type Manifest struct {
-	Channel   string            `json:"channel"`
-	Version   string            `json:"version"`
-	Published time.Time         `json:"published"`
-	Notes     string            `json:"notes,omitempty"`
-	Files     map[string]File   `json:"files"` // key: "<os>-<arch>", e.g. linux-amd64
-	Signature string            `json:"signature,omitempty"` // base64 ed25519 over canonical bytes
+	Channel   string          `json:"channel"`
+	Version   string          `json:"version"`
+	Published time.Time       `json:"published"`
+	Notes     string          `json:"notes,omitempty"`
+	Files     map[string]File `json:"files"`               // key: "<os>-<arch>", e.g. linux-amd64
+	Signature string          `json:"signature,omitempty"` // base64 ed25519 over canonical bytes
 }
 
 type File struct {
@@ -207,14 +207,14 @@ func Swap(newPath, target string) error {
 // State is what the appliance records about the channel, for the API and
 // the admin UI: last check, what is available, what was applied.
 type State struct {
-	Channel     string     `json:"channel"`
-	Current     string     `json:"current"`
-	Available   string     `json:"available,omitempty"`
-	CheckedAt   *time.Time `json:"checked_at,omitempty"`
-	AppliedAt   *time.Time `json:"applied_at,omitempty"`
-	LastError   string     `json:"last_error,omitempty"`
-	Requested   bool       `json:"apply_requested"`
-	Notes       string     `json:"notes,omitempty"`
+	Channel   string     `json:"channel"`
+	Current   string     `json:"current"`
+	Available string     `json:"available,omitempty"`
+	CheckedAt *time.Time `json:"checked_at,omitempty"`
+	AppliedAt *time.Time `json:"applied_at,omitempty"`
+	LastError string     `json:"last_error,omitempty"`
+	Requested bool       `json:"apply_requested"`
+	Notes     string     `json:"notes,omitempty"`
 }
 
 func StatePath(stateDir string) string   { return filepath.Join(stateDir, "update-state.json") }

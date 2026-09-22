@@ -1,7 +1,12 @@
 GO ?= go
 export PATH := /opt/homebrew/opt/postgresql@17/bin:/opt/homebrew/bin:$(PATH)
 
-.PHONY: build test vet agent lint-strings
+.PHONY: build test vet agent lint-strings console
+
+# Build the React console and stage it for embedding.
+console:
+	cd console && npm ci --silent && npm run build --silent
+	rm -rf internal/console/dist && cp -R console/dist internal/console/dist
 
 build:
 	$(GO) build -o bin/rostor ./cmd/rostor
@@ -33,7 +38,7 @@ SIGNKEY   ?= $(HOME)/.rostor/release-signing.key
 LDFLAGS    = -s -w -X main.version=$(VERSION)
 
 .PHONY: dist release
-dist:
+dist: console
 	@test -n "$(VERSION)" || { echo "VERSION=vX.Y.Z is required"; exit 1; }
 	rm -rf dist && mkdir -p dist
 	GOOS=linux  GOARCH=amd64 CGO_ENABLED=0 $(GO) build -trimpath -ldflags '$(LDFLAGS)' -o dist/rostor-linux-amd64 ./cmd/rostor
