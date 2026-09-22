@@ -1,24 +1,24 @@
 {
   "channel": "stable",
-  "version": "v0.1.0",
-  "published": "2026-09-22T18:23:40.655831Z",
-  "notes": "First appliance release: Windows logon MVP slice, one-line installer, signed update channel.",
+  "version": "v0.1.1",
+  "published": "2026-09-22T19:35:55.073491Z",
+  "notes": "Admin console (embedded), console sign-in and sessions, live event stream, read endpoints, official brand mark on the Windows tile.",
   "files": {
     "agent-windows-amd64": {
-      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/581981571",
-      "sha256": "8429509fd98947faa7d384b15122cf32d642bb868ffde6707067e3ae099763d7",
+      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/582102360",
+      "sha256": "326faf10a2c89d6482a7f4f604097c5ea96d286117f1f0f4196fc6f00bb49619",
       "size": 7787520
     },
     "linux-amd64": {
-      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/581981572",
-      "sha256": "52dc2c4bfeeff318632657e36b25b7637a0272bb8d634b331fa5e15ef65c5c0a",
-      "size": 20578464
+      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/582102353",
+      "sha256": "d9cdb6c9f9aa0ccc03a8bfff1810d6b8f9d17e5338aa0f574c2976e491fbc340",
+      "size": 21172384
     },
     "linux-arm64": {
-      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/581981570",
-      "sha256": "62a5f58339c5d62f1601a60ddb6e5ed08d08b7ffc5206a34a5f2041216ad302c",
-      "size": 19333280
+      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/582102354",
+      "sha256": "e565481adb52d3e715668ebe1b9fcb4a22005caca67aca2e498e24cf38014dd8",
+      "size": 19857568
     }
   },
-  "signature": "XvISUx5hM5xf7gYha2FrzGjEuWUgQ0c1Tks/ykpmqIb+9ADj+sEjlabjsd6Nht6+GfHcicrZv20i+xzO6vgPCA=="
+  "signature": "FGDCRn6Xet0eDZTWQVdCpR0jPSvZe/Ju6L8HCjqK92p/SQlNultTjKs923yrxz2QN+tRIpg6yVHr/TKmlaTUBA=="
 }
