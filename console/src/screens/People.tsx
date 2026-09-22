@@ -1,0 +1,272 @@
+import { useCallback, useState, type FormEvent } from 'react'
+import { useNavigate, useParams } from 'react-router'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { api, type User } from '../api'
+import { useT } from '../i18n/catalog'
+import { useSession } from '../auth/session'
+import { useFormat } from '../lib/format'
+import { useToast } from '../components/Toast'
+import { Drawer } from '../components/Drawer'
+import { Field, SelectField } from '../components/Form'
+import { Chips, Empty, ErrorNote, Head, Loading, RowButton, Stat, StatePill } from '../components/bits'
+import { WhyChain } from '../components/WhyChain'
+
+const invalidatePeople = ['users', 'user', 'summary', 'groups', 'group', 'why']
+
+export function People() {
+  const t = useT()
+  const f = useFormat()
+  const nav = useNavigate()
+  const toast = useToast()
+  const { can } = useSession()
+  const { id } = useParams()
+  const [q, setQ] = useState('')
+  const [adding, setAdding] = useState(false)
+  const summary = useQuery({ queryKey: ['summary'], queryFn: () => api.summary() })
+  const users = useQuery({ queryKey: ['users', q], queryFn: () => api.users(q || undefined) })
+  const close = useCallback(() => nav('/people'), [nav])
+  const closeAdd = useCallback(() => setAdding(false), [])
+
+  return (
+    <section>
+      <Head titleCode="ui.people.title" subCode="ui.people.subtitle">
+        <button type="button" className="btn quiet" onClick={() => toast(t('ui.common.not_available'))}>{t('ui.people.import')}</button>
+        {can('users.write') && <button type="button" className="btn primary" onClick={() => { nav('/people'); setAdding(true) }}>{t('ui.people.add')}</button>}
+      </Head>
+      <div className="strip">
+        <Stat value={f.int(summary.data?.people.active)} labelCode="ui.people.stat.active" />
+        <Stat value={f.int(summary.data?.people.suspended)} labelCode="ui.people.stat.suspended" />
+        <Stat value={f.int(summary.data?.people.applicants)} labelCode="ui.people.stat.applicants" />
+        <Stat value={f.int(summary.data?.people.service_accounts)} labelCode="ui.people.stat.service" />
+      </div>
+      <div className="search">
+        <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder={t('ui.people.search')} aria-label={t('ui.people.search')} />
+        {users.data && <span className="muted">{t('ui.common.showing', { shown: users.data.items.length, total: f.int(users.data.total) })}</span>}
+      </div>
+      <ErrorNote error={users.error} />
+      <div className="tablewrap">
+        <table>
+          <thead><tr>
+            <th>{t('ui.people.col.person')}</th><th>{t('ui.people.col.username')}</th><th>{t('ui.people.col.groups')}</th>
+            <th>{t('ui.people.col.methods')}</th><th>{t('ui.people.col.state')}</th><th>{t('ui.people.col.last_sign_in')}</th>
+          </tr></thead>
+          <tbody>
+            {users.isPending && <tr><td colSpan={6}><Loading /></td></tr>}
+            {users.data?.items.length === 0 && <tr><td colSpan={6}><Empty /></td></tr>}
+            {users.data?.items.map((u) => <PersonRow key={u.id} u={u} onOpen={() => { setAdding(false); nav(`/people/${encodeURIComponent(u.id)}`) }} />)}
+          </tbody>
+        </table>
+      </div>
+      <PersonDrawer id={adding ? undefined : id} onClose={close} />
+      <NewPersonDrawer open={adding} onClose={closeAdd} />
+    </section>
+  )
+}
+
+function PersonRow({ u, onOpen }: { u: User; onOpen: () => void }) {
+  const t = useT()
+  const f = useFormat()
+  return (
+    <tr className="row" onClick={onOpen}>
+      <td><RowButton onClick={onOpen}>{f.name(u.display_name, u.username)}</RowButton>{u.kind === 'service' && <> <span className="muted">{t('ui.common.service')}</span></>}</td>
+      <td className="mono">{u.username}</td>
+      <td><Chips items={u.groups.map((g) => g.name)} /></td>
+      <td>{u.methods.length === 0 ? <span className="muted">{t('ui.people.methods_none')}</span>
+        : u.methods.map((m, i) => <span key={i}>{i > 0 && ' '}<span className="al">{m.method}</span></span>)}</td>
+      <td><StatePill family="ui.state" value={u.state} /></td>
+      <td className={u.last_sign_in ? 'num' : 'muted'}>{u.last_sign_in ? `${f.relDay(u.last_sign_in.ts)} · ${u.last_sign_in.resource}` : t('ui.time.never')}</td>
+    </tr>
+  )
+}
+
+/** Create → optional password binding → optional group membership, then open the new person. */
+function NewPersonDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const t = useT()
+  const qc = useQueryClient()
+  const nav = useNavigate()
+  const toast = useToast()
+  const [username, setUsername] = useState('')
+  const [displayName, setDisplayName] = useState('')
+  const [password, setPassword] = useState('')
+  const [group, setGroup] = useState('')
+  const groups = useQuery({ queryKey: ['groups', ''], queryFn: () => api.groups(), enabled: open })
+  const create = useMutation({
+    mutationFn: async () => {
+      const p = await api.createUser({ username: username.trim(), display_name: { en: displayName.trim() || username.trim() } })
+      if (password) await api.enrollBinding(p.id, { method: 'password', fields: { password } })
+      if (group) await api.addMember(group, { member_kind: 'principal', member: p.username ?? username.trim() })
+      return p
+    },
+    onSuccess: (p) => {
+      for (const k of invalidatePeople) void qc.invalidateQueries({ queryKey: [k] })
+      toast(t('ui.person.created_toast', { name: displayName.trim() || username.trim() }))
+      setUsername(''); setDisplayName(''); setPassword(''); setGroup('')
+      onClose()
+      nav(`/people/${encodeURIComponent(p.id)}`)
+    },
+  })
+  const submit = (e: FormEvent) => { e.preventDefault(); create.mutate() }
+  return (
+    <Drawer open={open} onClose={onClose} labelCode="ui.person.new_title" title={t('ui.person.new_title')}>
+      <form onSubmit={submit}>
+        <Field labelCode="ui.person.new_username" value={username} onChange={(e) => setUsername(e.target.value)} required autoComplete="off" autoCapitalize="none" spellCheck={false} />
+        <Field labelCode="ui.person.new_display_name" value={displayName} onChange={(e) => setDisplayName(e.target.value)} autoComplete="off" />
+        <Field labelCode="ui.person.new_password" hintCode="ui.person.new_password_hint" type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" minLength={8} />
+        <SelectField labelCode="ui.person.new_group" value={group} onChange={(e) => setGroup(e.target.value)}
+          options={[['', 'ui.person.new_group_none'], ...(groups.data?.items.map((g) => [g.name, undefined] as [string, undefined]) ?? [])]} />
+        <ErrorNote error={create.error} />
+        <div className="actions">
+          <button type="submit" className="btn primary" disabled={create.isPending}>{t(create.isPending ? 'ui.common.working' : 'ui.person.create')}</button>
+          <button type="button" className="btn quiet" onClick={onClose}>{t('ui.common.cancel')}</button>
+        </div>
+      </form>
+    </Drawer>
+  )
+}
+
+function PersonDrawer({ id, onClose }: { id: string | undefined; onClose: () => void }) {
+  const t = useT()
+  const f = useFormat()
+  const qc = useQueryClient()
+  const toast = useToast()
+  const { can } = useSession()
+  const open = !!id
+  const user = useQuery({ queryKey: ['user', id], queryFn: () => api.user(id!), enabled: open })
+  const u = user.data
+  const groups = useQuery({ queryKey: ['groups', ''], queryFn: () => api.groups(), enabled: open && can('groups.write') })
+  const [pw, setPw] = useState<string | null>(null) // null = form closed
+  const [pickGroup, setPickGroup] = useState('')
+  const refresh = () => { for (const k of invalidatePeople) void qc.invalidateQueries({ queryKey: [k] }) }
+  const name = u ? f.name(u.display_name, u.username) : (id ?? '')
+
+  const setState = useMutation({
+    mutationFn: (state: string) => api.setUserState(id!, state),
+    onSuccess: (_d, state) => { toast(t(state === 'suspended' ? 'ui.person.suspended_toast' : 'ui.person.reactivated_toast')); refresh() },
+  })
+  const setPassword = useMutation({
+    mutationFn: (password: string) => api.enrollBinding(id!, { method: 'password', fields: { password } }),
+    onSuccess: () => { toast(t('ui.person.password_set_toast', { name })); setPw(null); refresh() },
+  })
+  const revoke = useMutation({
+    mutationFn: (bid: string) => api.revokeBinding(id!, bid),
+    onSuccess: () => { toast(t('ui.person.binding_revoked_toast')); refresh() },
+  })
+  const addGroup = useMutation({
+    mutationFn: (group: string) => api.addMember(group, { member_kind: 'principal', member: u!.username }),
+    onSuccess: (_d, group) => { toast(t('ui.person.group_added_toast', { group })); setPickGroup(''); refresh() },
+  })
+  const removeGroup = useMutation({
+    mutationFn: (group: string) => api.removeMember(group, { member_kind: 'principal', member: u!.username }),
+    onSuccess: (_d, group) => { toast(t('ui.person.group_removed_toast', { group })); refresh() },
+  })
+
+  // The detail body has no last_sign_in; fall back to the newest allowed sign-in in `recent`.
+  const lastAllowed = u?.recent.find((r) => r.outcome === 'allow' && (r.action === 'verify' || r.action === 'session.create'))
+  const lastResource = u?.last_sign_in?.resource ?? (lastAllowed && lastAllowed.target.type ? `${lastAllowed.target.type}:${lastAllowed.target.id}` : undefined)
+  const [rt, rid] = lastResource && lastResource.includes(':') ? lastResource.split(/:(.*)/, 2) : [undefined, undefined]
+  const action = rt === 'door' ? 'enter' : 'logon'
+  const why = useQuery({
+    queryKey: ['why', u?.username, action, rt, rid],
+    queryFn: () => api.why({ principal: u!.username, action, resource_type: rt!, resource_id: rid! }),
+    enabled: open && !!u && !!rt && !!rid && rt !== 'api' && rt !== 'principal' && can('authz.read'),
+    staleTime: 30_000,
+  })
+
+  const suspended = u?.state === 'suspended'
+  const candidateGroups = groups.data?.items.filter((g) => !u?.groups.some((m) => m.name === g.name)) ?? []
+  const error = user.error ?? setState.error ?? setPassword.error ?? revoke.error ?? addGroup.error ?? removeGroup.error
+
+  return (
+    <Drawer open={open} onClose={onClose} labelCode="ui.person.details" title={name} subtitle={u ? `${f.shortId(u.id)} · ${u.username}` : undefined}>
+      <ErrorNote error={error} />
+      {user.isPending && <Loading />}
+      {u && (
+        <>
+          <div className="actions">
+            {can('users.write') && (
+              <button type="button" className="btn" disabled={setState.isPending} onClick={() => setState.mutate(suspended ? 'active' : 'suspended')}>
+                {t(suspended ? 'ui.person.reactivate' : 'ui.person.suspend')}
+              </button>
+            )}
+            {can('credentials.write') && <>
+              <button type="button" className="btn" aria-expanded={pw !== null} onClick={() => setPw(pw === null ? '' : null)}>{t('ui.person.set_password')}</button>
+              <button type="button" className="btn" onClick={() => toast(t('ui.common.not_available'))}>{t('ui.person.register_badge')}</button>
+              <button type="button" className="btn" onClick={() => toast(t('ui.common.not_available'))}>{t('ui.person.reset_password')}</button>
+            </>}
+          </div>
+          {pw !== null && (
+            <form className="inline" style={{ marginTop: 12 }} onSubmit={(e) => { e.preventDefault(); setPassword.mutate(pw) }}>
+              <input className="input" type="password" value={pw} onChange={(e) => setPw(e.target.value)} minLength={8} required autoFocus autoComplete="new-password" aria-label={t('ui.person.new_password_label')} />
+              <button type="submit" className="btn primary" disabled={setPassword.isPending}>{t(setPassword.isPending ? 'ui.common.working' : 'ui.common.save')}</button>
+              <button type="button" className="btn quiet" onClick={() => setPw(null)}>{t('ui.common.cancel')}</button>
+            </form>
+          )}
+          <dl className="kv">
+            <dt>{t('ui.person.state')}</dt><dd><StatePill family="ui.state" value={u.state} /></dd>
+            <dt>{t('ui.person.username')}</dt><dd className="mono">{u.username}</dd>
+            <dt>{t('ui.person.groups')}</dt>
+            <dd>
+              <div className="chips">
+                {u.groups.length === 0 && !can('groups.write') && <span className="chip muted">{t('ui.common.none')}</span>}
+                {u.groups.map((g) => (
+                  <span key={g.id} className="chip">{g.name}
+                    {can('groups.write') && <button type="button" aria-label={t('ui.person.remove_from_group', { group: g.name })} disabled={removeGroup.isPending}
+                      onClick={() => { if (confirm(t('ui.common.confirm_remove_member', { member: u.username, group: g.name }))) removeGroup.mutate(g.name) }}>×</button>}
+                  </span>
+                ))}
+              </div>
+              {can('groups.write') && candidateGroups.length > 0 && (
+                <form className="inline" style={{ marginTop: 8 }} onSubmit={(e) => { e.preventDefault(); if (pickGroup) addGroup.mutate(pickGroup) }}>
+                  <select className="input" value={pickGroup} onChange={(e) => setPickGroup(e.target.value)} aria-label={t('ui.person.add_to_group')}>
+                    <option value="">{t('ui.person.add_to_group')}</option>
+                    {candidateGroups.map((g) => <option key={g.id} value={g.name}>{g.name}</option>)}
+                  </select>
+                  <button type="submit" className="btn" disabled={!pickGroup || addGroup.isPending}>{t('ui.common.add')}</button>
+                </form>
+              )}
+            </dd>
+            <dt>{t('ui.person.security')}</dt>
+            <dd><span className="al">{u.effective_security.assurance}</span> <span className="muted">· {t('ui.person.security_summary', { bindings: u.effective_security.bindings, recovery: u.effective_security.recovery_paths })}</span></dd>
+          </dl>
+          <div className="section">
+            <h3>{t('ui.person.methods')}</h3>
+            <div className="list">
+              {u.bindings.length === 0 && <div><span className="muted">{t('ui.person.methods_empty')}</span></div>}
+              {u.bindings.map((b) => (
+                <div key={b.id}>
+                  <span><b>{b.label || b.method}</b><br />
+                    <span className="muted">{t('ui.person.binding_meta', { properties: (b.properties ?? []).join(', ') || b.method, created: f.relDay(b.created_at), used: f.relDay(b.last_used_at) })}</span></span>
+                  <span className="actions">
+                    <span className="al">{b.state === 'active' ? (b.assurance ?? u.effective_security.assurance) : t(`ui.state.${b.state}`)}</span>
+                    {can('credentials.write') && b.state === 'active' && (
+                      <button type="button" className="btn quiet danger" disabled={revoke.isPending}
+                        onClick={() => { if (confirm(t('ui.common.confirm_revoke', { what: b.label || b.method }))) revoke.mutate(b.id) }}>{t('ui.person.revoke')}</button>
+                    )}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+          {why.data && (
+            <div className="section">
+              <h3>{t('ui.person.why_title', { name: name.split(' ')[0], resource: rid })}</h3>
+              <WhyChain ex={why.data} />
+            </div>
+          )}
+          <div className="section">
+            <h3>{t('ui.person.recent')}</h3>
+            <div className="list">
+              {u.recent.length === 0 && <div><span className="muted">{t('ui.person.recent_empty')}</span></div>}
+              {u.recent.map((r) => (
+                <div key={r.seq}>
+                  <span>{r.action} · <span className="mono">{r.target.type}:{r.target.id}</span>{r.outcome !== 'ok' && <> · {t(`ui.audit.outcome.${r.outcome}`)}</>}{typeof r.detail?.reason === 'string' && <span className="muted"> · {r.detail.reason}</span>}</span>
+                  <span className="muted num">{f.relDay(r.ts)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+    </Drawer>
+  )
+}

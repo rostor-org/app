@@ -46,14 +46,12 @@ export interface Session {
 }
 
 export interface Summary {
-  active: number
-  suspended: number
-  applicants: number
-  service_accounts: number // ASSUMED name
+  people: { active: number; suspended: number; applicants: number; service_accounts: number }
   groups: number
   grants: number
-  devices: Record<string, number> // by lifecycle; ASSUMED keys trusted|quarantined|degraded|…
-  oldest_snapshot_age_seconds: number | null // ASSUMED name
+  devices: Record<string, number> // by lifecycle
+  offline_points: number
+  oldest_snapshot_age_seconds: number | null
 }
 
 export interface List<T> {
@@ -90,6 +88,7 @@ export interface Binding {
   method: string
   properties: string[]
   label: string
+  assurance?: string
   created_at: string
   last_used_at: string | null
   state: string
@@ -101,7 +100,12 @@ export interface EffectiveSecurity {
   recovery_paths: number
 }
 
-export interface UserDetail extends User {
+// The detail body omits the list's `methods` and `last_sign_in`; bindings and
+// `recent` carry that information instead.
+export interface UserDetail extends Omit<User, 'methods' | 'last_sign_in' | 'groups'> {
+  groups: Array<GroupRef & { direct?: boolean }>
+  methods?: MethodRef[]
+  last_sign_in?: LastSignIn | null
   bindings: Binding[]
   effective_security: EffectiveSecurity
   recent: AuditRow[]
@@ -117,14 +121,17 @@ export interface Group {
 }
 
 export interface Member {
-  kind: string // user | service | group
+  kind: string // principal | group
   id: string
   username?: string
   name?: string
   display_name?: string
+  state?: string
 }
 
-export interface GroupDetail extends Group {
+export interface GroupDetail extends Omit<Group, 'member_count' | 'grant_count'> {
+  member_count?: number
+  grant_count?: number
   members: Member[]
   grants: Grant[]
 }
@@ -163,14 +170,14 @@ export interface Device {
 export interface AuditRow {
   seq: number
   ts: string
-  actor: string
+  actor: { kind: string; id: string }
   action: string
-  target: string
+  target: { type: string; id: string }
   credential_type: string
   assurance: string
   outcome: string
   detail: Record<string, unknown> | null
-  correlation_id: string
+  correlation_id?: string
 }
 
 export interface AuditPage {
@@ -248,7 +255,7 @@ export interface UpdateState {
 export interface SystemInfo {
   version: string
   tenant: { id: string; name: string }
-  listeners: Array<string | { name?: string; addr: string }> // ASSUMED: string or {name,addr}
+  listeners?: Array<string | { name?: string; addr: string }> // not emitted yet
   db: { size_bytes: number; engine?: string }
   uptime_seconds: number
   ca: { subject: string; not_after: string }
@@ -266,6 +273,36 @@ export interface Plugin {
   masters: string[]
   scopes: string[]
   state: string
+}
+
+// ---- write bodies (internal/api/handlers.go) --------------------------------
+
+export interface CreateUser {
+  username: string
+  display_name: Record<string, string> // {en: "…"}
+  state?: string
+}
+export interface EnrollBinding {
+  method: string // "password"
+  label?: string
+  fields: Record<string, string>
+}
+export interface CreateGroup {
+  name: string
+  display_name: Record<string, string>
+}
+export interface MemberChange {
+  member_kind: 'principal' | 'group'
+  member: string // username, principal id, or group name
+}
+export interface CreateGrant {
+  subject_kind: 'principal' | 'group'
+  subject: string
+  role: string
+  resource_type: string
+  resource_id: string
+  condition?: string
+  expires_at?: string | null
 }
 
 export interface EnrollmentToken {
@@ -305,11 +342,17 @@ export interface Api {
   summary(): Promise<Summary>
   users(q?: string): Promise<List<User>>
   user(id: string): Promise<UserDetail>
+  createUser(body: CreateUser): Promise<Principal>
   setUserState(id: string, state: string): Promise<void>
+  enrollBinding(id: string, body: EnrollBinding): Promise<Binding>
   revokeBinding(id: string, bid: string): Promise<void>
   groups(q?: string): Promise<List<Group>>
   group(name: string): Promise<GroupDetail>
+  createGroup(body: CreateGroup): Promise<Group>
+  addMember(name: string, body: MemberChange): Promise<void>
+  removeMember(name: string, body: MemberChange): Promise<void>
   grants(q?: string): Promise<List<Grant>>
+  createGrant(body: CreateGrant): Promise<Grant>
   revokeGrant(id: string): Promise<void>
   devices(q?: string): Promise<List<Device>>
   enrollmentToken(resourceType: string, ttlSeconds: number): Promise<EnrollmentToken>

@@ -1,9 +1,10 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
-// base './' so the Go binary can serve dist/ from any path prefix.
+// Served at the root by the Go binary, which falls back to index.html for
+// unknown paths, so history routing and deep links work.
 export default defineConfig({
-  base: './',
+  base: '/',
   plugins: [react()],
   build: { outDir: 'dist', emptyOutDir: true, sourcemap: false },
   server: {

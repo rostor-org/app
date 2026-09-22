@@ -160,3 +160,16 @@ tr.row td .rowlink{all:unset;cursor:pointer;font-weight:600}
   .ev{grid-template-columns:60px 1fr;grid-template-rows:auto auto}
   .ev .outcome{grid-column:2}
 }
+/* forms in drawers */
+.field{margin:12px 0}
+.field label{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:5px;font-weight:600}
+.field .input{width:100%;max-width:none}
+.field small{display:block;margin-top:4px;font-size:12px}
+select.input{appearance:auto}
+.inline{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.inline .input{flex:1;min-width:120px}
+.chip button{all:unset;cursor:pointer;margin-left:6px;color:var(--muted);font-size:12px;line-height:1}
+.chip button:hover{color:var(--bad)}
+.chip button:focus-visible{outline:2px solid var(--focus);outline-offset:1px;border-radius:2px}
+.token{font-family:var(--font-mono);font-size:13px;width:100%;max-width:none}
+.note{font-size:12px;color:var(--muted);border-left:3px solid var(--signal);padding:6px 10px;margin:0 0 12px;background:var(--bg-2);border-radius:0 6px 6px 0}
