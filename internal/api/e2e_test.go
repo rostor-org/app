@@ -264,6 +264,13 @@ func TestWindowsLogonSlice(t *testing.T) {
 	if why["decision"] != "ALLOW" || len(why["candidates"].([]any)) != 1 {
 		t.Fatalf("why: %v", why)
 	}
+	// Why for a suspended person still has a constant shape (empty lists, not null).
+	h.adminCall("POST", "/v1/admin/users/dana/state", map[string]any{"state": "suspended"})
+	whyS := h.adminCall("GET", "/v1/admin/why?principal=dana&action=logon&resource_type=workstation&resource_id=WS-TEST", nil)
+	if c, ok := whyS["candidates"].([]any); !ok || len(c) != 0 || whyS["groups"] == nil {
+		t.Fatalf("why (suspended) shape: %v", whyS)
+	}
+	h.adminCall("POST", "/v1/admin/users/dana/state", map[string]any{"state": "active"})
 	// Audit chain intact and every emitted code renderable.
 	if bad, err := audit.VerifyChain(h.ctx, h.db, h.tenantID); err != nil || bad != 0 {
 		t.Fatalf("audit chain: bad=%d err=%v", bad, err)

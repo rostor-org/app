@@ -20,20 +20,21 @@ export function WhyChain({ ex }: { ex: Explanation }) {
   const f = useFormat()
   const steps: Step[] = []
   const reasons = ex.reason ?? []
+  const candidates = ex.candidates ?? []
   const stateFail = reasons.find((r) => r.code.startsWith('principal.'))
   const failingCode = reasons.find((r) => r.code !== 'grant.matched')
 
   if (stateFail) {
     steps.push({ key: 'state', ok: false, text: reasonText(t, stateFail), note: t('ui.why.suspension_note') })
-    const n = ex.candidates.length
+    const n = candidates.length
     steps.push({ key: 'skipped', ok: null, text: t('ui.why.grants_not_considered'), note: n ? t('ui.why.candidates_note', { n }) : undefined })
   } else {
     steps.push({ key: 'state', ok: true, text: t('ui.why.not_suspended'), note: t('ui.why.suspension_note') })
     for (const [group, path] of Object.entries(ex.groups ?? {})) {
       steps.push({ key: `g:${group}`, ok: true, text: t('ui.why.member_of', { principal: ex.principal, group }), note: t('ui.why.member_path', { path: path.join(' → ') }) })
     }
-    const matched = ex.candidates.find((c) => c.matched) ?? ex.candidates[0]
-    for (const c of ex.candidates) {
+    const matched = candidates.find((c) => c.matched) ?? candidates[0]
+    for (const c of candidates) {
       const g = c.grant
       const resource = `${g.resource_type}:${g.resource_id}`
       const isMain = c === matched
@@ -52,7 +53,7 @@ export function WhyChain({ ex }: { ex: Explanation }) {
         }
       }
     }
-    if (ex.candidates.length === 0 && failingCode) {
+    if (candidates.length === 0 && failingCode) {
       steps.push({ key: 'none', ok: false, text: reasonText(t, failingCode) })
     }
   }
@@ -72,7 +73,7 @@ export function WhyChain({ ex }: { ex: Explanation }) {
           </li>
         ))}
       </ol>
-      <div className="asof">{t('ui.why.as_of', { time: f.clock(ex.as_of), n: ex.candidates.length })}</div>
+      <div className="asof">{t('ui.why.as_of', { time: f.clock(ex.as_of), n: candidates.length })}</div>
     </div>
   )
 }

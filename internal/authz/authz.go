@@ -140,7 +140,10 @@ type decided struct {
 func (e *Engine) decide(ctx context.Context, q directory.Querier, tenantID string, p *directory.Principal, action, resourceType, resourceID string, pres Presented, explain bool) (*decided, error) {
 	now := time.Now().UTC()
 	d := &Decision{AsOf: now, Decision: "DENY"}
-	ex := &Explanation{Principal: p.ID, Action: action, Resource: resourceType + ":" + resourceID}
+	// Empty, never nil: an early DENY (suspension) must still serialise as
+	// [] so clients can treat the shape as constant.
+	ex := &Explanation{Principal: p.ID, Action: action, Resource: resourceType + ":" + resourceID,
+		Groups: map[string][]string{}, Candidates: []Candidate{}}
 	res := &decided{Decision: d, explanation: ex}
 	defer func() { ex.Decision = *d }()
 
@@ -176,7 +179,9 @@ func (e *Engine) decide(ctx context.Context, q directory.Querier, tenantID strin
 	if err != nil {
 		return nil, err
 	}
-	ex.Groups = paths
+	if paths != nil {
+		ex.Groups = paths
+	}
 	subjects := []directory.Subject{{Kind: "principal", ID: p.ID}}
 	for g := range paths {
 		subjects = append(subjects, directory.Subject{Kind: "group", ID: g})
