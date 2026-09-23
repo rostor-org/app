@@ -19,7 +19,7 @@ Ubuntu with signed in-product updates.
 The design authority is the Agent Build Spec in the separate `project`
 repository; code follows it, and where they disagree the spec wins.
 
-## Licence
+## License
 
 [PolyForm Noncommercial 1.0.0](LICENSE): free to use, modify and share for
 noncommercial purposes, which includes non-profits, schools, clubs,
