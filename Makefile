@@ -48,6 +48,7 @@ dist: console
 	@ls -la dist
 
 release: dist
+	git pull --rebase --quiet
 	gh release create $(VERSION) --repo $(REPO) --title "Rostor $(VERSION)" --notes "$(NOTES)" dist/rostor-linux-amd64 dist/rostor-linux-arm64 dist/rostor-agent-windows-amd64.exe
 	URLMAP="$$(gh api repos/$(REPO)/releases/tags/$(VERSION) --jq '[.assets[] | "\(.name)=\(.url)"] | join(",")')"; \
 	  bin/rostor-release manifest --key $(SIGNKEY) --channel $(CHANNEL) --version $(VERSION) --dir dist --url-map "$$URLMAP" --notes "$(NOTES)" > dist/manifest-$(CHANNEL).json
