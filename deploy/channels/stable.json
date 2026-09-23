@@ -1,24 +1,24 @@
 {
   "channel": "stable",
-  "version": "v0.1.1",
-  "published": "2026-09-22T19:35:55.073491Z",
-  "notes": "Admin console (embedded), console sign-in and sessions, live event stream, read endpoints, official brand mark on the Windows tile.",
+  "version": "v0.1.2",
+  "published": "2026-09-23T12:57:28.76801Z",
+  "notes": "Fix: opening a suspended person in the console crashed (Why derivation returned null lists).",
   "files": {
     "agent-windows-amd64": {
-      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/582102360",
-      "sha256": "326faf10a2c89d6482a7f4f604097c5ea96d286117f1f0f4196fc6f00bb49619",
+      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/583779226",
+      "sha256": "2ae2e8b160d4644d78f0bcfcc04bf2e1aacbd99f06c390baf5431f2251bafd2d",
       "size": 7787520
     },
     "linux-amd64": {
-      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/582102353",
-      "sha256": "d9cdb6c9f9aa0ccc03a8bfff1810d6b8f9d17e5338aa0f574c2976e491fbc340",
+      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/583779228",
+      "sha256": "fa2ed0c1a68573081b4fb052791ff03a9735dfd8457f8df49b70fab3202d730e",
       "size": 21172384
     },
     "linux-arm64": {
-      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/582102354",
-      "sha256": "e565481adb52d3e715668ebe1b9fcb4a22005caca67aca2e498e24cf38014dd8",
+      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/583779227",
+      "sha256": "c82ed87c5ea6126fbdf1e25753bfed07f7c9cce32094c975e7c5c8cbb17d6e7c",
       "size": 19857568
     }
   },
-  "signature": "FGDCRn6Xet0eDZTWQVdCpR0jPSvZe/Ju6L8HCjqK92p/SQlNultTjKs923yrxz2QN+tRIpg6yVHr/TKmlaTUBA=="
+  "signature": "aT04IXCeP9hTvX70RfOY/y8VLt2CJcJhSVwOHNj4+MXdPIxF4wksxq6WO5drmnMD3+jdBMtJL00fnoioEKFGCg=="
 }
