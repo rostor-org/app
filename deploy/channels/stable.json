@@ -1,24 +1,24 @@
 {
   "channel": "stable",
-  "version": "v0.4.3",
-  "published": "2026-09-24T17:25:30.840109Z",
-  "notes": "Fix: switching between badge and password sign-in could fail with 'a request is already pending'; shorter method links.",
+  "version": "v0.4.4",
+  "published": "2026-09-24T17:34:17.094577Z",
+  "notes": "Fix: dismissing a password manager's passkey prompt could leave the sign-in page stuck; the prompt is now cancellable and times out.",
   "files": {
     "agent-windows-amd64": {
-      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/586448083",
-      "sha256": "7813a4eb2c2106161867dbb082a76d8ef408ced92c6d1e16944981fff1b7b780",
+      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/586464380",
+      "sha256": "74c6ea106b467d5483066d641873d7036fd7897c426ce186a18a5dd004b8ae78",
       "size": 7793152
     },
     "linux-amd64": {
-      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/586448082",
-      "sha256": "dd719212be81001383982b7fea99825d5ccac699a4b68eaae21906503882e9d1",
+      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/586464379",
+      "sha256": "6a5ac45d405bc57931af42c96fa3d3aab7a1cadaefc7184afbcc14cf9cff5a38",
       "size": 23838880
     },
     "linux-arm64": {
-      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/586448084",
-      "sha256": "8967c351cedf3538297c678e31d1486051d1e303acbb3168a1d120a19cfcc53c",
+      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/586464384",
+      "sha256": "5c12701884c42406781b8bc191c361327faa837a0b66d4b43c184d17dd0d8493",
       "size": 22413472
     }
   },
-  "signature": "+4bhLz/+KQ2BjA5aTMFOtDtF9XACRgN5f9EpZ9swB0Hle90Tsz/m5VffeAWaSBMDXL/RvhhWSFYPjZ3GJqkBBQ=="
+  "signature": "I4gt9n/FiZTR3LwDQ4DYy4ruEuoah3zG/8fUdEduIxbRFVP8gBuu8wBkJX2acf9y3vvDNBHQ2dvao/GiXgDDDw=="
 }
