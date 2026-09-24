@@ -32,6 +32,10 @@ lint-strings:
 #   creates the GitHub release, uploads the binaries, signs a manifest whose
 #   file URLs are the GitHub asset API URLs (work for private and public
 #   repos), uploads the manifest, and updates deploy/channels/stable.json.
+#   The Windows install bundle (rostor-windows-amd64.zip) is built and
+#   attached to the same release by the CI `windows-bundle` job on the tag
+#   push; it is never part of dist/ or the manifest (the updater is for the
+#   core only).
 REPO      ?= rostor-org/app
 CHANNEL   ?= stable
 SIGNKEY   ?= $(HOME)/.rostor/release-signing.key
@@ -50,9 +54,12 @@ dist: console
 release: dist
 	git pull --rebase --quiet
 	gh release create $(VERSION) --repo $(REPO) --title "Rostor $(VERSION)" --notes "$(NOTES)" dist/rostor-linux-amd64 dist/rostor-linux-arm64 dist/rostor-agent-windows-amd64.exe
+	rm -f dist/*.zip
 	URLMAP="$$(gh api repos/$(REPO)/releases/tags/$(VERSION) --jq '[.assets[] | "\(.name)=\(.url)"] | join(",")')"; \
 	  bin/rostor-release manifest --key $(SIGNKEY) --channel $(CHANNEL) --version $(VERSION) --dir dist --url-map "$$URLMAP" --notes "$(NOTES)" > dist/manifest-$(CHANNEL).json
 	gh release upload $(VERSION) --repo $(REPO) --clobber dist/manifest-$(CHANNEL).json
 	cp dist/manifest-$(CHANNEL).json deploy/channels/$(CHANNEL).json
 	git add deploy/channels/$(CHANNEL).json && git commit -q -m "Release $(VERSION) to $(CHANNEL)" && git push
 	@echo "released $(VERSION) to channel $(CHANNEL)"
+	@echo "the Windows install bundle (rostor-windows-amd64.zip) is built by CI and attached to the $(VERSION) release by the windows-bundle job:"
+	@echo "  gh run list --repo $(REPO) --workflow CI --branch $(VERSION)"

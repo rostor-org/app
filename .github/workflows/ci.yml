@@ -88,3 +88,60 @@ jobs:
         with:
           name: RostorCredProv-${{ github.sha }}
           path: windows/credprov/out/RostorCredProv.dll
+
+  # Assembles rostor-windows-amd64.zip (agent + credential provider + install
+  # scripts). Runs on every push so the artifact is always available; on a
+  # v* tag it is also attached to the GitHub release that `make release`
+  # creates (the core's signed manifest deliberately does not list it).
+  windows-bundle:
+    name: Windows install bundle
+    runs-on: ubuntu-latest
+    needs: credprov
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Cross-build agent
+        run: |
+          VERSION="${GITHUB_REF_NAME}"
+          case "$GITHUB_REF" in refs/tags/v*) ;; *) VERSION="dev-${GITHUB_SHA::12}";; esac
+          mkdir -p bundle
+          GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=$VERSION" \
+            -o bundle/rostor-agent.exe ./cmd/rostor-agent
+      - uses: actions/download-artifact@v4
+        with:
+          name: RostorCredProv-${{ github.sha }}
+          path: bundle
+      - name: Assemble zip
+        run: |
+          cp windows/install/install.ps1 windows/install/uninstall.ps1 windows/install/tile.bmp windows/install/README.txt bundle/
+          test -s bundle/RostorCredProv.dll
+          mkdir -p dist
+          (cd bundle && zip -X -r ../dist/rostor-windows-amd64.zip rostor-agent.exe RostorCredProv.dll install.ps1 uninstall.ps1 tile.bmp README.txt)
+          unzip -l dist/rostor-windows-amd64.zip
+          sha256sum dist/rostor-windows-amd64.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rostor-windows-amd64
+          path: dist/rostor-windows-amd64.zip
+      - name: Attach to the GitHub release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          # `make release` creates the release from Dan's machine; the tag can
+          # reach CI before the release exists, so wait for it a little.
+          for i in 1 2 3 4 5 6 7 8 9 10; do
+            if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+              gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber dist/rostor-windows-amd64.zip
+              echo "attached rostor-windows-amd64.zip to release $TAG"
+              exit 0
+            fi
+            echo "release $TAG does not exist yet (attempt $i/10); retrying in 30s"
+            sleep 30
+          done
+          echo "::warning::release $TAG not found after 5 minutes; not attached. Download the rostor-windows-amd64 artifact from this run and run: gh release upload $TAG rostor-windows-amd64.zip --clobber"

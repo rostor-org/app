@@ -3,6 +3,21 @@
   Installs the Rostor Windows logon slice: agent service + credential provider.
   Layout and registry keys are from docs/contracts/windows-logon.md §4.
 
+  One-command install from the release bundle (rostor-windows-amd64.zip),
+  elevated:
+
+    powershell -ExecutionPolicy Bypass -File .\install.ps1 -CoreUrl https://core:8443 -Token <enrollment token>
+
+.PARAMETER CoreUrl
+  Core base URL, e.g. https://core.example:8443. With -Token, enrolls this
+  workstation before the service is installed. Skipped (with a note) when
+  C:\ProgramData\Rostor\agent.json already exists, so re-running is safe.
+.PARAMETER Token
+  Single-use enrollment token minted by an admin (console → Devices).
+.PARAMETER CaFile
+  PEM file with the core CA, to verify the enrollment call itself. Without
+  it the enrollment call skips TLS verification (the agent's --insecure);
+  the CA returned in the enrollment response is pinned for everything after.
 .PARAMETER AgentExe
   Path to rostor-agent.exe (default: .\rostor-agent.exe next to this script).
 .PARAMETER CredProvDll
@@ -10,21 +25,26 @@
   step is skipped and only the agent is installed.
 .PARAMETER MockCore
   Run the service with `run --mock-core` (no core needed; identifier
-  "testuser" is allowed with any secret). Development only.
+  "testuser" is allowed with any secret). Development only; cannot be
+  combined with -CoreUrl/-Token.
 .PARAMETER SkipCredProv
   Install the agent only; do not touch System32 or the CP registry keys.
+.PARAMETER ExcludeMicrosoftAccount
+  Hide the "Microsoft account" tile from Sign-in options. The local
+  password tile is deliberately left in place as the fallback.
 
   Must run elevated. Never touches existing local accounts; never filters the
   built-in password provider.
 #>
 [CmdletBinding()]
 param(
+    [string]$CoreUrl = '',
+    [string]$Token = '',
+    [string]$CaFile = '',
     [string]$AgentExe = '',
     [string]$CredProvDll = '',
     [switch]$MockCore,
     [switch]$SkipCredProv,
-    # Hide the "Microsoft account" tile from Sign-in options. The local
-    # password tile is deliberately left in place as the fallback.
     [switch]$ExcludeMicrosoftAccount
 )
 
@@ -38,17 +58,33 @@ if (-not $CredProvDll) { $CredProvDll = Join-Path $scriptDir 'RostorCredProv.dll
 
 $InstallDir  = 'C:\Program Files\Rostor'
 $ProgramData = 'C:\ProgramData\Rostor'
+$AgentJson   = Join-Path $ProgramData 'agent.json'
 $ServiceName = 'RostorAgent'
 $Clsid       = '{7A4C2E10-5B0D-4F4E-9C1B-3E2D7F1A6B01}'
 $CpKey       = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Authentication\Credential Providers\$Clsid"
 $ClsidKey    = "HKLM:\SOFTWARE\Classes\CLSID\$Clsid"
 $DllTarget   = Join-Path $env:SystemRoot 'System32\RostorCredProv.dll'
 
+# Collected for the final summary.
+$summary = New-Object System.Collections.ArrayList
+
 $principal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
 if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
     throw 'install.ps1 must run elevated.'
 }
 if (-not (Test-Path $AgentExe)) { throw "agent binary not found: $AgentExe" }
+
+# --- argument checks (before touching anything) --------------------------
+if ($MockCore -and ($CoreUrl -or $Token)) {
+    throw '-MockCore cannot be combined with -CoreUrl/-Token.'
+}
+if (($CoreUrl -and -not $Token) -or ($Token -and -not $CoreUrl)) {
+    throw '-CoreUrl and -Token must be given together.'
+}
+if ($CoreUrl -and $CoreUrl -notmatch '^https://') {
+    throw "-CoreUrl must be an https:// URL (got $CoreUrl)."
+}
+if ($CaFile -and -not (Test-Path $CaFile)) { throw "CA file not found: $CaFile" }
 
 # --- state directory with the §4 ACLs -------------------------------------
 # SYSTEM: full; Administrators: full on the directory (they run enroll and
@@ -71,8 +107,54 @@ if ($existing) {
 }
 New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
 Copy-Item -Force $AgentExe (Join-Path $InstallDir 'rostor-agent.exe')
+$agent = Join-Path $InstallDir 'rostor-agent.exe'
 $tile = Join-Path (Split-Path -Parent $PSCommandPath) 'tile.bmp'
 if (Test-Path $tile) { Copy-Item -Force $tile (Join-Path $InstallDir 'tile.bmp') }
+
+# --- enrollment (before the service starts, so it comes up enrolled) -------
+# The agent refuses to overwrite an existing enrollment; we check first so a
+# re-run with the same flags is a no-op rather than an error.
+if ($MockCore) {
+    [void]$summary.Add('core:      mock (development only; identifier "testuser" is allowed with any secret)')
+} elseif (Test-Path $AgentJson) {
+    $cfg = Get-Content -Raw $AgentJson | ConvertFrom-Json
+    if ($CoreUrl) {
+        Write-Host "already enrolled ($AgentJson exists, core $($cfg.core_url)); skipping enrollment"
+        if ($cfg.core_url.TrimEnd('/') -ne $CoreUrl.TrimEnd('/')) {
+            Write-Warning "existing enrollment points at $($cfg.core_url), not $CoreUrl. To re-enroll: .\uninstall.ps1 -Purge, then run install.ps1 again."
+        }
+    }
+    [void]$summary.Add("core:      $($cfg.core_url) (enrolled as $($cfg.device_id), kept)")
+} elseif ($CoreUrl) {
+    Write-Host "enrolling with $CoreUrl"
+    $enrollArgs = "enroll --core-url `"$CoreUrl`" --token `"$Token`""
+    if ($CaFile) {
+        $enrollArgs += " --ca-file `"$((Resolve-Path $CaFile).Path)`""
+    } else {
+        # The core's CA is not known yet: it arrives in the enrollment
+        # response and is pinned from then on. The token is single-use.
+        $enrollArgs += ' --insecure'
+    }
+    # The agent reports failures on stderr; capture both streams to files so
+    # $ErrorActionPreference = 'Stop' does not turn stderr into an exception
+    # before we can show the message (and so no cmd.exe quoting is involved).
+    $outFile = Join-Path $env:TEMP 'rostor-enroll.out'
+    $errFile = Join-Path $env:TEMP 'rostor-enroll.err'
+    $p = Start-Process -FilePath $agent -ArgumentList $enrollArgs -Wait -PassThru -NoNewWindow `
+        -RedirectStandardOutput $outFile -RedirectStandardError $errFile
+    $out = ((Get-Content -Raw $outFile -ErrorAction SilentlyContinue) + (Get-Content -Raw $errFile -ErrorAction SilentlyContinue))
+    Remove-Item $outFile, $errFile -Force -ErrorAction SilentlyContinue
+    if ($null -eq $out) { $out = '' }
+    if ($p.ExitCode -ne 0 -or -not (Test-Path $AgentJson)) {
+        throw "enrollment failed (exit $($p.ExitCode)); nothing installed yet beyond the binary.`n$($out.Trim())"
+    }
+    Write-Host $out.Trim()
+    $cfg = Get-Content -Raw $AgentJson | ConvertFrom-Json
+    [void]$summary.Add("core:      $($cfg.core_url) (enrolled as $($cfg.device_id))")
+} else {
+    Write-Warning "not enrolled: no $AgentJson and no -CoreUrl/-Token. The service will answer agent.not_enrolled at logon until you enroll."
+    [void]$summary.Add('core:      NOT ENROLLED - run install.ps1 -CoreUrl https://core:8443 -Token <token>')
+}
 
 # Shared-workstation sign-in: never show the last user's tile. On a workgroup
 # machine this is also what makes Windows 10 offer the "Other user" form,
@@ -88,29 +170,42 @@ if ($ExcludeMicrosoftAccount) {
 
 $svcArgs = @('install-service')
 if ($MockCore) { $svcArgs += '--mock-core' }
-& (Join-Path $InstallDir 'rostor-agent.exe') @svcArgs
+& $agent @svcArgs
 if ($LASTEXITCODE -ne 0) { throw "install-service failed ($LASTEXITCODE)" }
 
 $svc = Get-Service -Name $ServiceName
 $svc.WaitForStatus('Running', [TimeSpan]::FromSeconds(15))
 Write-Host "service $ServiceName is $($svc.Status)"
+[void]$summary.Add("service:   $ServiceName $($svc.Status) ($agent)")
 
 # Prove the pipe answers before registering anything into LogonUI.
 # pipe-test prints its timing on stderr, which PowerShell would otherwise
 # turn into a terminating error under $ErrorActionPreference = 'Stop'.
-$ui = & cmd.exe /c "`"$InstallDir\rostor-agent.exe`" pipe-test --op ui 2>nul" | Out-String
+$ui = & cmd.exe /c "`"$agent`" pipe-test --op ui 2>nul" | Out-String
 if ($LASTEXITCODE -ne 0 -or $ui -notmatch '"ok":\s*true') {
     throw "agent pipe did not answer the ui op; not registering the credential provider.`n$ui"
 }
 Write-Host 'agent pipe answers ui op'
 
+function Write-Summary {
+    Write-Host ''
+    Write-Host '==> Rostor install summary'
+    foreach ($line in $summary) { Write-Host "  $line" }
+    Write-Host "  logs:      $ProgramData\logs\agent.log, credprov.log"
+    Write-Host '  uninstall: .\uninstall.ps1 [-Purge]'
+}
+
 # --- credential provider ----------------------------------------------------
 if ($SkipCredProv) {
     Write-Host 'skipping credential provider (-SkipCredProv)'
+    [void]$summary.Add('tile:      not installed (-SkipCredProv)')
+    Write-Summary
     return
 }
 if (-not (Test-Path $CredProvDll)) {
     Write-Host "credential provider DLL not found at $CredProvDll; agent-only install"
+    [void]$summary.Add("tile:      not installed (no DLL at $CredProvDll)")
+    Write-Summary
     return
 }
 
@@ -137,3 +232,5 @@ Set-ItemProperty -Path "$ClsidKey\InprocServer32" -Name 'ThreadingModel' -Value 
 
 Write-Host "credential provider registered ($Clsid); DLL at $DllTarget"
 Write-Host 'The built-in password provider is untouched. Lock the workstation to see the Rostor tile.'
+[void]$summary.Add("tile:      registered ($DllTarget); lock the workstation to see it")
+Write-Summary

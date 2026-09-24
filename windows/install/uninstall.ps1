@@ -6,8 +6,13 @@
   are kept unless -Purge.
 
 .PARAMETER Purge
-  Also delete C:\ProgramData\Rostor. Local accounts the agent created are
-  never deleted (contract §3).
+  Also delete C:\ProgramData\Rostor (enrollment, ledger, logs). After a
+  purge the machine is stock; a later install.ps1 -CoreUrl/-Token enrolls
+  it afresh with a new token. Local accounts the agent created are never
+  deleted (contract §3).
+
+  Bundle usage, elevated:
+    powershell -ExecutionPolicy Bypass -File .\uninstall.ps1 [-Purge]
 #>
 [CmdletBinding()]
 param(
@@ -87,3 +92,13 @@ if ($Purge) {
     Write-Host "kept $ProgramData (enrollment, ledger, logs); use -Purge to remove"
 }
 Write-Host 'Local accounts created by the agent are left in place by design.'
+
+Write-Host ''
+Write-Host '==> Rostor uninstall summary'
+Write-Host '  tile:      removed (registry keys + DLL)'
+Write-Host "  service:   $ServiceName removed; $InstallDir removed"
+if ($Purge) {
+    Write-Host "  state:     $ProgramData purged (re-enroll with install.ps1 -CoreUrl ... -Token ...)"
+} else {
+    Write-Host "  state:     $ProgramData kept (install.ps1 reuses the enrollment)"
+}

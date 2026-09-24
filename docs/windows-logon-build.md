@@ -35,25 +35,63 @@ and links `windows\credprov\out\RostorCredProv.dll` (x64 Release). No
 The credprov has no third-party code: `json.cpp` is a ~150-line flat-object
 parser sufficient for the contract §2 messages.
 
-## Install
+## Install from the release bundle (the normal path)
 
-Copy `rostor-agent.exe`, `RostorCredProv.dll`, `install.ps1` and
-`uninstall.ps1` into one directory on the workstation, then elevated:
+Every GitHub release carries `rostor-windows-amd64.zip` (agent, credential
+provider DLL, `install.ps1`, `uninstall.ps1`, `tile.bmp`, `README.txt`); CI
+also keeps the same zip as the `rostor-windows-amd64` artifact of every
+push (`gh run download --name rostor-windows-amd64`). Mint an enrollment
+token in the console, unzip on the workstation, then in an elevated
+PowerShell:
 
 ```powershell
-.\install.ps1                 # real core: enroll first (below), then install
+powershell -ExecutionPolicy Bypass -File .\install.ps1 -CoreUrl https://core.example:8443 -Token <enrollment token>
+```
+
+That one command enrolls the workstation (`rostor-agent enroll`, run
+before the service starts), installs the `RostorAgent` service, sets the
+sign-in policies, copies the DLL to `System32` and registers the credential
+provider, then prints a summary (core, device id, service state, tile). The
+enrollment call has no CA to verify against yet, so it runs with the agent's
+`--insecure` for that single call; the CA in the enrollment response is
+pinned for everything afterwards. Pass `-CaFile core-ca.pem` (the appliance's
+`/var/lib/rostor/ca.crt`) to verify the enrollment call too.
+
+Re-running is safe: when `C:\ProgramData\Rostor\agent.json` already exists
+the enrollment step is skipped (the script says so, and warns if the existing
+enrollment points at a different core), and the service/DLL/keys are
+refreshed. To re-enroll: `.\uninstall.ps1 -Purge`, then install again with a
+new token. Other switches:
+
+```powershell
 .\install.ps1 -MockCore       # development: identifier "testuser" is ALLOWed with any secret;
                               # badge 1234567890 → ALLOW as testuser, 5555555555 → needs PIN 2468,
-                              # any other badge → auth.failed
+                              # any other badge → auth.failed (cannot combine with -CoreUrl)
 .\install.ps1 -SkipCredProv   # agent + service only
+.\install.ps1 -ExcludeMicrosoftAccount   # hide the "Microsoft account" tile (password tile kept)
+.\install.ps1                 # no flags: keeps an existing enrollment, otherwise warns "not enrolled"
 ```
 
 `install.ps1` refuses to register the credential provider unless the agent
 service is running and answers the pipe `ui` op. It never touches the
 built-in password provider.
 
-Enrollment (once, before a non-mock install, or afterwards followed by
-`Restart-Service RostorAgent`):
+The bundle is assembled by the `windows-bundle` job in
+`.github/workflows/ci.yml`: it downloads the DLL built by the `credprov`
+job (Windows runner, MSVC), cross-builds the agent with `setup-go`, zips the
+six files, uploads the artifact, and on a `v*` tag attaches the zip to the
+GitHub release with `gh release upload --clobber` (waiting up to five
+minutes for `make release` to create the release; if it still does not
+exist the job logs a warning and the zip stays available as the run
+artifact). The zip is not in the core's signed update manifest: the
+in-product updater is for the core only.
+
+## Install by hand (development)
+
+Copy `rostor-agent.exe`, `RostorCredProv.dll`, `install.ps1`, `uninstall.ps1`
+and `tile.bmp` into one directory on the workstation and run `install.ps1`
+as above. Manual enrollment (once, before a non-mock install, or afterwards
+followed by `Restart-Service RostorAgent`):
 
 ```powershell
 & 'C:\Program Files\Rostor\rostor-agent.exe' enroll --core-url https://core:8443 --token <enrollment token> [--ca-file core-ca.pem | --insecure]
@@ -63,7 +101,7 @@ Uninstall:
 
 ```powershell
 .\uninstall.ps1          # removes CP registry keys, DLL, service, Program Files; keeps C:\ProgramData\Rostor
-.\uninstall.ps1 -Purge   # also removes C:\ProgramData\Rostor (never local accounts)
+.\uninstall.ps1 -Purge   # also removes C:\ProgramData\Rostor (never local accounts); machine is stock afterwards
 ```
 
 ## Debugging
