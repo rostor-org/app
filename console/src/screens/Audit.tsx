@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { useInfiniteQuery, useMutation } from '@tanstack/react-query'
-import { api, type AuditRow } from '../api'
+import { api } from '../api'
 import { useT } from '../i18n/catalog'
 import { useFormat } from '../lib/format'
 import { useToast } from '../components/Toast'
-import { Empty, ErrorNote, Head, Loading, Pill } from '../components/bits'
+import { Empty, ErrorNote, Head, Loading } from '../components/bits'
+import { AuditEvent } from '../components/AuditEvent'
 
 const LIMIT = 50
 
@@ -58,7 +59,7 @@ export function Audit() {
       <div className="audit">
         {page.isPending && <Loading />}
         {!page.isPending && rows.length === 0 && <Empty code="ui.audit.empty" />}
-        {rows.map((r) => <Row key={r.seq} r={r} fresh={freshAbove !== null && r.seq > freshAbove} />)}
+        {rows.map((r) => <AuditEvent key={r.seq} r={r} fresh={freshAbove !== null && r.seq > freshAbove} />)}
       </div>
       {page.hasNextPage && (
         <div className="actions" style={{ marginTop: 12 }}>
@@ -66,27 +67,5 @@ export function Audit() {
         </div>
       )}
     </section>
-  )
-}
-
-function Row({ r, fresh }: { r: AuditRow; fresh: boolean }) {
-  const t = useT()
-  const f = useFormat()
-  const actor = r.actor.id
-  const ident = typeof r.detail?.identifier === 'string' ? r.detail.identifier : null
-  const reason = typeof r.detail?.reason === 'string' ? r.detail.reason : null
-  const outcome = t(`ui.audit.outcome.${r.outcome}`)
-  return (
-    <div className={fresh ? 'ev new' : 'ev'}>
-      <span className="t">{f.clock(r.ts)}</span>
-      <span className="mono">{r.action}</span>
-      <span className="what">
-        <b>{ident ?? actor}</b>{ident && ident !== actor && <span className="muted"> · {f.shortId(actor)}</span>}
-        {' '}<span className="mono">{r.target.type}:{r.target.id}</span>
-        {r.credential_type && <> · {r.credential_type}</>}
-        {r.assurance && <> · <span className="al">{r.assurance}</span></>}
-      </span>
-      <Pill value={r.outcome} className="outcome" label={reason ? `${outcome} · ${reason}` : outcome} />
-    </div>
   )
 }

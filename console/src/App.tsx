@@ -6,6 +6,7 @@ import { SessionProvider, useSession } from './auth/session'
 import { LiveProvider } from './live/LiveProvider'
 import { ToastProvider } from './components/Toast'
 import { Shell } from './components/Shell'
+import { MyAccount } from './screens/MyAccount'
 import { People } from './screens/People'
 import { Groups } from './screens/Groups'
 import { Access } from './screens/Access'
@@ -31,6 +32,13 @@ function Authed() {
   return <LiveProvider><Outlet /></LiveProvider>
 }
 
+/** Admin screens need at least one admin permission; a plain member is sent to My account. */
+function AdminOnly() {
+  const { isAdmin } = useSession()
+  if (!isAdmin) return <Navigate to="/me" replace />
+  return <Outlet />
+}
+
 function Title() {
   const t = useT()
   useEffect(() => { document.title = t('ui.app.title') }, [t])
@@ -48,17 +56,23 @@ const routes = [
           {
             element: <Shell />,
             children: [
-              { path: '/', element: <Navigate to="/people" replace /> },
-              { path: '/people', element: <People /> },
-              { path: '/people/:id', element: <People /> },
-              { path: '/groups', element: <Groups /> },
-              { path: '/groups/:name', element: <Groups /> },
-              { path: '/access', element: <Access /> },
-              { path: '/devices', element: <Devices /> },
-              { path: '/audit', element: <Audit /> },
-              { path: '/plugins', element: <Plugins /> },
-              { path: '/system', element: <System /> },
-              { path: '*', element: <Navigate to="/people" replace /> },
+              { path: '/', element: <Navigate to="/me" replace /> },
+              { path: '/me', element: <MyAccount /> },
+              {
+                element: <AdminOnly />,
+                children: [
+                  { path: '/people', element: <People /> },
+                  { path: '/people/:id', element: <People /> },
+                  { path: '/groups', element: <Groups /> },
+                  { path: '/groups/:name', element: <Groups /> },
+                  { path: '/access', element: <Access /> },
+                  { path: '/devices', element: <Devices /> },
+                  { path: '/audit', element: <Audit /> },
+                  { path: '/plugins', element: <Plugins /> },
+                  { path: '/system', element: <System /> },
+                ],
+              },
+              { path: '*', element: <Navigate to="/me" replace /> },
             ],
           },
         ],

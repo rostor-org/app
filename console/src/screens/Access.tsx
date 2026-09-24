@@ -1,4 +1,4 @@
-import { useCallback, useState, type FormEvent } from 'react'
+import { useCallback, useId, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, type CreateGrant, type Grant, type WhyQuery } from '../api'
 import { useT } from '../i18n/catalog'
@@ -76,13 +76,25 @@ export function Access() {
 
 const emptyGrant: CreateGrant = { subject_kind: 'group', subject: '', role: '', resource_type: '', resource_id: '', condition: '', expires_at: null }
 
+/** Role comes from GET /v1/admin/roles for the chosen resource type; free text when none are defined for it. */
 function NewGrantDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
   const t = useT()
   const qc = useQueryClient()
   const toast = useToast()
+  const typesId = useId()
   const [g, setG] = useState<CreateGrant>(emptyGrant)
   const [expires, setExpires] = useState('')
   const set = <K extends keyof CreateGrant>(k: K) => (e: { target: { value: string } }) => setG({ ...g, [k]: e.target.value })
+  const roles = useQuery({ queryKey: ['roles'], queryFn: () => api.roles(), enabled: open, staleTime: 60_000 })
+  const resourceTypes = [...new Set(roles.data?.items.map((r) => r.resource_type) ?? [])]
+  const rolesForType = roles.data?.items.filter((r) => r.resource_type === g.resource_type.trim()) ?? []
+  // Changing the resource type drops a role the new type does not define.
+  const setResourceType = (e: { target: { value: string } }) => {
+    const resource_type = e.target.value
+    const keep = (roles.data?.items ?? []).some((r) => r.resource_type === resource_type.trim() && r.name === g.role)
+    const anyForType = (roles.data?.items ?? []).some((r) => r.resource_type === resource_type.trim())
+    setG({ ...g, resource_type, role: keep || !anyForType ? g.role : '' })
+  }
   const create = useMutation({
     mutationFn: () => api.createGrant({
       ...g, subject: g.subject.trim(), role: g.role.trim(), resource_type: g.resource_type.trim(), resource_id: g.resource_id.trim(),
@@ -102,8 +114,15 @@ function NewGrantDrawer({ open, onClose }: { open: boolean; onClose: () => void 
         <SelectField labelCode="ui.access.subject_kind" value={g.subject_kind} onChange={set('subject_kind')}
           options={[['group', 'ui.access.subject_kind.group'], ['principal', 'ui.access.subject_kind.principal']]} />
         <Field labelCode="ui.access.subject_name" hintCode="ui.access.subject_hint" value={g.subject} onChange={set('subject')} required autoComplete="off" autoCapitalize="none" spellCheck={false} />
-        <Field labelCode="ui.access.role" value={g.role} onChange={set('role')} required autoComplete="off" autoCapitalize="none" spellCheck={false} />
-        <Field labelCode="ui.access.resource_type" value={g.resource_type} onChange={set('resource_type')} required autoComplete="off" autoCapitalize="none" spellCheck={false} />
+        <Field labelCode="ui.access.resource_type" hintCode="ui.access.resource_type_hint" value={g.resource_type} onChange={setResourceType} list={typesId} required autoComplete="off" autoCapitalize="none" spellCheck={false} />
+        <datalist id={typesId}>{resourceTypes.map((rt) => <option key={rt} value={rt} />)}</datalist>
+        {rolesForType.length > 0 ? (
+          <SelectField labelCode="ui.access.role" value={g.role} onChange={set('role')} required
+            options={[['', 'ui.access.role_pick'], ...rolesForType.map((r) => [r.name, undefined] as [string, undefined])]} />
+        ) : (
+          <Field labelCode="ui.access.role" hintCode={g.resource_type.trim() && roles.data ? 'ui.access.role_free_hint' : undefined} value={g.role} onChange={set('role')} required autoComplete="off" autoCapitalize="none" spellCheck={false} />
+        )}
+        {rolesForType.length > 0 && g.role && <p className="note">{t('ui.access.role_permissions', { permissions: rolesForType.find((r) => r.name === g.role)?.permissions.join(', ') ?? '' })}</p>}
         <Field labelCode="ui.access.resource_id" value={g.resource_id} onChange={set('resource_id')} required autoComplete="off" autoCapitalize="none" spellCheck={false} />
         <Field labelCode="ui.access.condition" hintCode="ui.access.condition_hint" className="input mono" value={g.condition ?? ''} onChange={set('condition')} autoComplete="off" spellCheck={false} />
         <Field labelCode="ui.access.expires" type="date" value={expires} onChange={(e) => setExpires(e.target.value)} />

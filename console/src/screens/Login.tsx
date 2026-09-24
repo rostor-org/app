@@ -1,27 +1,34 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router'
 import { useQuery } from '@tanstack/react-query'
-import { api, ApiError, type LoginResponse } from '../api'
+import { api, ApiError, type LoginResponse, type SetupRequest } from '../api'
 import { useT } from '../i18n/catalog'
 import { useSession } from '../auth/session'
 import { conditionalMediationAvailable, getPasskey, isCancelled, passkeysSupported } from '../auth/webauthn'
 import { Mark } from '../components/Icons'
 import { ToastHost } from '../components/Toast'
+import { Field } from '../components/Form'
 
-type Mode = 'password' | 'badge'
+type Mode = 'password' | 'badge' | 'setup'
+const emptySetup: SetupRequest & { confirm: string } = { bootstrap_token: '', username: '', display_name: '', password: '', confirm: '' }
 
 /**
  * Identifier-first (§7.6): username, then the password ceremony. Passkeys sit
  * beside it (a button, plus autofill via conditional mediation on the username
  * field), and a badge mode takes a reader burst: the card names the person,
- * and a PIN-protected card gets a second step (auth.continue).
+ * and a PIN-protected card gets a second step (auth.continue). While the
+ * install has no human administrator (GET /v1/auth/setup), the page also
+ * offers "Set up the first administrator", gated by the bootstrap token.
  */
 export function Login() {
   const t = useT()
   const nav = useNavigate()
   const { session, refresh } = useSession()
   const brand = useQuery({ queryKey: ['brand'], queryFn: () => api.brand(), staleTime: Infinity, retry: 1 })
+  const setupStatus = useQuery({ queryKey: ['setup'], queryFn: () => api.setupStatus(), staleTime: 0, retry: 1 })
+  const setupNeeded = setupStatus.data?.needed === true
   const [mode, setMode] = useState<Mode>('password')
+  const [setup, setSetup] = useState(emptySetup)
   const [identifier, setIdentifier] = useState('')
   const [password, setPassword] = useState('')
   const [step, setStep] = useState<'identifier' | 'password'>('identifier')
@@ -37,14 +44,20 @@ export function Login() {
   const conditional = useRef<AbortController | null>(null)
   const passkeys = passkeysSupported()
 
-  useEffect(() => { if (session) nav('/people', { replace: true }) }, [session, nav])
+  useEffect(() => { if (session) nav('/me', { replace: true }) }, [session, nav])
+  // The offer disappears once setup is done (or was never needed).
+  useEffect(() => { if (mode === 'setup' && setupStatus.data && !setupStatus.data.needed) setMode('password') }, [mode, setupStatus.data])
   useEffect(() => { if (step === 'password') pw.current?.focus() }, [step])
   useEffect(() => { if (mode === 'badge') (needPin ? pinRef : num).current?.focus() }, [mode, needPin])
 
-  const done = useCallback(async () => { await refresh(); nav('/people', { replace: true }) }, [refresh, nav])
+  const done = useCallback(async () => { await refresh(); nav('/me', { replace: true }) }, [refresh, nav])
   const message = useCallback((r: { code: string; params?: Record<string, unknown>; message?: string }) =>
     r.message ?? t(r.code, r.params as Record<string, string>), [t])
-  const fail = (err: unknown) => setError(err instanceof Error ? err.message : String(err))
+  // Server errors (HTTP client or mock) carry a body with a rendered message; anything else shows as is.
+  const fail = (err: unknown) => {
+    if (err && typeof err === 'object' && 'body' in err) { setError(message((err as { body: { code: string; params?: Record<string, unknown>; message?: string } }).body)); return }
+    setError(err instanceof Error ? err.message : String(err))
+  }
   const abortConditional = () => { conditional.current?.abort(); conditional.current = null }
 
   // ---- passkeys -------------------------------------------------------------
@@ -99,6 +112,23 @@ export function Login() {
 
   // ---- password and badge -----------------------------------------------------
 
+  const submitSetup = async (e: FormEvent) => {
+    e.preventDefault()
+    setError(null)
+    if (setup.password !== setup.confirm) { setError(t('ui.common.password_mismatch')); return }
+    setBusy(true)
+    try {
+      const { confirm: _c, ...body } = setup
+      await api.setup({ ...body, bootstrap_token: body.bootstrap_token.trim(), username: body.username.trim(), display_name: body.display_name.trim() || body.username.trim() })
+      await done()
+    } catch (err) {
+      fail(err)
+      void setupStatus.refetch() // setup.already_done: the offer goes away
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const submit = async (e: FormEvent) => {
     e.preventDefault()
     setError(null)
@@ -124,10 +154,33 @@ export function Login() {
   }
 
   const switchMode = (m: Mode) => {
-    setMode(m); setError(null); setNeedPin(false); setPin(''); setNumber(''); setPassword(''); setStep('identifier')
+    setMode(m); setError(null); setNeedPin(false); setPin(''); setNumber(''); setPassword(''); setStep('identifier'); setSetup(emptySetup)
   }
 
   const tenant = brand.data?.tenant_name ?? ''
+  const set = (k: keyof typeof setup) => (e: { target: { value: string } }) => setSetup({ ...setup, [k]: e.target.value })
+  if (mode === 'setup') {
+    return (
+      <div className="login">
+        <form className="setup" onSubmit={(e) => void submitSetup(e)} aria-busy={busy}>
+          <div className="wordmark"><Mark />ROSTOR</div>
+          <h1>{t('ui.setup.title', { tenant })}</h1>
+          <div className="sub">{t('ui.setup.subtitle')}</div>
+          <Field labelCode="ui.setup.token" hintCode="ui.setup.token_hint" className="input mono" value={setup.bootstrap_token} onChange={set('bootstrap_token')} required autoFocus autoComplete="off" autoCapitalize="none" spellCheck={false} />
+          <Field labelCode="ui.setup.username" value={setup.username} onChange={set('username')} required autoComplete="username" autoCapitalize="none" spellCheck={false} />
+          <Field labelCode="ui.setup.display_name" value={setup.display_name} onChange={set('display_name')} autoComplete="name" />
+          <Field labelCode="ui.setup.password" hintCode="ui.person.new_password_rule" type="password" value={setup.password} onChange={set('password')} required minLength={8} autoComplete="new-password" />
+          <Field labelCode="ui.setup.password_confirm" type="password" value={setup.confirm} onChange={set('confirm')} required autoComplete="new-password" />
+          {error && <p className="form-error" role="alert">{error}</p>}
+          <div className="actions">
+            <button type="button" className="btn quiet" disabled={busy} onClick={() => switchMode('password')}>{t('ui.setup.back')}</button>
+            <button type="submit" className="btn primary" disabled={busy}>{t(busy ? 'ui.setup.working' : 'ui.setup.submit')}</button>
+          </div>
+        </form>
+        <ToastHost />
+      </div>
+    )
+  }
   return (
     <div className="login">
       <form onSubmit={(e) => void submit(e)} aria-busy={busy}>
@@ -171,6 +224,12 @@ export function Login() {
             ? <button type="button" className="btn quiet" disabled={busy} onClick={() => switchMode('badge')}>{t('ui.login.use_badge')}</button>
             : <button type="button" className="btn quiet" disabled={busy} onClick={() => switchMode('password')}>{t('ui.login.use_password')}</button>}
         </div>
+        {setupNeeded && (
+          <div className="setup-offer">
+            <p className="note">{t('ui.setup.offer_note')}</p>
+            <button type="button" className="btn" disabled={busy} onClick={() => switchMode('setup')}>{t('ui.setup.offer')}</button>
+          </div>
+        )}
       </form>
       <ToastHost />
     </div>

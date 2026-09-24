@@ -126,7 +126,20 @@ func (s *Server) handleEventStream(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("X-Accel-Buffering", "no")
 	w.WriteHeader(200)
+	full, _ := r.Context().Value(ctxFullStream).(bool)
+	self := actorOf(r).ID
+	// A member sees only events about themselves; the payload is dropped
+	// for system events they may not read. Admins see everything.
+	visible := func(e liveEvent) bool {
+		if full {
+			return true
+		}
+		return e.ActorID == self || e.TargetID == self
+	}
 	write := func(e liveEvent) error {
+		if !visible(e) {
+			return nil
+		}
 		data, _ := json.Marshal(e)
 		_, err := fmt.Fprintf(w, "id: %d\nevent: %s\ndata: %s\n\n", e.ID, e.Type, data)
 		fl.Flush()

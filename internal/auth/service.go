@@ -57,7 +57,11 @@ func (s *Service) Enroll(ctx context.Context, tx pgx.Tx, tenantID string, actor 
 	if err != nil {
 		return nil, directory.Err("request.malformed", "field", method, "detail", err.Error())
 	}
-	b := &Binding{ID: ids.New("bnd"), PrincipalID: principalID, Method: method, Properties: m.Describe().Properties, Label: label, State: "active"}
+	props := m.Describe().Properties
+	if method == "badge" && strings.TrimSpace(in.Fields["pin"]) != "" {
+		props = append(append([]string{}, props...), "knowledge")
+	}
+	b := &Binding{ID: ids.New("bnd"), PrincipalID: principalID, Method: method, Properties: props, Label: label, State: "active"}
 	sealed, err := s.Provider.Seal(mat, []byte(tenantID+"/"+b.ID))
 	if err != nil {
 		return nil, err
@@ -525,6 +529,15 @@ func (s *Service) SetBadgePIN(ctx context.Context, tx pgx.Tx, tenantID string, a
 		return err
 	}
 	if _, err := tx.Exec(ctx, `UPDATE credential_material SET sealed=$3 WHERE tenant_id=$1 AND binding_id=$2`, tenantID, bindingID, resealed); err != nil {
+		return err
+	}
+	// The binding's declared properties say what it proves (D26): with a
+	// PIN it is possession + knowledge.
+	props := []string{"possession", "can-identify-user"}
+	if strings.TrimSpace(pin) != "" {
+		props = append(props, "knowledge")
+	}
+	if _, err := tx.Exec(ctx, `UPDATE authenticator_bindings SET properties=$3 WHERE tenant_id=$1 AND id=$2`, tenantID, bindingID, props); err != nil {
 		return err
 	}
 	_, err = audit.Append(ctx, tx, tenantID, audit.Event{ActorKind: actor.Kind, ActorID: actor.ID, Action: "binding.pin_set",

@@ -2,11 +2,16 @@
 // backend (VITE_MOCK=1 or ?mock=1). Data mirrors the approved mockup.
 import type {
   Api, AuditRow, AuthSettings, Device, Explanation, Grant, Group, GroupDetail, LiveEvent, LiveHandlers, LoginOK, LoginResponse,
-  LiveState, Member, Plugin, Session, Summary, SystemInfo, UpdateState, User, UserDetail, Binding, Reason,
+  LiveState, Member, Plugin, Role, Session, Summary, SystemInfo, UpdateState, User, UserDetail, Binding, Reason,
 } from './types'
 import catalogEn from '../../catalog.en.json'
 
 const SESSION_KEY = 'rostor-console-mock-session'
+const SETUP_KEY = 'rostor-console-mock-setup-done'
+/** The bootstrap token the mock accepts for first-administrator setup. */
+const BOOTSTRAP_TOKEN = 'rostor-bootstrap'
+/** Every mock person signs in with this password until they change it. */
+const DEFAULT_PASSWORD = 'demo'
 
 const now = Date.now()
 const min = 60_000, hour = 3_600_000, day = 86_400_000
@@ -15,6 +20,7 @@ const daysAgo = (n: number, h: number, m: number) => { const d = new Date(now - 
 const iso = (t: number) => new Date(t).toISOString()
 
 const groupRefs = {
+  admins: { id: 'grp_admins', name: 'directory-admins' },
   members: { id: 'grp_members', name: 'members' },
   board: { id: 'grp_board', name: 'board' },
   laser: { id: 'grp_laser', name: 'laser-certified' },
@@ -22,13 +28,37 @@ const groupRefs = {
   guests: { id: 'grp_guests_a', name: 'guests-from-a' },
 }
 
+// Group nesting: a member of `board` or `staff` is a member of `members` too.
+// `u.groups` holds direct memberships; effectiveGroups() expands them.
+const nested: Record<string, Array<{ id: string; name: string }>> = {
+  grp_board: [groupRefs.members],
+  grp_staff: [groupRefs.members],
+}
+function effectiveGroups(u: User): Array<{ id: string; name: string; direct: boolean }> {
+  const out: Array<{ id: string; name: string; direct: boolean }> = u.groups.map((g) => ({ ...g, direct: true }))
+  const seen = new Set(out.map((g) => g.id))
+  const queue = [...u.groups]
+  while (queue.length) {
+    const g = queue.shift()!
+    for (const parent of nested[g.id] ?? []) {
+      if (seen.has(parent.id)) continue
+      seen.add(parent.id); out.push({ ...parent, direct: false }); queue.push(parent)
+    }
+  }
+  return out
+}
+const inGroup = (u: User, name: string) => effectiveGroups(u).some((g) => g.name === name)
+
 const users: User[] = [
   { id: 'usr_f40101ae', kind: 'user', username: 'dan', display_name: 'Dan Evans', state: 'active',
-    groups: [groupRefs.members, groupRefs.board], methods: [{ method: 'password', assurance: 'AL1' }],
+    groups: [groupRefs.admins, groupRefs.board], methods: [{ method: 'password', assurance: 'AL1' }],
     last_sign_in: { ts: today(13, 59), resource: 'workstation:DESKTOP-UPJD27E' } },
   { id: 'usr_9b2c11d0', kind: 'user', username: 'dana', display_name: 'Dana Whitfield', state: 'active',
-    groups: [groupRefs.members, groupRefs.laser], methods: [{ method: 'badge', assurance: 'AL1' }, { method: 'password', assurance: 'AL1' }],
+    groups: [groupRefs.staff, groupRefs.laser], methods: [{ method: 'badge', assurance: 'AL1' }, { method: 'password', assurance: 'AL1' }],
     last_sign_in: { ts: daysAgo(1, 19, 12), resource: 'door:exterior-alley' } },
+  { id: 'usr_2d8e6f10', kind: 'user', username: 'maria', display_name: 'Maria Castellanos', state: 'active',
+    groups: [groupRefs.board], methods: [{ method: 'password', assurance: 'AL1' }],
+    last_sign_in: { ts: daysAgo(3, 9, 14), resource: 'workstation:DESKTOP-UPJD27E' } },
   { id: 'usr_41aa72ef', kind: 'user', username: 'sam', display_name: 'Sam Okafor', state: 'suspended',
     groups: [groupRefs.members], methods: [{ method: 'badge', assurance: 'AL1' }],
     last_sign_in: { ts: daysAgo(8, 10, 5), resource: 'door:exterior-alley' } },
@@ -48,6 +78,7 @@ const bindings: Record<string, Binding[]> = {
     { id: 'bnd_02', method: 'badge', properties: ['possession', 'knowledge', 'multi_factor'], label: 'Badge 0004A1F3', assurance: 'AL2', created_at: daysAgo(40, 11, 0), last_used_at: daysAgo(1, 19, 12), state: 'active' },
     { id: 'bnd_03', method: 'password', properties: ['knowledge'], label: 'Password', assurance: 'AL1', created_at: daysAgo(40, 11, 5), last_used_at: daysAgo(3, 8, 30), state: 'active' },
   ],
+  usr_2d8e6f10: [{ id: 'bnd_07', method: 'password', properties: ['knowledge'], label: 'Password', assurance: 'AL1', created_at: daysAgo(60, 10, 0), last_used_at: daysAgo(3, 9, 14), state: 'active' }],
   usr_41aa72ef: [{ id: 'bnd_04', method: 'badge', properties: ['possession'], label: 'Badge 0004A1D9', assurance: 'AL1', created_at: daysAgo(90, 12, 0), last_used_at: daysAgo(8, 10, 5), state: 'active' }],
   usr_c0de5a19: [{ id: 'bnd_05', method: 'badge', properties: ['possession'], label: 'Badge 0004A211', assurance: 'AL1', created_at: daysAgo(12, 12, 0), last_used_at: daysAgo(2, 16, 40), state: 'active' }],
   usr_77f1b3c2: [],
@@ -62,6 +93,10 @@ const badges: Record<string, { user: string; binding: string; pin?: string }> = 
   '0004A211': { user: 'usr_c0de5a19', binding: 'bnd_05' },
 }
 
+// Passwords, by principal id. Everyone starts with the demo password.
+const passwords: Record<string, string> = {}
+const passwordOf = (id: string) => passwords[id] ?? DEFAULT_PASSWORD
+
 // Tenant sign-in settings (the tenant-wide auth policy). enrolled_passkeys is
 // derived from the bindings.
 let webauthn = { rp_id: 'localhost', display_name: 'ChattLab', origins: ['https://localhost:5173'] }
@@ -73,6 +108,7 @@ const ceremonies = new Map<string, string>()
 const b64url = (n: number) => { const a = crypto.getRandomValues(new Uint8Array(n)); let s = ''; for (const b of a) s += String.fromCharCode(b); return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '') }
 
 const groups: Group[] = [
+  { id: 'grp_admins', name: 'directory-admins', display_name: 'Administrators of this directory (built-in)', kind: 'static', member_count: 1, grant_count: 1 },
   { id: 'grp_members', name: 'members', display_name: 'Current dues-paying members', kind: 'static', member_count: 124, grant_count: 3 },
   { id: 'grp_board', name: 'board', display_name: 'Elected board, electorate for admissions', kind: 'static', member_count: 5, grant_count: 1 },
   { id: 'grp_laser', name: 'laser-certified', display_name: 'Completed laser training', kind: 'dynamic', member_count: 41, grant_count: 1 },
@@ -87,7 +123,18 @@ const grants: Grant[] = [
   { id: 'grt_e1f4a88b', subject: { kind: 'group', id: 'grp_laser', name: 'laser-certified' }, role: 'operate', resource: { type: 'equipment', id: 'laser-cutter-2' }, condition: 'assurance >= 1', condition_class: 'offline', not_before: null, expires_at: null },
   { id: 'grt_0c2d9e71', subject: { kind: 'group', id: 'grp_members', name: 'members' }, role: 'operate', resource: { type: 'equipment', id: 'cnc-mill' }, condition: 'assurance >= 2', condition_class: 'offline', not_before: null, expires_at: null },
   { id: 'grt_77aa1b02', subject: { kind: 'user', id: 'usr_9b2c11d0', name: 'dana' }, role: 'steward', resource: { type: 'equipment', id: 'laser-cutter-2' }, condition: '', condition_class: 'online', not_before: null, expires_at: '2026-12-31T00:00:00Z' },
-  { id: 'grt_c4d5e6f7', subject: { kind: 'service', id: 'svc_admin_cli', name: 'admin-cli' }, role: 'admin', resource: { type: 'directory', id: 'root' }, condition: '', condition_class: 'offline', not_before: null, expires_at: null },
+  { id: 'grt_c4d5e6f7', subject: { kind: 'group', id: 'grp_admins', name: 'directory-admins' }, role: 'admin', resource: { type: 'directory', id: 'root' }, condition: '', condition_class: 'offline', not_before: null, expires_at: null },
+  { id: 'grt_1a2b3c4d', subject: { kind: 'group', id: 'grp_board', name: 'board' }, role: 'auditor', resource: { type: 'directory', id: 'root' }, condition: '', condition_class: 'offline', not_before: null, expires_at: null },
+]
+
+const roles: Role[] = [
+  { resource_type: 'directory', name: 'admin', permissions: ['*'] },
+  { resource_type: 'directory', name: 'auditor', permissions: ['users.read', 'groups.read', 'grants.read', 'audit.read', 'authz.read', 'updates.read'] },
+  { resource_type: 'door', name: 'enter', permissions: ['enter'] },
+  { resource_type: 'workstations', name: 'user', permissions: ['logon'] },
+  { resource_type: 'workstation', name: 'user', permissions: ['logon'] },
+  { resource_type: 'equipment', name: 'operate', permissions: ['operate'] },
+  { resource_type: 'equipment', name: 'steward', permissions: ['operate', 'certify'] },
 ]
 
 const devices: Device[] = [
@@ -101,21 +148,41 @@ const devices: Device[] = [
 
 let seq = 1184
 const audit: AuditRow[] = [
-  row(today(14, 31, 7), 'user:usr_f40101ae', 'verify', 'workstation:DESKTOP-UPJD27E', 'password', 'AL1', 'allow', { identifier: 'dan' }),
+  row(today(14, 31, 7), 'device:dev_12ce4c4b9f0a', 'verify', 'workstation:DESKTOP-UPJD27E', 'password', 'AL1', 'allow', { identifier: 'dan', principal_id: 'usr_f40101ae' }),
   row(today(14, 20, 41), 'service:svc_3e9a0c44', 'grant.create', 'grant:grt_0c2d9e71', 'api_token', 'AL1', 'ok', { subject: 'members', role: 'operate', resource: 'equipment:cnc-mill' }),
   row(today(14, 20, 39), 'service:svc_3e9a0c44', 'binding.enroll', 'principal:usr_77f1b3c2', 'api_token', 'AL1', 'ok', { method: 'badge', label: '0004A1F7', identifier: 'jo' }),
-  row(today(13, 59, 35), 'user:usr_f40101ae', 'verify', 'workstation:DESKTOP-UPJD27E', 'password', 'AL1', 'allow', { identifier: 'dan' }),
+  row(today(13, 59, 35), 'device:dev_12ce4c4b9f0a', 'verify', 'workstation:DESKTOP-UPJD27E', 'password', 'AL1', 'allow', { identifier: 'dan', principal_id: 'usr_f40101ae' }),
   row(today(13, 49, 7), 'device:dev_12ce4c4b9f0a', 'verify', 'workstation:DESKTOP-UPJD27E', 'password', '', 'deny', { identifier: 'dan', reason: 'auth.failed' }),
-  row(today(13, 24, 14), 'service:svc_admin_cli', 'principal.state', 'principal:usr_f40101ae', 'api_token', 'AL1', 'ok', { from: 'active', to: 'suspended', identifier: 'dan' }),
+  row(today(13, 24, 14), 'service:svc_3e9a0c44', 'principal.state', 'principal:usr_f40101ae', 'api_token', 'AL1', 'ok', { from: 'active', to: 'suspended', identifier: 'dan' }),
+  row(today(13, 20, 2), 'user:usr_f40101ae', 'group.member_add', 'group:grp_laser', 'session', 'AL1', 'ok', { member: 'dana' }),
   row(today(13, 24, 14), 'device:dev_12ce4c4b9f0a', 'verify', 'workstation:DESKTOP-UPJD27E', 'password', '', 'deny', { identifier: 'dan', reason: 'principal.suspended' }),
   row(today(12, 16, 26), 'system:enroll', 'device.enroll', 'device:dev_12ce4c4b9f0a', 'enrollment_token', '', 'ok', { display_name: 'DESKTOP-UPJD27E' }),
-].reverse().map((r, i) => ({ ...r, seq: seq - 7 + i })).reverse()
+].reverse().map((r, i) => ({ ...r, seq: seq - 8 + i })).reverse()
 
 function ref(s: string): [string, string] { const i = s.indexOf(':'); return i < 0 ? [s, ''] : [s.slice(0, i), s.slice(i + 1)] }
 function row(ts: string, actor: string, action: string, target: string, credential_type: string, assurance: string, outcome: string, detail: Record<string, unknown>): AuditRow {
   const [ak, aid] = ref(actor)
   const [tt, tid] = ref(target)
-  return { seq: 0, ts, actor: { kind: ak, id: aid }, action, target: { type: tt, id: tid }, credential_type, assurance, outcome, detail }
+  return { seq: 0, ts, actor: { kind: ak, id: aid }, action, target: { type: tt, id: tid }, credential_type, assurance, outcome, detail, correlation_id: 'cor_' + Math.random().toString(16).slice(2, 10) }
+}
+
+// Like the server's nameAudit: names for principals, groups and devices sit
+// beside the ids, and detail.principal_id gets a detail.principal_name.
+function nameOf(kind: string, id: string): string | undefined {
+  switch (kind) {
+    case 'principal': case 'user': case 'service': { const u = users.find((x) => x.id === id); return u ? String(u.display_name || u.username) : undefined }
+    case 'group': return groups.find((g) => g.id === id)?.name
+    case 'device': return devices.find((d) => d.id === id)?.display_name
+    default: return undefined
+  }
+}
+function named(r: AuditRow): AuditRow {
+  const out = clone(r)
+  const an = nameOf(out.actor.kind, out.actor.id); if (an) out.actor.name = an
+  const tn = nameOf(out.target.type, out.target.id); if (tn) out.target.name = tn
+  const pid = out.detail?.principal_id
+  if (typeof pid === 'string') { const n = nameOf('principal', pid); if (n && out.detail) out.detail.principal_name = n }
+  return out
 }
 
 function append(actor: string, action: string, target: string, credential_type: string, assurance: string, outcome: string, detail: Record<string, unknown>) {
@@ -149,8 +216,9 @@ function ensureTicker() {
   if (ticker) return
   ticker = setInterval(() => {
     if (listeners.size === 0 || Math.random() < 0.5) return
-    const who = (['dana', 'priya', 'maria', 'tom'] as const)[Math.floor(Math.random() * 4)] ?? 'dana'
-    append('device:dev_a91c0b3e7d21', 'verify', 'door:exterior-alley', 'badge', 'AL1', 'allow', { identifier: who })
+    const who = (['dana', 'priya', 'maria', 'sam'] as const)[Math.floor(Math.random() * 4)] ?? 'dana'
+    const u = byId(who)
+    append('device:dev_a91c0b3e7d21', 'verify', 'door:exterior-alley', 'badge', 'AL1', 'allow', u ? { identifier: who, principal_id: u.id } : { identifier: who })
   }, 4000)
 }
 
@@ -163,6 +231,8 @@ function saveSession(s: Session | null) {
 }
 let session: Session | null = loadSession()
 let failedAttempts = 0
+// First-administrator setup stays offered until it has been done in this tab.
+let setupDone = (() => { try { return sessionStorage.getItem(SETUP_KEY) === '1' } catch { return false } })()
 
 const delay = (ms = 120) => new Promise<void>((r) => setTimeout(r, ms))
 const clone = <T,>(v: T): T => JSON.parse(JSON.stringify(v)) as T
@@ -190,8 +260,9 @@ function why(principal: string, action: string, rtype: string, rid: string): Exp
   const as_of = iso(Date.now())
   const resource = `${rtype}:${rid}`
   if (!u) return { decision: 'DENY', reason: [{ code: 'principal.not_found', params: {} }], as_of, principal, action, resource, groups: {}, candidates: [] }
-  const memberOf = Object.fromEntries(u.groups.map((g) => [g.name, [u.username, g.name]]))
-  const cands = grants.filter((g) => g.subject.kind === 'group' ? u.groups.some((m) => m.name === g.subject.name) : g.subject.id === u.id)
+  const eff = effectiveGroups(u)
+  const memberOf = Object.fromEntries(eff.map((g) => [g.name, g.direct ? [u.username, g.name] : [u.username, ...u.groups.filter((d) => (nested[d.id] ?? []).some((p) => p.id === g.id)).map((d) => d.name), g.name]]))
+  const cands = grants.filter((g) => g.subject.kind === 'group' ? eff.some((m) => m.name === g.subject.name) : g.subject.id === u.id)
     .filter((g) => g.role === action || (action === 'logon' && g.role === 'user'))
     .filter((g) => g.resource.type === rtype || (g.resource.type === 'workstations' && rtype === 'workstation'))
   const toCand = (g: Grant, matched: boolean, condition_result?: string) => ({
@@ -230,11 +301,34 @@ export function createMockApi(_opts: { onUnauthorized?: () => void } = {}): Api 
         return signIn(u, 'badge', card.pin ? 'AL2' : 'AL1')
       }
       const u = users.find((x) => x.username === req.identifier)
-      if (!u || req.fields.password !== 'demo') { failedAttempts++; return { code: 'auth.failed', params: {}, message: 'Sign-in failed.' } }
+      if (!u || req.fields.password !== passwordOf(u.id)) { failedAttempts++; return { code: 'auth.failed', params: {}, message: 'Sign-in failed.' } }
       return signIn(u, 'password', 'AL1')
     },
     async session() { await delay(60); return session ? clone(session) : null },
     async logout() { await delay(60); session = null; saveSession(null) },
+    async setupStatus() { await delay(40); return { needed: !setupDone } },
+    async setup(body) {
+      await delay(400)
+      if (setupDone) throw mockErr(400, 'setup.already_done')
+      if (body.bootstrap_token.trim() !== BOOTSTRAP_TOKEN) throw mockErr(401, 'setup.token_invalid')
+      const username = body.username.trim()
+      if (!username) throw mockErr(400, 'request.malformed', { field: 'username' })
+      if (users.some((u) => u.username === username)) throw mockErr(409, 'request.conflict', { field: 'username' })
+      if (body.password.length < 8) throw mockErr(400, 'request.malformed', { field: 'password' })
+      const u: User = { id: 'usr_' + Math.random().toString(16).slice(2, 10), kind: 'user', username, display_name: body.display_name.trim() || username,
+        state: 'active', groups: [groupRefs.admins], methods: [{ method: 'password', assurance: 'AL1' }], last_sign_in: null }
+      users.push(u)
+      passwords[u.id] = body.password
+      bindings[u.id] = [{ id: 'bnd_' + Math.random().toString(16).slice(2, 8), method: 'password', properties: ['knowledge'], label: 'Password', assurance: 'AL1', created_at: iso(Date.now()), last_used_at: null, state: 'active' }]
+      const g = groups.find((x) => x.id === groupRefs.admins.id); if (g) g.member_count++
+      setupDone = true
+      try { sessionStorage.setItem(SETUP_KEY, '1') } catch { /* ignore */ }
+      append('service:svc_bootstrap', 'setup.first_admin', `principal:${u.id}`, 'api_token', 'AL1', 'ok', { identifier: username })
+      emit('user.created')
+      const r = signIn(u, 'password', 'AL1')
+      if ('code' in r) throw mockErr(400, r.code, r.params)
+      return r
+    },
 
     async passkeyRegisterBegin() {
       await delay(150)
@@ -283,15 +377,19 @@ export function createMockApi(_opts: { onUnauthorized?: () => void } = {}): Api 
     },
 
     async summary() { await delay(); return summary() },
-    async users(q) { await delay(); const it = filter(users, q, (u) => `${u.display_name} ${u.username} ${u.groups.map((g) => g.name).join(' ')}`); return { items: clone(it), total: 130 } },
+    async users(q) {
+      await delay()
+      const it = filter(users, q, (u) => `${u.display_name} ${u.username} ${effectiveGroups(u).map((g) => g.name).join(' ')}`)
+      return { items: it.map((u) => ({ ...clone(u), groups: effectiveGroups(u).map(({ id, name }) => ({ id, name })) })), total: 130 }
+    },
     async user(id) {
       await delay()
       const u = byId(id)
       if (!u) throw mockErr(404, 'request.not_found')
       const b = bindings[u.id] ?? []
-      const recent = audit.filter((r) => r.actor.id === u.id || r.target.id === u.id || r.detail?.identifier === u.username).slice(0, 6)
+      const recent = audit.filter((r) => r.actor.id === u.id || r.target.id === u.id || r.detail?.identifier === u.username || r.detail?.principal_id === u.id).slice(0, 6).map(named)
       const top = b.some((x) => x.assurance === 'AL2') ? 'AL2' : b.length ? 'AL1' : 'AL0'
-      const d: UserDetail = { ...clone(u), bindings: clone(b).map((x) => ({ ...x, assurance: x.assurance ?? 'AL1' })), effective_security: { assurance: top, bindings: b.length, recovery_paths: 0 }, recent: clone(recent) }
+      const d: UserDetail = { ...clone(u), groups: effectiveGroups(u), bindings: clone(b).map((x) => ({ ...x, assurance: x.assurance ?? 'AL1' })), effective_security: { assurance: top, bindings: b.length, recovery_paths: 0 }, recent: clone(recent) }
       return d
     },
     async createUser(body) {
@@ -350,12 +448,49 @@ export function createMockApi(_opts: { onUnauthorized?: () => void } = {}): Api 
       append(`user:${session?.principal.id ?? ''}`, 'binding.revoke', `principal:${u.id}`, 'session', 'AL1', 'ok', { binding: bid, identifier: u.username })
       emit('user.updated')
     },
+    async changePassword(id, body) {
+      await delay(300)
+      const u = byId(id)
+      if (!u) throw mockErr(404, 'request.not_found')
+      const self = session?.principal.id === u.id
+      if (self) {
+        if (failedAttempts >= 5) throw mockErr(429, 'auth.locked', { minutes: 15 })
+        if ((body.current ?? '') !== passwordOf(u.id)) { failedAttempts++; throw mockErr(401, 'auth.failed') }
+      }
+      if (body.new.length < 8) throw mockErr(400, 'request.malformed', { field: 'password' })
+      failedAttempts = 0
+      passwords[u.id] = body.new
+      const b: Binding = { id: 'bnd_' + Math.random().toString(16).slice(2, 8), method: 'password', properties: ['knowledge'], label: 'Password', assurance: 'AL1', created_at: iso(Date.now()), last_used_at: null, state: 'active' }
+      bindings[u.id] = [...(bindings[u.id] ?? []).filter((x) => x.method !== 'password'), b]
+      u.methods = (bindings[u.id] ?? []).map((x) => ({ method: x.method, assurance: x.assurance ?? 'AL1' }))
+      append(`user:${session?.principal.id ?? ''}`, self ? 'password.change' : 'password.reset', `principal:${u.id}`, 'session', 'AL1', 'ok', { identifier: u.username })
+      emit('user.updated')
+    },
+    async setPin(id, bid, pin) {
+      await delay(250)
+      const u = byId(id)
+      if (!u) throw mockErr(404, 'request.not_found')
+      const b = (bindings[u.id] ?? []).find((x) => x.id === bid)
+      if (!b) throw mockErr(404, 'request.not_found', { type: 'binding' })
+      if (b.method !== 'badge') throw mockErr(400, 'auth.method_unavailable', { method: 'badge' })
+      if (pin !== '' && !/^\d{4,}$/.test(pin)) throw mockErr(400, 'request.malformed', { field: 'pin' })
+      b.properties = pin ? ['possession', 'knowledge', 'multi_factor'] : ['possession']
+      b.assurance = pin ? 'AL2' : 'AL1'
+      for (const c of Object.values(badges)) if (c.binding === bid) { if (pin) c.pin = pin; else delete c.pin }
+      u.methods = (bindings[u.id] ?? []).map((x) => ({ method: x.method, assurance: x.assurance ?? 'AL1' }))
+      append(`user:${session?.principal.id ?? ''}`, 'binding.pin_set', `principal:${u.id}`, 'session', 'AL1', 'ok', { binding: bid, identifier: u.username, removed: pin === '' })
+      emit('user.updated')
+    },
     async groups(q) { await delay(); return { items: clone(filter(groups, q, (g) => `${g.name} ${g.display_name}`)), total: groups.length } },
     async group(name) {
       await delay()
       const g = groups.find((x) => x.name === name || x.id === name)
       if (!g) throw mockErr(404, 'request.not_found')
-      const members: Member[] = users.filter((u) => u.groups.some((m) => m.name === g.name)).map((u) => ({ kind: 'principal', id: u.id, name: u.username, display_name: u.display_name }))
+      const members: Member[] = [
+        ...Object.entries(nested).filter(([, parents]) => parents.some((p) => p.id === g.id)).map(([id]) => groups.find((x) => x.id === id)).filter((x): x is Group => !!x)
+          .map((x) => ({ kind: 'group', id: x.id, name: x.name, display_name: x.display_name })),
+        ...users.filter((u) => u.groups.some((m) => m.name === g.name)).map((u) => ({ kind: 'principal', id: u.id, name: u.username, display_name: u.display_name })),
+      ]
       const d: GroupDetail = { ...clone(g), members, grants: clone(grants.filter((gr) => gr.subject.kind === 'group' && gr.subject.name === g.name)) }
       return d
     },
@@ -391,6 +526,7 @@ export function createMockApi(_opts: { onUnauthorized?: () => void } = {}): Api 
       emit('group.updated')
     },
     async grants(q) { await delay(); return { items: clone(filter(grants, q, (g) => `${g.subject.name} ${g.role} ${g.resource.type}:${g.resource.id}`)), total: grants.length } },
+    async roles() { await delay(); return { items: clone(roles), total: roles.length } },
     async createGrant(body) {
       await delay(250)
       let subject: Grant['subject']
@@ -429,13 +565,13 @@ export function createMockApi(_opts: { onUnauthorized?: () => void } = {}): Api 
       let it = audit
       if (q.before) it = it.filter((r) => r.seq < q.before!)
       it = filter(it, q.q, (r) => `${r.actor.id} ${r.action} ${r.target.type}:${r.target.id} ${r.outcome} ${JSON.stringify(r.detail)}`)
-      return { items: clone(it.slice(0, q.limit ?? 50)), head: { seq } }
+      return { items: it.slice(0, q.limit ?? 50).map(named), head: { seq } }
     },
     async auditVerify() { await delay(600); return { intact: true, first_bad_seq: 0 } },
     async why(q) {
       await delay(250)
       const ex = why(q.principal, q.action, q.resource_type, q.resource_id)
-      append(`user:${session?.principal.id ?? ''}`, 'why', `principal:${ex.principal}`, 'session', 'AL1', 'ok', { action: q.action, resource: ex.resource })
+      append(`user:${session?.principal.id ?? ''}`, 'why', `principal:${byId(q.principal)?.id ?? q.principal}`, 'session', 'AL1', 'ok', { action: q.action, resource: ex.resource, identifier: ex.principal })
       return ex
     },
     async updates() { await delay(); return clone(updateState) },
@@ -492,8 +628,12 @@ export function createMockApi(_opts: { onUnauthorized?: () => void } = {}): Api 
 function signIn(u: User, method: string, assurance: string): LoginResponse {
   if (u.state !== 'active') return { code: 'principal.suspended', params: {}, message: 'This account is suspended.' }
   failedAttempts = 0
-  session = { principal: { id: u.id, kind: u.kind, username: u.username, display_name: u.display_name, state: u.state }, assurance,
-    permissions: u.username === 'dan' ? ['*'] : ['users.read', 'audit.read', 'authz.read', 'updates.read'] }
+  // Admin rights come from directory-admins (role admin on directory:root);
+  // board holds the read-only auditor role; everyone else is a plain member.
+  const permissions = inGroup(u, 'directory-admins') ? ['*']
+    : inGroup(u, 'board') ? (roles.find((r) => r.resource_type === 'directory' && r.name === 'auditor')?.permissions ?? [])
+    : []
+  session = { principal: { id: u.id, kind: u.kind, username: u.username, display_name: u.display_name, state: u.state }, assurance, permissions }
   saveSession(session)
   append(`user:${u.id}`, 'session.create', `principal:${u.id}`, method, assurance, 'allow', { identifier: u.username, client: 'console' })
   const ok: LoginOK = { principal: session.principal, assurance, expires_at: iso(Date.now() + 8 * hour) }
@@ -516,6 +656,9 @@ const serverCodes: Record<string, string> = {
   'auth.method_unavailable': 'That sign-in method is not available for this account.',
   'auth.passkey_rejected': 'That passkey could not be registered.',
   'auth.passkeys_unconfigured': 'Passkeys are not set up for this organisation yet.',
+  'auth.pin_required': 'This account requires a PIN with the badge.',
+  'setup.already_done': 'This organisation already has an administrator.',
+  'setup.token_invalid': 'That bootstrap token is not valid.',
   'request.malformed': 'The request could not be understood.',
   'request.unauthorized': 'Authentication is required.',
   'principal.suspended': 'This account is suspended.',

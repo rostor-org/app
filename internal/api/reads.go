@@ -200,6 +200,13 @@ func (s *Server) handleGetUser(w http.ResponseWriter, r *http.Request) {
 		if md, ok := s.Auth.Method(b.Method); ok {
 			a = md.Describe().Assurance
 		}
+		if b.Method == "badge" {
+			for _, pr := range b.Properties {
+				if pr == "knowledge" {
+					a = "AL2"
+				}
+			}
+		}
 		if b.State == "active" && rank[a] > rank[best] {
 			best = a
 		}

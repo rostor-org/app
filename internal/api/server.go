@@ -56,7 +56,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/auth/logout", s.handleLogout)
 	mux.HandleFunc("GET /v1/auth/setup", s.handleSetupStatus)
 	mux.HandleFunc("POST /v1/auth/setup", s.handleSetup)
-	mux.HandleFunc("GET /v1/events/stream", s.adminAuth("audit.read", s.handleEventStream))
+	mux.HandleFunc("GET /v1/events/stream", s.anySession(s.handleEventStream))
 	mux.HandleFunc("POST /v1/auth/passkeys/register/begin", s.handlePasskeyRegisterBegin)
 	mux.HandleFunc("POST /v1/auth/passkeys/register/finish", s.handlePasskeyRegisterFinish)
 	mux.HandleFunc("POST /v1/auth/login/passkey/begin", s.handlePasskeyLoginBegin)
@@ -131,6 +131,7 @@ const (
 	ctxActor ctxKey = iota
 	ctxDevice
 	ctxCorr
+	ctxFullStream
 )
 
 func (s *Server) logging(next http.Handler) http.Handler {
@@ -359,5 +360,37 @@ func (s *Server) selfOrAdmin(action string, next http.HandlerFunc) http.HandlerF
 			}
 		}
 		admin(w, r)
+	}
+}
+
+// anySession admits any signed-in principal (bearer or cookie) and records
+// whether they may see everything (audit.read) or only their own events.
+func (s *Server) anySession(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var p *directory.Principal
+		assurance := "AL1"
+		if tok := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "); tok != "" && tok != r.Header.Get("Authorization") {
+			tenantID, pid, err := auth.ResolveAPIToken(r.Context(), s.DB, tok)
+			if err != nil {
+				s.fail(w, r, err)
+				return
+			}
+			if pid != "" && tenantID == s.TenantID {
+				p, _ = directory.GetPrincipal(r.Context(), s.DB, tenantID, pid)
+			}
+		} else if sp, ses, err := s.sessionPrincipal(r.Context(), r); err == nil && sp != nil {
+			p, assurance = sp, ses.Assurance
+		}
+		if p == nil {
+			s.writeErr(w, r, 401, "request.unauthorized", nil)
+			return
+		}
+		full := false
+		if d, err := s.Authz.Check(r.Context(), s.DB, s.TenantID, p, "audit.read", "directory", "root", authz.Presented{Assurance: assurance}); err == nil && d.Allow {
+			full = true
+		}
+		ctx := context.WithValue(r.Context(), ctxActor, directory.Actor{Kind: p.Kind, ID: p.ID, CorrelationID: corrOf(r)})
+		ctx = context.WithValue(ctx, ctxFullStream, full)
+		next(w, r.WithContext(ctx))
 	}
 }

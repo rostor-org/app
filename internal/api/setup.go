@@ -116,6 +116,9 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 				return err
 			}
 			if out.Assertion == nil {
+				if out.Code == "auth.failed" {
+					return directory.Err("password.current_incorrect")
+				}
 				return directory.Err(out.Code)
 			}
 		}

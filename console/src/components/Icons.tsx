@@ -11,6 +11,10 @@ export const Mark = () => (
   </svg>
 )
 
+/** My account (a person in a circle). */
+export const IconMe = () => (
+  <svg {...P}><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" strokeWidth="1.6" /><circle cx="8" cy="6.5" r="2.2" fill="currentColor" /><path d="M4 12.5c.8-1.8 2.3-2.7 4-2.7s3.2.9 4 2.7" fill="currentColor" /></svg>
+)
 export const IconPeople = () => (
   <svg {...P}><circle cx="8" cy="5" r="3" fill="currentColor" /><path d="M2 14c0-3 2.7-5 6-5s6 2 6 5" fill="currentColor" /></svg>
 )

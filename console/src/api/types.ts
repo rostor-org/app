@@ -92,7 +92,26 @@ export interface AuthSettingsUpdate {
 export interface Session {
   principal: Principal
   assurance: string
-  permissions: string[] // e.g. ["users.write"] or ["*"]
+  permissions: string[] // e.g. ["users.write"] or ["*"]; [] for a member without admin rights
+}
+
+// ---- first administrator (GET/POST /v1/auth/setup) --------------------------
+
+export interface SetupStatus {
+  needed: boolean
+}
+export interface SetupRequest {
+  bootstrap_token: string
+  username: string
+  display_name: string
+  password: string
+}
+
+/** A role definable on a resource type (GET /v1/admin/roles). */
+export interface Role {
+  resource_type: string
+  name: string
+  permissions: string[]
 }
 
 export interface Summary {
@@ -220,9 +239,9 @@ export interface Device {
 export interface AuditRow {
   seq: number
   ts: string
-  actor: { kind: string; id: string }
+  actor: { kind: string; id: string; name?: string } // name when a known principal, group or device
   action: string
-  target: { type: string; id: string }
+  target: { type: string; id: string; name?: string }
   credential_type: string
   assurance: string
   outcome: string
@@ -355,6 +374,12 @@ export interface CreateGrant {
   expires_at?: string | null
 }
 
+/** POST /v1/admin/users/{id}/password: `current` is required when changing one's own. */
+export interface PasswordChange {
+  current?: string
+  new: string
+}
+
 export interface EnrollmentToken {
   enrollment_token: string
   expires_in: number
@@ -388,6 +413,10 @@ export interface Api {
   login(req: LoginRequest): Promise<LoginResponse>
   session(): Promise<Session | null> // null on 401
   logout(): Promise<void>
+  /** Public: whether the install still needs its first human administrator. */
+  setupStatus(): Promise<SetupStatus>
+  /** Creates the first administrator and signs them in (201 sets the session cookie). */
+  setup(body: SetupRequest): Promise<LoginOK>
   /** Self-service passkey enrollment for the signed-in person. */
   passkeyRegisterBegin(): Promise<PasskeyCeremony<CreationOptionsJSON>>
   passkeyRegisterFinish(body: PasskeyRegisterFinish): Promise<Binding>
@@ -402,12 +431,17 @@ export interface Api {
   setUserState(id: string, state: string): Promise<void>
   enrollBinding(id: string, body: EnrollBinding): Promise<Binding>
   revokeBinding(id: string, bid: string): Promise<void>
+  /** Self (with `current`) or admin reset (without). */
+  changePassword(id: string, body: PasswordChange): Promise<void>
+  /** Sets, changes (non-empty) or removes (empty) the PIN on a badge binding. */
+  setPin(id: string, bid: string, pin: string): Promise<void>
   groups(q?: string): Promise<List<Group>>
   group(name: string): Promise<GroupDetail>
   createGroup(body: CreateGroup): Promise<Group>
   addMember(name: string, body: MemberChange): Promise<void>
   removeMember(name: string, body: MemberChange): Promise<void>
   grants(q?: string): Promise<List<Grant>>
+  roles(): Promise<List<Role>>
   createGrant(body: CreateGrant): Promise<Grant>
   revokeGrant(id: string): Promise<void>
   devices(q?: string): Promise<List<Device>>
