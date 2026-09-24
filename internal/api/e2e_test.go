@@ -783,3 +783,37 @@ func TestCertificateRenewalAndRotation(t *testing.T) {
 		t.Fatalf("audit chain: %d %v", bad, err)
 	}
 }
+
+// Regression: the Access screen listed nothing because the grants query referenced placeholders it never
+// bound, and the helper swallowed the Postgres error into an empty page. A created grant must come back
+// from the list, from the search, and from the group's detail.
+func TestGrantsAreListed(t *testing.T) {
+	h := newHarness(t)
+	h.adminCall("POST", "/v1/admin/groups", map[string]any{"name": "members"})
+	g := h.adminCall("POST", "/v1/admin/grants", map[string]any{"subject_kind": "group", "subject": "members", "role": "user", "resource_type": "workstations", "resource_id": "all"})
+	id, _ := g["id"].(string)
+	if id == "" {
+		t.Fatalf("create grant: %v", g)
+	}
+	has := func(out map[string]any, key string) bool {
+		items, _ := out[key].([]any)
+		for _, it := range items {
+			if m, ok := it.(map[string]any); ok && m["id"] == id {
+				return true
+			}
+		}
+		return false
+	}
+	if out := h.adminCall("GET", "/v1/admin/grants", nil); !has(out, "items") {
+		t.Fatalf("grant missing from list: %v", out)
+	}
+	if out := h.adminCall("GET", "/v1/admin/grants?q=workstations", nil); !has(out, "items") {
+		t.Fatalf("grant missing from search: %v", out)
+	}
+	if out := h.adminCall("GET", "/v1/admin/grants?q=nomatch", nil); has(out, "items") {
+		t.Fatalf("search should exclude the grant: %v", out)
+	}
+	if out := h.adminCall("GET", "/v1/admin/groups/members", nil); !has(out, "grants") {
+		t.Fatalf("grant missing from group detail: %v", out)
+	}
+}

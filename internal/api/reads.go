@@ -367,13 +367,20 @@ func (s *Server) handleGetGroup(w http.ResponseWriter, r *http.Request) {
 	}
 	rows.Close()
 	out["members"] = members
-	out["grants"] = s.grantRows(r, "g.subject_kind='group' AND g.subject_id=$2", g.ID)
+	grants, err := s.grantRows(r, "g.subject_kind='group' AND g.subject_id=$2", g.ID)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	out["grants"] = grants
 	s.writeJSON(w, 200, out)
 }
 
 // ---- grants -----------------------------------------------------------------
 
-func (s *Server) grantRows(r *http.Request, where string, arg any) []map[string]any {
+// grantRows lists active grants matching `where` ($1 is the tenant, $2 is arg when given). Query failures are
+// returned, never swallowed: an empty Access screen must mean "no grants", not "the query broke".
+func (s *Server) grantRows(r *http.Request, where string, arg any) ([]map[string]any, error) {
 	q := `SELECT g.id, g.subject_kind, g.subject_id,
 		CASE WHEN g.subject_kind='group' THEN (SELECT name FROM groups x WHERE x.tenant_id=g.tenant_id AND x.id=g.subject_id)
 		     ELSE (SELECT coalesce(username, id) FROM principals x WHERE x.tenant_id=g.tenant_id AND x.id=g.subject_id) END,
@@ -385,7 +392,7 @@ func (s *Server) grantRows(r *http.Request, where string, arg any) []map[string]
 	}
 	rows, err := s.DB.Query(r.Context(), q, args...)
 	if err != nil {
-		return []map[string]any{}
+		return nil, err
 	}
 	defer rows.Close()
 	out := []map[string]any{}
@@ -394,20 +401,23 @@ func (s *Server) grantRows(r *http.Request, where string, arg any) []map[string]
 		var nb, exp *time.Time
 		var created time.Time
 		if err := rows.Scan(&id, &sk, &sid, &sname, &role, &rt, &rid, &cond, &class, &nb, &exp, &created); err != nil {
-			break
+			return nil, err
 		}
 		out = append(out, map[string]any{"id": id, "subject": map[string]string{"kind": sk, "id": sid, "name": sname}, "role": role,
 			"resource": map[string]string{"type": rt, "id": rid}, "condition": cond, "condition_class": class,
 			"not_before": nb, "expires_at": exp, "created_at": created})
 	}
-	return out
+	return out, rows.Err()
 }
 
 func (s *Server) handleListGrants(w http.ResponseWriter, r *http.Request) {
 	pg := pageOf(r)
-	items := s.grantRows(r, `($2='' OR lower(g.role) LIKE $3 OR lower(g.resource_type||':'||g.resource_id) LIKE $3)`, nil)
-	_ = pg
-	// Filter by subject name client-side would be wrong; do it here cheaply.
+	items, err := s.grantRows(r, "TRUE", nil)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	// The search matches subject name, role and resource; the subject name is resolved per row, so filter here.
 	if pg.Q != "" {
 		q := strings.ToLower(pg.Q)
 		filtered := items[:0]
