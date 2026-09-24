@@ -1,24 +1,24 @@
 {
   "channel": "stable",
-  "version": "v0.3.1",
-  "published": "2026-09-24T16:29:21.959736Z",
-  "notes": "Fixes v0.3.0: start-up crash on existing installs and migrations not running on start. Everything from v0.3.0: first-administrator setup, My account with self-service, directory-admins group, role picker, name-first audit, Windows install bundle.",
+  "version": "v0.3.2",
+  "published": "2026-09-24T16:36:28.465225Z",
+  "notes": "Fixes the System screen crash when passkey settings are unset. Includes everything from v0.3.1.",
   "files": {
     "agent-windows-amd64": {
-      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/586352847",
-      "sha256": "5a49f9533596eb93af502604f8a6e54c79a6e6d19242d76ffe6f76b8021d6395",
+      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/586365147",
+      "sha256": "fb411402a67bda2caa01925ef044fe1f203b680cc0ca52e5ce00e1d5dbe121bf",
       "size": 7793152
     },
     "linux-amd64": {
-      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/586352846",
-      "sha256": "d5c335a14e75747ae6c9ed16c4302ce4000d868c9a4b7d6a655518edf3049b53",
+      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/586365153",
+      "sha256": "6336e3f0a77e4869a9b62de32d68986c072ca459a89b4bf07d87e6ace35b28f6",
       "size": 23830688
     },
     "linux-arm64": {
-      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/586352842",
-      "sha256": "5024710a56faabd647f573da9d2f1e849e1da107146a3178a2492f206883cbc7",
+      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/586365148",
+      "sha256": "90ce993efe185a42d79d418dfa5eb24df149f18299d8234ff5baf6595ee1d606",
       "size": 22413472
     }
   },
-  "signature": "kpHLwjJJMWxL4Ldl2JOwIJmYGFgLK56V2EpB8IZ2b7bi8O0m81A3yDSEuRS0l0ENR7GjkmoTfbd4Mvbq47g6Aw=="
+  "signature": "46Qv0eKlJIuAsi3AZVUh5UWrhJKhmnd1tbsSz4zct/cKDkcR0o70rcPzYeLxzpKoPhDn5SfBIzHrrh+Dec8JAA=="
 }
