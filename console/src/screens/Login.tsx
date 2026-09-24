@@ -268,7 +268,7 @@ export function Login() {
           </div>
         )}
         <div className="alt">
-          {mode === 'password' && passkeys && <button type="button" className="btn quiet" disabled={busy} onClick={() => void usePasskey()}>{t('ui.login.use_passkey')}</button>}
+          {passkeys && <button type="button" className="btn quiet" disabled={busy} onClick={() => void usePasskey()}>{t('ui.login.use_passkey')}</button>}
           {mode === 'password'
             ? <button type="button" className="btn quiet" disabled={busy} onClick={() => switchMode('badge')}>{t('ui.login.use_badge')}</button>
             : <button type="button" className="btn quiet" disabled={busy} onClick={() => switchMode('password')}>{t('ui.login.use_password')}</button>}
