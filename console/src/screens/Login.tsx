@@ -81,25 +81,36 @@ export function Login() {
   // pending so the browser can offer passkeys in its suggestions. Going on to
   // the password step (or leaving) aborts it; a modal prompt aborts it first.
   useEffect(() => {
-    if (!passkeys || mode !== 'password' || step !== 'identifier') return
+    // Wait until the tenant's default method is known: starting an autofill
+    // request that is aborted a moment later (default = badge) leaves the
+    // browser refusing the next one with "a request is already pending".
+    if (!passkeys || mode !== 'password' || step !== 'identifier' || !setupStatus.data) return
     const ctrl = new AbortController()
+    const previous = conditional.current
     conditional.current = ctrl
     void (async () => {
+      if (previous) { previous.abort(); await new Promise((r) => setTimeout(r, 250)) } // let the browser settle the abort
       if (!(await conditionalMediationAvailable()) || ctrl.signal.aborted) return
-      try {
-        const r = await passkeyLogin({ mediation: 'conditional', signal: ctrl.signal })
-        if (ctrl.signal.aborted) return
-        if ('code' in r) setError(message(r)); else await done()
-      } catch (err) {
-        if (!ctrl.signal.aborted && !isCancelled(err)) {
+      for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+          const r = await passkeyLogin({ mediation: 'conditional', signal: ctrl.signal })
+          if (ctrl.signal.aborted) return
+          if ('code' in r) setError(message(r)); else await done()
+          return
+        } catch (err) {
+          if (ctrl.signal.aborted || isCancelled(err)) return
+          // Chrome reports a not-yet-settled abort as "a request is already
+          // pending"; one retry after a short wait clears it.
+          if (attempt === 0 && err instanceof DOMException && /already pending/i.test(err.message)) { await new Promise((r) => setTimeout(r, 400)); continue }
           // A server-side refusal (passkeys not configured) is not the user's doing: stay quiet.
           if (!(err instanceof ApiError)) fail(err)
+          return
         }
       }
     })()
     return () => { ctrl.abort(); if (conditional.current === ctrl) conditional.current = null }
     // passkeyLogin changes with every keystroke in the username field; the pending request must not, so it is not a dependency.
-  }, [passkeys, mode, step, condGen])
+  }, [passkeys, mode, step, condGen, setupStatus.data])
 
   const usePasskey = async () => {
     setError(null)
