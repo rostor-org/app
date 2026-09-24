@@ -112,19 +112,30 @@ export function Login() {
     // passkeyLogin changes with every keystroke in the username field; the pending request must not, so it is not a dependency.
   }, [passkeys, mode, step, condGen, setupStatus.data])
 
+  // Some password-manager extensions never settle the request when their
+  // prompt is dismissed, so the modal request is cancellable and times out.
+  const modal = useRef<AbortController | null>(null)
+  const cancelModal = () => { modal.current?.abort(); modal.current = null; setBusy(false) }
   const usePasskey = async () => {
     setError(null)
     abortConditional()
+    const ctrl = new AbortController()
+    modal.current = ctrl
+    const timer = setTimeout(() => ctrl.abort(), 90_000)
     setBusy(true)
     try {
-      const r = await passkeyLogin({})
+      const r = await passkeyLogin({ signal: ctrl.signal })
+      if (ctrl.signal.aborted) return
       if ('code' in r) { setError(message(r)); setCondGen((g) => g + 1); return }
       await done()
     } catch (err) {
+      if (ctrl.signal.aborted) return
       if (err instanceof ApiError) setError(message(err.body))
       else if (!isCancelled(err)) setError(t('ui.login.passkey_failed'))
       setCondGen((g) => g + 1)
     } finally {
+      clearTimeout(timer)
+      if (modal.current === ctrl) modal.current = null
       setBusy(false)
     }
   }
@@ -253,6 +264,7 @@ export function Login() {
             <button type="submit" className="btn primary" disabled={busy}>
               {t(busy ? 'ui.login.working' : mode === 'password' && step === 'identifier' ? 'ui.login.continue' : 'ui.login.submit')}
             </button>
+            {busy && modal.current && <button type="button" className="btn quiet" onClick={cancelModal}>{t('ui.common.cancel')}</button>}
           </div>
         )}
         <div className="alt">
