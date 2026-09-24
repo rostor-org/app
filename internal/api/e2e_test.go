@@ -101,8 +101,11 @@ func newHarness(t *testing.T) *harness {
 	if err != nil {
 		t.Fatal(err)
 	}
+	wa := &auth.WebAuthnMethod{}
+	authSvc = auth.NewService(prov, &auth.PasswordMethod{Provider: prov}, &auth.BadgeMethod{Provider: prov}, wa)
 	h.srv = &api.Server{DB: pool, Auth: authSvc, Authz: eng, Devices: dev, Catalog: cat, CA: h.ca, TenantID: h.tenantID,
-		Log: slog.New(slog.NewTextHandler(io.Discard, nil)), Events: api.NewBroadcaster(), Started: time.Now(), Version: "test"}
+		Log: slog.New(slog.NewTextHandler(testLog(), nil)), Events: api.NewBroadcaster(), Started: time.Now(), Version: "test"}
+	wa.Settings = h.srv.RelyingParty
 	certPEM, keyPEM, err := h.ca.IssueServer([]string{"127.0.0.1"}, 3600e9)
 	if err != nil {
 		t.Fatal(err)
@@ -399,4 +402,80 @@ func TestEventStream(t *testing.T) {
 			t.Fatalf("did not receive live events; saw %v", seen)
 		}
 	}
+}
+
+func TestBadgeCredential(t *testing.T) {
+	h := newHarness(t)
+	h.adminCall("POST", "/v1/admin/users", map[string]any{"username": "dana", "display_name": map[string]string{"en": "Dana"}})
+	h.adminCall("POST", "/v1/admin/groups", map[string]any{"name": "members"})
+	h.adminCall("POST", "/v1/admin/groups/members/members", map[string]any{"member_kind": "principal", "member": "dana"})
+	h.adminCall("POST", "/v1/admin/grants", map[string]any{"subject_kind": "group", "subject": "members", "role": "user", "resource_type": "workstations", "resource_id": "all"})
+	// Register a badge with a PIN from its full UID; the printed and Wiegand forms derive from it.
+	h.adminCall("POST", "/v1/admin/users/dana/bindings", map[string]any{"method": "badge", "fields": map[string]string{"uid": "0A00 4A 1F 7E", "pin": "2468"}})
+	// The same card cannot be registered to someone else.
+	h.adminCall("POST", "/v1/admin/users", map[string]any{"username": "sam"})
+	if st, out := h.call(h.client(nil), "POST", "/v1/admin/users/sam/bindings", h.admin, map[string]any{"method": "badge", "fields": map[string]string{"uid": "0a004a1f7e"}}); st != 409 {
+		t.Fatalf("duplicate badge should be 409: %d %v", st, out)
+	}
+
+	// Device enrols.
+	tok := h.adminCall("POST", "/v1/admin/enrollment-tokens", map[string]any{"resource_type": "workstation"})["enrollment_token"].(string)
+	key, csrPEM := csr(t)
+	st, out := h.call(h.client(nil), "POST", "/v1/devices/enroll", "", map[string]any{"enrollment_token": tok, "csr_pem": csrPEM, "posture": map[string]any{"hostname": "WS-BADGE"}})
+	if st != 201 {
+		t.Fatalf("enroll: %d %v", st, out)
+	}
+	certBlock, _ := pem.Decode([]byte(out["certificate_pem"].(string)))
+	keyDER, _ := x509.MarshalECPrivateKey(key)
+	cert, _ := tls.X509KeyPair(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certBlock.Bytes}), pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER}))
+	dev := h.client(&cert)
+	verify := func(cred map[string]string) map[string]any {
+		_, out := h.call(dev, "POST", "/v1/verify", "", map[string]any{"credential": cred, "action": "logon", "resource": map[string]string{"type": "workstation", "id": "WS-BADGE"}})
+		return out
+	}
+	code := func(out map[string]any) string { return out["reason"].([]any)[0].(map[string]any)["code"].(string) }
+	// Tap alone on a PIN-protected badge: CONTINUE, asking for the PIN.
+	if out := verify(map[string]string{"type": "badge", "uid": "0a004a1f7e"}); out["decision"] != "CONTINUE" || code(out) != "auth.continue" {
+		t.Fatalf("tap without pin: %v", out)
+	}
+	// Tap by the Wiegand-26 form (a door-style reader) with the PIN → ALLOW at AL2.
+	if out := verify(map[string]string{"type": "badge", "facility": "74", "card": "8062", "pin": "2468"}); out["decision"] != "ALLOW" || out["assurance"] != "AL2" {
+		t.Fatalf("wiegand + pin: %v", out)
+	}
+	// Printed number form, wrong PIN → auth.failed.
+	if out := verify(map[string]string{"type": "badge", "number": "4857726", "pin": "0000"}); code(out) != "auth.failed" {
+		t.Fatalf("wrong pin: %v", out)
+	}
+	// Unknown card → auth.failed, same as wrong PIN.
+	if out := verify(map[string]string{"type": "badge", "uid": "deadbeef00", "pin": "2468"}); code(out) != "auth.failed" {
+		t.Fatalf("unknown card: %v", out)
+	}
+	// Console sign-in by badge needs no identifier.
+	st, out = h.call(h.client(nil), "POST", "/v1/auth/login", "", map[string]any{"method": "badge", "fields": map[string]string{"uid": "0a004a1f7e", "pin": "2468"}})
+	if st != 200 || out["assurance"] != "AL2" {
+		t.Fatalf("badge login: %d %v", st, out)
+	}
+}
+
+func jsonReq(method, url string, body any) (*http.Request, error) {
+	var rd io.Reader
+	if body != nil {
+		b, _ := json.Marshal(body)
+		rd = bytes.NewReader(b)
+	}
+	req, err := http.NewRequest(method, url, rd)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	return req, nil
+}
+
+
+// testLog sends server logs to stderr when ROSTOR_TEST_LOG=1.
+func testLog() io.Writer {
+	if os.Getenv("ROSTOR_TEST_LOG") == "1" {
+		return os.Stderr
+	}
+	return io.Discard
 }

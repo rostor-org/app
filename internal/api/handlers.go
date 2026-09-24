@@ -63,6 +63,12 @@ type verifyRequest struct {
 		Type       string `json:"type"`
 		Identifier string `json:"identifier"`
 		Secret     string `json:"secret"`
+		// badge presentations: any of these forms, plus an optional pin
+		UID      string `json:"uid"`
+		Number   string `json:"number"`
+		Facility string `json:"facility"`
+		Card     string `json:"card"`
+		PIN      string `json:"pin"`
 	} `json:"credential"`
 	Action   string `json:"action"`
 	Resource struct {
@@ -129,8 +135,15 @@ func (s *Server) handleVerify(w http.ResponseWriter, r *http.Request) {
 		// from the auth policy domain needs the principal, which is only known
 		// after resolution; that plumbing lands with the policy engine (M3).
 		var err error
-		out, err = s.Auth.AuthenticateInline(r.Context(), tx, s.TenantID, req.Credential.Type, req.Credential.Identifier,
-			auth.StepInput{Fields: map[string]string{"password": req.Credential.Secret}}, auth.DefaultLockout)
+		switch req.Credential.Type {
+		case "badge":
+			out, err = s.Auth.AuthenticateByCredential(r.Context(), tx, s.TenantID, "badge", auth.StepInput{Fields: map[string]string{
+				"uid": req.Credential.UID, "number": req.Credential.Number, "facility": req.Credential.Facility, "card": req.Credential.Card,
+				"pin": req.Credential.PIN}}, auth.DefaultLockout)
+		default:
+			out, err = s.Auth.AuthenticateInline(r.Context(), tx, s.TenantID, req.Credential.Type, req.Credential.Identifier,
+				auth.StepInput{Fields: map[string]string{"password": req.Credential.Secret}}, auth.DefaultLockout)
+		}
 		if err != nil || out.Assertion == nil {
 			return err
 		}
@@ -163,6 +176,13 @@ func (s *Server) handleVerify(w http.ResponseWriter, r *http.Request) {
 		pid := ""
 		if out.Principal != nil {
 			pid = out.Principal.ID
+		}
+		if out.Code == auth.CodeContinue {
+			// Card matched; the presenter must add a PIN. Not audited as a
+			// deny: nothing has been decided yet.
+			s.writeJSON(w, 200, verifyResponse{Decision: "CONTINUE", Reason: []authz.Reason{{Code: out.Code, Params: out.Params}},
+				Message: s.Catalog.Render(req.Locale, out.Code, out.Params)})
+			return
 		}
 		deny(out.Code, out.Params, pid)
 		return

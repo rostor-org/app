@@ -19,13 +19,17 @@ func (m *PasswordMethod) Describe() Description {
 	return Description{Method: "password", Properties: []string{"knowledge"}, Modes: []string{"inline"}, Assurance: "AL1"}
 }
 
-func (m *PasswordMethod) Enroll(ctx context.Context, in StepInput) ([]byte, error) {
+func (m *PasswordMethod) Enroll(ctx context.Context, in StepInput) ([]byte, []Identifier, error) {
 	pw := in.Fields["password"]
 	if len(pw) < 8 {
-		return nil, errors.New("password too short")
+		return nil, nil, errors.New("password too short")
 	}
-	return m.Provider.PasswordHash([]byte(pw))
+	mat, err := m.Provider.PasswordHash([]byte(pw))
+	return mat, nil, err
 }
+
+// A password never identifies the user; it is always identifier-first.
+func (m *PasswordMethod) Identify(StepInput) []Identifier { return nil }
 
 func (m *PasswordMethod) Authenticate(ctx context.Context, bindingID string, mat SealedMaterial, in StepInput, _ map[string]any) (StepResult, error) {
 	stored, err := mat.Read(ctx)

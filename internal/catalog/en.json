@@ -1,7 +1,11 @@
 {
+  "auth.continue": "Enter your PIN to finish signing in.",
   "auth.failed": "Sign-in failed.",
   "auth.locked": "Too many failed attempts. Try again in {minutes} minutes.",
   "auth.method_unavailable": "That sign-in method is not available for this account.",
+  "auth.passkey_rejected": "That passkey could not be registered.",
+  "auth.passkeys_unconfigured": "Passkeys are not set up for this organisation yet.",
+  "auth.pin_required": "This account requires a PIN with the badge.",
   "device.not_trusted": "This device is not trusted.",
   "device.unknown": "This device is not enrolled.",
   "enrollment.token_invalid": "The enrollment token is invalid or has already been used.",

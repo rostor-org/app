@@ -80,3 +80,34 @@ them with `t(code, params)`. Every code the engine emits is in the catalog
 
 CSV import, badge enrollment, password-reset ceremonies, audit export, the
 plugin registry, key rotation, policy counts on groups.
+
+## Passkeys and badges (added with v0.1.3)
+
+- `GET /v1/admin/settings/auth` → `{"webauthn":{"rp_id","display_name","origins":[…],"enrolled_passkeys":N}}`;
+  `PUT` the same shape (without `enrolled_passkeys`) to set it. It writes the
+  tenant-wide auth policy. **Changing `rp_id` after passkeys exist orphans
+  them**; the console must warn when `enrolled_passkeys > 0`.
+- `POST /v1/auth/passkeys/register/begin` (session; no body) → `{"ceremony_id","options"}`
+  where `options` is the `PublicKeyCredentialCreationOptions` wrapper for
+  `navigator.credentials.create` (base64url fields; use the WebAuthn JSON
+  helpers `PublicKeyCredential.parseCreationOptionsFromJSON` when available).
+  `POST …/register/finish` `{"ceremony_id","label","response":<credential.toJSON()>}` → `201` binding.
+  Errors: `auth.passkeys_unconfigured` (400), `auth.passkey_rejected` (400).
+- `POST /v1/auth/login/passkey/begin` `{}` or `{"identifier":"dan"}` → `{"ceremony_id","options"}`
+  (`PublicKeyCredentialRequestOptions` wrapper; empty allowCredentials means
+  discoverable — pass `mediation: "conditional"` for autofill).
+  `POST …/login/passkey/finish` `{"ceremony_id","response":<assertion.toJSON()>}` →
+  the same 200 shapes as `/v1/auth/login` (session view, or `{code,message}`).
+- Badge enrollment uses the existing bindings endpoint:
+  `POST /v1/admin/users/{id}/bindings` `{"method":"badge","label":"…","fields":{"number":"<as typed by a reader>","pin":"1234"}}`.
+  `fields` may instead carry `uid`, `printed`, or `facility`+`card`; every
+  form is derived and indexed. A card already registered → `409 request.conflict`.
+- Badge sign-in: `POST /v1/auth/login` `{"method":"badge","fields":{"number":"…","pin":"…"}}`
+  with no identifier. If the badge has a PIN and none was sent the reply is
+  `{code:"auth.continue", params:{need:"pin"}}` (200): ask for the PIN and
+  resend with it.
+- `Verify` accepts `{"type":"badge","number":"…","pin":"…"}` (or `uid` /
+  `facility`+`card`); a missing PIN on a PIN-protected badge returns
+  `decision: "CONTINUE"` with reason `auth.continue`.
+- Person detail bindings now include method `webauthn` (label = the manager
+  or key name) and `badge`; both are revocable via `DELETE …/bindings/{bid}`.

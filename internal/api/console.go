@@ -89,7 +89,12 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	var ses *auth.Session
 	err := s.tx(r, func(tx pgx.Tx) error {
 		var err error
-		out, err = s.Auth.AuthenticateInline(r.Context(), tx, s.TenantID, req.Method, req.Identifier, auth.StepInput{Fields: req.Fields}, auth.DefaultLockout)
+		if m, ok := s.Auth.Method(req.Method); ok && req.Identifier == "" && m.Identify(auth.StepInput{Fields: req.Fields}) != nil {
+			// The credential names the person (badge, discoverable passkey).
+			out, err = s.Auth.AuthenticateByCredential(r.Context(), tx, s.TenantID, req.Method, auth.StepInput{Fields: req.Fields}, auth.DefaultLockout)
+		} else {
+			out, err = s.Auth.AuthenticateInline(r.Context(), tx, s.TenantID, req.Method, req.Identifier, auth.StepInput{Fields: req.Fields}, auth.DefaultLockout)
+		}
 		if err != nil || out.Assertion == nil {
 			return err
 		}
@@ -127,6 +132,10 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		pid := ""
 		if out.Principal != nil {
 			pid = out.Principal.ID
+		}
+		if out.Code == auth.CodeContinue {
+			s.writeJSON(w, 200, map[string]any{"code": out.Code, "params": out.Params, "message": s.Catalog.Render(locale(r), out.Code, out.Params)})
+			return
 		}
 		deny(out.Code, out.Params, pid)
 		return

@@ -63,8 +63,9 @@ func open(ctx context.Context, createKey bool) (*core, error) {
 	if err != nil {
 		return nil, err
 	}
+	wa := &auth.WebAuthnMethod{}
 	c := &core{cfg: cfg, db: pool, provider: prov, authz: eng, catalog: cat,
-		auth:    auth.NewService(prov, &auth.PasswordMethod{Provider: prov}),
+		auth:    auth.NewService(prov, &auth.PasswordMethod{Provider: prov}, &auth.BadgeMethod{Provider: prov}, wa),
 		devices: &devices.Service{Provider: prov},
 		log:     slog.New(slog.NewTextHandler(os.Stderr, nil)),
 	}
@@ -129,6 +130,10 @@ func runServe(ctx context.Context, args []string) error {
 	srv := &api.Server{DB: c.db, Auth: c.auth, Authz: c.authz, Devices: c.devices, Catalog: c.catalog, CA: ca, TenantID: c.tenantID, Log: c.log,
 		StateDir: c.cfg.StateDir, Version: version, Events: api.NewBroadcaster(), Started: time.Now(), ReleaseKeyFP: releaseKeyFP(c.cfg.ReleasePubKey), Static: console.Handler()}
 	go srv.Listen(ctx)
+	// Passkey relying-party settings come from tenant policy at call time.
+	if m, ok := c.auth.Method("webauthn"); ok {
+		m.(*auth.WebAuthnMethod).Settings = srv.RelyingParty
+	}
 	tlsCfg, err := srv.TLSConfig(certPEM, keyPEM)
 	if err != nil {
 		return err

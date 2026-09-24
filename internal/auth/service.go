@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -52,7 +53,7 @@ func (s *Service) Enroll(ctx context.Context, tx pgx.Tx, tenantID string, actor 
 	if !ok {
 		return nil, directory.Err("auth.method_unavailable", "method", method)
 	}
-	mat, err := m.Enroll(ctx, in)
+	mat, idents, err := m.Enroll(ctx, in)
 	if err != nil {
 		return nil, directory.Err("request.malformed", "field", method, "detail", err.Error())
 	}
@@ -68,6 +69,15 @@ func (s *Service) Enroll(ctx context.Context, tx pgx.Tx, tenantID string, actor 
 	}
 	if _, err := tx.Exec(ctx, `INSERT INTO credential_material (tenant_id, binding_id, sealed) VALUES ($1,$2,$3)`, tenantID, b.ID, sealed); err != nil {
 		return nil, err
+	}
+	for _, id := range idents {
+		if _, err := tx.Exec(ctx, `INSERT INTO credential_identifiers (tenant_id, binding_id, kind, value) VALUES ($1,$2,$3,$4)`, tenantID, b.ID, id.Kind, id.Value); err != nil {
+			if strings.Contains(err.Error(), "23505") {
+				// The same card (or credential) is already registered to someone.
+				return nil, directory.Err("request.conflict", "field", "credential", "kind", id.Kind)
+			}
+			return nil, err
+		}
 	}
 	_, err = audit.Append(ctx, tx, tenantID, audit.Event{ActorKind: actor.Kind, ActorID: actor.ID, Action: "binding.enroll",
 		TargetType: "principal", TargetID: principalID, Outcome: "ok",
@@ -203,7 +213,95 @@ func (s *Service) AuthenticateInline(ctx context.Context, tx pgx.Tx, tenantID, m
 	if err := s.clearFailures(ctx, tx, tenantID, p.ID); err != nil {
 		return nil, err
 	}
+	if err := s.touchBinding(ctx, tx, tenantID, bindingID, res.Assertion); err != nil {
+		return nil, err
+	}
+	return s.finish(ctx, tx, tenantID, cer, method, p.ID, "completed", &Outcome{Principal: p, Assertion: res.Assertion})
+}
+
+// touchBinding records use and re-seals any material the method updated
+// (a passkey's sign counter). Methods return material; only the core writes it.
+func (s *Service) touchBinding(ctx context.Context, tx pgx.Tx, tenantID, bindingID string, a *Assertion) error {
 	if _, err := tx.Exec(ctx, `UPDATE authenticator_bindings SET last_used_at=now() WHERE tenant_id=$1 AND id=$2`, tenantID, bindingID); err != nil {
+		return err
+	}
+	if a != nil && a.UpdatedMaterial != nil {
+		sealed, err := s.Provider.Seal(a.UpdatedMaterial, []byte(tenantID+"/"+bindingID))
+		if err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `UPDATE credential_material SET sealed=$3 WHERE tenant_id=$1 AND binding_id=$2`, tenantID, bindingID, sealed); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// NeedsInput marks an outcome where the credential matched but the method
+// needs one more thing from the presenter (a PIN). Code is "auth.continue"
+// and Params carries what is needed.
+const CodeContinue = "auth.continue"
+
+// AuthenticateByCredential runs an inline ceremony for a method whose
+// credential identifies the user (badge, discoverable passkey): the core
+// looks the presented identifiers up, finds the binding and its principal,
+// applies lockout, and delegates verification. Unknown credentials and
+// failed verifications both yield auth.failed.
+func (s *Service) AuthenticateByCredential(ctx context.Context, tx pgx.Tx, tenantID, method string, in StepInput, pol LockoutPolicy) (*Outcome, error) {
+	m, ok := s.methods[method]
+	if !ok {
+		return &Outcome{Code: "auth.method_unavailable", Params: map[string]any{"method": method}}, nil
+	}
+	cer := ids.New("cer")
+	presented := m.Identify(in)
+	if len(presented) == 0 {
+		return s.finish(ctx, tx, tenantID, cer, method, "", "failed", &Outcome{Code: "auth.failed", Params: map[string]any{}})
+	}
+	kinds := make([]string, len(presented))
+	values := make([]string, len(presented))
+	for i, id := range presented {
+		kinds[i], values[i] = id.Kind, id.Value
+	}
+	var bindingID, principalID string
+	err := tx.QueryRow(ctx, `SELECT b.id, b.principal_id FROM credential_identifiers ci
+		JOIN authenticator_bindings b ON b.tenant_id=ci.tenant_id AND b.id=ci.binding_id AND b.state='active' AND b.method=$2
+		WHERE ci.tenant_id=$1 AND (ci.kind, ci.value) IN (SELECT * FROM unnest($3::text[], $4::text[])) LIMIT 1`,
+		tenantID, method, kinds, values).Scan(&bindingID, &principalID)
+	if err == pgx.ErrNoRows {
+		s.burn(ctx, m, in)
+		return s.finish(ctx, tx, tenantID, cer, method, "", "failed", &Outcome{Code: "auth.failed", Params: map[string]any{}})
+	}
+	if err != nil {
+		return nil, err
+	}
+	p, err := directory.GetPrincipal(ctx, tx, tenantID, principalID)
+	if err != nil {
+		return nil, err
+	}
+	if until, err := s.lockedUntil(ctx, tx, tenantID, p.ID); err != nil {
+		return nil, err
+	} else if until.After(time.Now()) {
+		mins := int(time.Until(until).Minutes()) + 1
+		return s.finish(ctx, tx, tenantID, cer, method, p.ID, "failed", &Outcome{Principal: p, Code: "auth.locked", Params: map[string]any{"minutes": mins}})
+	}
+	res, err := m.Authenticate(ctx, bindingID, sealedRow{s, tx, tenantID, bindingID}, in, nil)
+	if err != nil {
+		return nil, err
+	}
+	if res.Continue != nil {
+		// Not a failure: the presenter must supply more (e.g. the PIN).
+		return s.finish(ctx, tx, tenantID, cer, method, p.ID, "pending", &Outcome{Principal: p, Code: CodeContinue, Params: res.Continue})
+	}
+	if res.Failed || res.Assertion == nil {
+		if err := s.recordFailure(ctx, tx, tenantID, p.ID, pol); err != nil {
+			return nil, err
+		}
+		return s.finish(ctx, tx, tenantID, cer, method, p.ID, "failed", &Outcome{Principal: p, Code: "auth.failed", Params: map[string]any{}})
+	}
+	if err := s.clearFailures(ctx, tx, tenantID, p.ID); err != nil {
+		return nil, err
+	}
+	if err := s.touchBinding(ctx, tx, tenantID, bindingID, res.Assertion); err != nil {
 		return nil, err
 	}
 	return s.finish(ctx, tx, tenantID, cer, method, p.ID, "completed", &Outcome{Principal: p, Assertion: res.Assertion})
@@ -212,6 +310,10 @@ func (s *Service) AuthenticateInline(ctx context.Context, tx pgx.Tx, tenantID, m
 // burn performs a dummy verification so a missing principal or binding costs
 // the same as a wrong secret.
 func (s *Service) burn(ctx context.Context, m Method, in StepInput) {
+	if m.Describe().Method != "password" {
+		// Non-password methods do constant-cost lookups; nothing to burn.
+		return
+	}
 	_, _ = m.Authenticate(ctx, "", constMaterial(dummyMaterial(s.Provider)), in, nil)
 }
 
@@ -290,4 +392,105 @@ func ResolveAPIToken(ctx context.Context, q directory.Querier, token string) (te
 		return "", "", nil
 	}
 	return
+}
+
+// ---- Two-step ceremonies (WebAuthn) ------------------------------------------
+
+// StartCeremony persists opaque method state under a new ceremony ID. The
+// principal is empty for discoverable (identifier-less) logins.
+func (s *Service) StartCeremony(ctx context.Context, tx pgx.Tx, tenantID, method, principalID string, state []byte, ttl time.Duration) (string, error) {
+	id := ids.New("cer")
+	sealed, err := s.Provider.Seal(state, []byte(tenantID+"/"+id))
+	if err != nil {
+		return "", err
+	}
+	data, _ := json.Marshal(map[string]any{"state": sealed})
+	_, err = tx.Exec(ctx, `INSERT INTO ceremonies (tenant_id, id, method, mode, principal_id, state, data, expires_at)
+		VALUES ($1,$2,$3,'inline',NULLIF($4,''),'pending',$5,now() + $6::interval)`, tenantID, id, method, principalID, data, ttl.String())
+	return id, err
+}
+
+// TakeCeremony returns and consumes a pending ceremony's state. A ceremony
+// can be finished exactly once and only before it expires.
+func (s *Service) TakeCeremony(ctx context.Context, tx pgx.Tx, tenantID, method, id string) (principalID string, state []byte, err error) {
+	var data []byte
+	var pid *string
+	err = tx.QueryRow(ctx, `UPDATE ceremonies SET state='completed', completed_at=now()
+		WHERE tenant_id=$1 AND id=$2 AND method=$3 AND state='pending' AND expires_at > now()
+		RETURNING principal_id, data`, tenantID, id, method).Scan(&pid, &data)
+	if err == pgx.ErrNoRows {
+		return "", nil, directory.Err("auth.failed")
+	}
+	if err != nil {
+		return "", nil, err
+	}
+	var d struct {
+		State []byte `json:"state"`
+	}
+	if err := json.Unmarshal(data, &d); err != nil {
+		return "", nil, err
+	}
+	state, err = s.Provider.Open(d.State, []byte(tenantID+"/"+id))
+	if pid != nil {
+		principalID = *pid
+	}
+	return principalID, state, err
+}
+
+// EnrollPrepared stores material and identifiers a two-step ceremony
+// produced (FinishRegistration), like Enroll but without calling the method.
+func (s *Service) EnrollPrepared(ctx context.Context, tx pgx.Tx, tenantID string, actor directory.Actor, principalID, method, label string, material []byte, idents []Identifier) (*Binding, error) {
+	m, ok := s.methods[method]
+	if !ok {
+		return nil, directory.Err("auth.method_unavailable", "method", method)
+	}
+	b := &Binding{ID: ids.New("bnd"), PrincipalID: principalID, Method: method, Properties: m.Describe().Properties, Label: label, State: "active"}
+	sealed, err := s.Provider.Seal(material, []byte(tenantID+"/"+b.ID))
+	if err != nil {
+		return nil, err
+	}
+	if err := tx.QueryRow(ctx, `INSERT INTO authenticator_bindings (tenant_id, id, principal_id, method, properties, label)
+		VALUES ($1,$2,$3,$4,$5,NULLIF($6,'')) RETURNING created_at`, tenantID, b.ID, principalID, method, b.Properties, label).Scan(&b.CreatedAt); err != nil {
+		return nil, err
+	}
+	if _, err := tx.Exec(ctx, `INSERT INTO credential_material (tenant_id, binding_id, sealed) VALUES ($1,$2,$3)`, tenantID, b.ID, sealed); err != nil {
+		return nil, err
+	}
+	for _, id := range idents {
+		if _, err := tx.Exec(ctx, `INSERT INTO credential_identifiers (tenant_id, binding_id, kind, value) VALUES ($1,$2,$3,$4)`, tenantID, b.ID, id.Kind, id.Value); err != nil {
+			if strings.Contains(err.Error(), "23505") {
+				return nil, directory.Err("request.conflict", "field", "credential", "kind", id.Kind)
+			}
+			return nil, err
+		}
+	}
+	_, err = audit.Append(ctx, tx, tenantID, audit.Event{ActorKind: actor.Kind, ActorID: actor.ID, Action: "binding.enroll",
+		TargetType: "principal", TargetID: principalID, Outcome: "ok",
+		Detail: map[string]any{"binding_id": b.ID, "method": method, "properties": b.Properties}, CorrelationID: actor.CorrelationID})
+	return b, err
+}
+
+// MaterialsFor returns the opened material of every active binding of a
+// method for a principal (for passkey exclusion lists / allow lists).
+func (s *Service) MaterialsFor(ctx context.Context, q directory.Querier, tenantID, principalID, method string) ([][]byte, error) {
+	rows, err := q.Query(ctx, `SELECT b.id, c.sealed FROM authenticator_bindings b JOIN credential_material c ON c.tenant_id=b.tenant_id AND c.binding_id=b.id
+		WHERE b.tenant_id=$1 AND b.principal_id=$2 AND b.method=$3 AND b.state='active'`, tenantID, principalID, method)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out [][]byte
+	for rows.Next() {
+		var id string
+		var sealed []byte
+		if err := rows.Scan(&id, &sealed); err != nil {
+			return nil, err
+		}
+		raw, err := s.Provider.Open(sealed, []byte(tenantID+"/"+id))
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, raw)
+	}
+	return out, rows.Err()
 }
