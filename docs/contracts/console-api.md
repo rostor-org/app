@@ -55,7 +55,7 @@ IDs are opaque strings. Times are RFC 3339 UTC. Lists return
 | `GET /v1/admin/groups/{name}` | `{id,name,display_name,kind, members:[{kind,id,name,display_name,state}], grants:[grant rows]}` |
 | `GET /v1/admin/grants` | items: `{id, subject:{kind,id,name}, role, resource:{type,id}, condition, condition_class, not_before, expires_at}` |
 | `GET /v1/admin/devices` | items: `{id, display_name, resource:{type,id}, lifecycle, last_seen_at, posture, cert_not_after}` |
-| `GET /v1/admin/audit?limit=&before=<seq>&q=` | `{"items":[{seq,ts,actor:{kind,id},action,target:{type,id},credential_type,assurance,outcome,detail}],"head":{seq}}` |
+| `GET /v1/admin/audit?limit=&before=<seq>&q=&include_system=1` | `{"items":[{seq,ts,actor:{kind,id},action,target:{type,id},credential_type,assurance,outcome,detail}],"head":{seq}}` |
 | `GET /v1/admin/audit/verify` | `{intact,first_bad_seq}` (existing) |
 | `GET /v1/admin/why?principal=&action=&resource_type=&resource_id=` | existing: decision, reason chain, groups→paths, candidates with per-condition results, as_of |
 | `GET /v1/admin/updates` | existing state; `POST /v1/admin/updates/apply` |
@@ -135,6 +135,16 @@ plugin registry, key rotation, policy counts on groups.
   bindings only; empty pin removes it). Audited as `binding.pin_set`.
 - Person detail `groups[]` entries carry `direct: bool` (direct vs inherited).
 - Roles for the grant form: `GET /v1/admin/roles` → `{"items":[{resource_type,name,permissions}]}`.
+- Pickers for the grant form (v0.6.0): `GET /v1/admin/resources` →
+  `{"items":[{type,id,parent:{type,id}|null}], "total", "permissions":{<type>:[action…]}}`.
+  `permissions` lists what is known per type: for `directory` every action the
+  admin API checks plus `*`; for `workstation(s)` the device actions; for any
+  type, whatever existing roles already use. `POST /v1/admin/roles`
+  `{resource_type,name,permissions}` defines a role (roles.write) and is what
+  the form's "New role…" calls before creating the grant.
+- Audit default view (v0.6.0): rows whose actor kind is `system` or `device`
+  are omitted unless `include_system=1`; the console's "Show system activity"
+  tick sets it.
 - Audit rows (v0.3.0): `actor.name` and `target.name` are present when the
   actor/target is a known principal, group or device; `detail.principal_name`
   accompanies `detail.principal_id`. Lead with names; show IDs on demand.

@@ -2,7 +2,7 @@ import type {
   Api, ApiErrorBody, AuditPage, AuditQuery, AuditVerify, AuthSettings, Binding, Brand, CA, CAList, Catalog, CreationOptionsJSON, Device, Downloads,
   EnrollmentToken, Explanation, Grant, Group, GroupDetail, List, LiveHandlers, LoginOK,
   LoginRequest, LoginResponse, PasskeyCeremony, Plugin, Principal, RequestOptionsJSON, Role, Session, SetupStatus, Summary, SystemInfo, UpdateState,
-  User, UserDetail, WhyQuery,
+  User, UserDetail, WhyQuery, ResourceCatalog,
 } from './types'
 
 export class ApiError extends Error {
@@ -84,12 +84,14 @@ export function createHttpApi(opts: ClientOptions = {}): Api {
     removeMember: (name, body) => call<void>('DELETE', `/v1/admin/groups/${encodeURIComponent(name)}/members`, body),
     grants: (q) => call<List<Grant>>('GET', `/v1/admin/grants${qs({ q })}`),
     roles: () => call<List<Role>>('GET', '/v1/admin/roles'),
+    resources: () => call<ResourceCatalog>('GET', '/v1/admin/resources'),
+    upsertRole: (body) => call<Role>('POST', '/v1/admin/roles', body),
     createGrant: (body) => call<Grant>('POST', '/v1/admin/grants', body),
     revokeGrant: (id) => call<void>('DELETE', `/v1/admin/grants/${encodeURIComponent(id)}`),
     devices: (q) => call<List<Device>>('GET', `/v1/admin/devices${qs({ q })}`),
     enrollmentToken: (resource_type, ttl_seconds) =>
       call<EnrollmentToken>('POST', '/v1/admin/enrollment-tokens', { resource_type, ttl_seconds }),
-    audit: (q: AuditQuery = {}) => call<AuditPage>('GET', `/v1/admin/audit${qs({ limit: q.limit, before: q.before, q: q.q })}`),
+    audit: (q: AuditQuery = {}) => call<AuditPage>('GET', `/v1/admin/audit${qs({ limit: q.limit, before: q.before, q: q.q, include_system: q.include_system ? '1' : undefined })}`),
     auditVerify: () => call<AuditVerify>('GET', '/v1/admin/audit/verify'),
     why: (q: WhyQuery) => call<Explanation>('GET', `/v1/admin/why${qs({ ...q })}`),
     updates: () => call<UpdateState>('GET', '/v1/admin/updates'),

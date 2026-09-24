@@ -14,9 +14,11 @@ export function Audit() {
   const f = useFormat()
   const toast = useToast()
   const [q, setQ] = useState('')
+  // People by default; the appliance's own work and device chatter on request.
+  const [system, setSystem] = useState(false)
   const page = useInfiniteQuery({
-    queryKey: ['audit', q],
-    queryFn: ({ pageParam }) => api.audit({ q: q || undefined, before: pageParam, limit: LIMIT }),
+    queryKey: ['audit', q, system],
+    queryFn: ({ pageParam }) => api.audit({ q: q || undefined, before: pageParam, limit: LIMIT, include_system: system || undefined }),
     initialPageParam: undefined as number | undefined,
     getNextPageParam: (last) => (last.items.length >= LIMIT ? last.items[last.items.length - 1]?.seq : undefined),
   })
@@ -48,6 +50,7 @@ export function Audit() {
       </Head>
       <div className="search">
         <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder={t('ui.audit.search')} aria-label={t('ui.audit.search')} />
+        <label className="check"><input type="checkbox" checked={system} onChange={(e) => setSystem(e.target.checked)} /> {t('ui.audit.include_system')}</label>
         {head !== undefined && (
           <span className={broken ? 'error' : 'muted'} role="status">
             {broken ? t('ui.audit.chain_broken', { seq: f.int(broken) })

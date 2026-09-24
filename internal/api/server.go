@@ -53,6 +53,9 @@ type Server struct {
 	// DeviceURL is the address devices enroll against (the mTLS listener),
 	// shown beside the installer download.
 	DeviceURL string
+	// actions collects every permission the admin API checks, as routes are
+	// registered; the grant form offers them when defining a directory role.
+	actions map[string]struct{}
 }
 
 // baseCtx is a context for work not tied to a request (trust reloads).
@@ -112,6 +115,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/admin/groups/{name}", s.adminAuth("groups.read", s.handleGetGroup))
 	mux.HandleFunc("GET /v1/admin/grants", s.adminAuth("grants.read", s.handleListGrants))
 	mux.HandleFunc("GET /v1/admin/roles", s.adminAuth("grants.read", s.handleListRoles))
+	mux.HandleFunc("GET /v1/admin/resources", s.adminAuth("grants.read", s.handleListResources))
 	mux.HandleFunc("GET /v1/admin/devices", s.adminAuth("devices.read", s.handleListDevices))
 	mux.HandleFunc("GET /v1/admin/system", s.adminAuth("system.read", s.handleSystem))
 	mux.HandleFunc("GET /v1/admin/plugins", s.adminAuth("plugins.read", s.handlePlugins))
@@ -231,6 +235,7 @@ func (s *Server) deviceAuth(next http.HandlerFunc) http.HandlerFunc {
 // adminAuth resolves a bearer API token to a service-account principal and
 // checks the named action on directory:root through the one engine.
 func (s *Server) adminAuth(action string, next http.HandlerFunc) http.HandlerFunc {
+	s.noteAction(action)
 	return func(w http.ResponseWriter, r *http.Request) {
 		var p *directory.Principal
 		assurance, props := "AL1", []string{"possession"}
@@ -342,7 +347,16 @@ func (s *Server) emitSystemEvent(ctx context.Context, typ string, payload map[st
 // anyone else goes through adminAuth as usual. A person's own credentials
 // are theirs to manage (spec §7.2: bindings are enumerable and revocable on
 // the principal's record).
+// noteAction records a permission the API checks (see Server.actions).
+func (s *Server) noteAction(action string) {
+	if s.actions == nil {
+		s.actions = map[string]struct{}{}
+	}
+	s.actions[action] = struct{}{}
+}
+
 func (s *Server) selfOrAdmin(action string, next http.HandlerFunc) http.HandlerFunc {
+	s.noteAction(action)
 	admin := s.adminAuth(action, next)
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") == "" {

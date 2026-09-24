@@ -76,60 +76,182 @@ export function Access() {
 
 const emptyGrant: CreateGrant = { subject_kind: 'group', subject: '', role: '', resource_type: '', resource_id: '', condition: '', expires_at: null }
 
-/** Role comes from GET /v1/admin/roles for the chosen resource type; free text when none are defined for it. */
+const OTHER = '__other'
+const NEW_ROLE = '__new'
+
+/** A labelled select whose options are ready-made labels (names from the directory, or catalog strings the caller resolved). */
+function PickField({ labelCode, hintCode, value, onChange, groups, required }: {
+  labelCode: string; hintCode?: string; value: string; onChange: (v: string) => void; required?: boolean
+  groups: Array<{ label?: string; options: Array<[string, string]> }>
+}) {
+  const t = useT()
+  const id = useId()
+  return (
+    <div className="field">
+      <label htmlFor={id}>{t(labelCode)}</label>
+      <select id={id} className="input" value={value} onChange={(e) => onChange(e.target.value)} required={required}>
+        {groups.map((g, i) => g.label
+          ? <optgroup key={i} label={g.label}>{g.options.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</optgroup>
+          : g.options.map(([v, l]) => <option key={v} value={v}>{l}</option>))}
+      </select>
+      {hintCode && <small className="muted">{t(hintCode)}</small>}
+    </div>
+  )
+}
+
+/**
+ * Everything is picked from what the directory already knows: the subject
+ * from groups or people, the resource from GET /v1/admin/resources, the role
+ * from those defined for that resource type. "Something else" and "New role…"
+ * fall back to typing, so plugin-defined types stay reachable. A new role is
+ * defined (POST /v1/admin/roles) right before the grant is created.
+ */
 function NewGrantDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
   const t = useT()
   const qc = useQueryClient()
   const toast = useToast()
-  const typesId = useId()
+  const { can } = useSession()
   const [g, setG] = useState<CreateGrant>(emptyGrant)
+  const [resourceKey, setResourceKey] = useState('')
+  const [subjectKey, setSubjectKey] = useState('')
+  const [roleKey, setRoleKey] = useState('')
+  const [newRole, setNewRole] = useState({ name: '', perms: [] as string[], extra: '' })
   const [expires, setExpires] = useState('')
   const set = <K extends keyof CreateGrant>(k: K) => (e: { target: { value: string } }) => setG({ ...g, [k]: e.target.value })
+
   const roles = useQuery({ queryKey: ['roles'], queryFn: () => api.roles(), enabled: open, staleTime: 60_000 })
-  const resourceTypes = [...new Set(roles.data?.items.map((r) => r.resource_type) ?? [])]
-  const rolesForType = roles.data?.items.filter((r) => r.resource_type === g.resource_type.trim()) ?? []
-  // Changing the resource type drops a role the new type does not define.
-  const setResourceType = (e: { target: { value: string } }) => {
-    const resource_type = e.target.value
-    const keep = (roles.data?.items ?? []).some((r) => r.resource_type === resource_type.trim() && r.name === g.role)
-    const anyForType = (roles.data?.items ?? []).some((r) => r.resource_type === resource_type.trim())
-    setG({ ...g, resource_type, role: keep || !anyForType ? g.role : '' })
+  const resources = useQuery({ queryKey: ['resources'], queryFn: () => api.resources(), enabled: open, staleTime: 60_000 })
+  const groupList = useQuery({ queryKey: ['groups', ''], queryFn: () => api.groups(), enabled: open && g.subject_kind === 'group' })
+  const people = useQuery({ queryKey: ['users', ''], queryFn: () => api.users(), enabled: open && g.subject_kind === 'principal' })
+
+  const resourceType = g.resource_type.trim()
+  const rolesForType = roles.data?.items.filter((r) => r.resource_type === resourceType) ?? []
+  const knownPerms = resources.data?.permissions[resourceType] ?? []
+  const definingRole = roleKey === NEW_ROLE
+
+  const resourceLabel = (r: { type: string; id: string }) => {
+    if (r.type === 'directory' && r.id === 'root') return t('ui.resource.directory.root')
+    if (r.type === 'workstations' && r.id === 'all') return t('ui.resource.workstations.all')
+    if (r.type === 'workstation') return t('ui.resource.workstation', { id: r.id })
+    return t('ui.resource.generic', { type: r.type, id: r.id })
   }
+  // Resources grouped by type, parents first within a type.
+  const byType = new Map<string, Array<[string, string]>>()
+  for (const r of resources.data?.items ?? []) {
+    const list = byType.get(r.type) ?? []
+    list.push([`${r.type}:${r.id}`, resourceLabel(r)])
+    byType.set(r.type, list)
+  }
+  const resourceGroups = [
+    { options: [['', t('ui.access.resource_pick')] as [string, string]] },
+    ...[...byType.entries()].map(([type, options]) => ({ label: type, options })),
+    { options: [[OTHER, t('ui.access.resource_other')] as [string, string]] },
+  ]
+  const pickResource = (key: string) => {
+    setResourceKey(key)
+    setRoleKey('')
+    if (key === OTHER || key === '') { setG({ ...g, resource_type: '', resource_id: '', role: '' }); return }
+    const [type, id] = key.split(/:(.*)/, 2)
+    setG({ ...g, resource_type: type ?? '', resource_id: id ?? '', role: '' })
+  }
+  const setResourceType = (e: { target: { value: string } }) => { setRoleKey(''); setG({ ...g, resource_type: e.target.value, role: '' }) }
+
+  const subjectOptions: Array<[string, string]> = g.subject_kind === 'group'
+    ? (groupList.data?.items ?? []).map((x) => [x.name, x.display_name && x.display_name !== x.name ? t('ui.access.group_option', { name: x.name, description: x.display_name }) : x.name])
+    : (people.data?.items ?? []).filter((u) => u.state !== 'suspended').map((u) => [u.username, t('ui.access.subject_option', { name: u.display_name, username: u.username })])
+  const subjectGroups = [
+    { options: [['', t(`ui.access.subject_pick.${g.subject_kind}`)] as [string, string], ...subjectOptions] },
+    ...(g.subject_kind === 'principal' ? [{ options: [[OTHER, t('ui.access.subject_other')] as [string, string]] }] : []),
+  ]
+  const pickSubject = (key: string) => { setSubjectKey(key); setG({ ...g, subject: key === OTHER ? '' : key }) }
+  const setSubjectKind = (e: { target: { value: string } }) => { setSubjectKey(''); setG({ ...g, subject_kind: e.target.value as CreateGrant['subject_kind'], subject: '' }) }
+
+  const roleGroups = [
+    { options: [['', t('ui.access.role_pick')] as [string, string], ...rolesForType.map((r): [string, string] => [r.name, r.name])] },
+    ...(can('roles.write') ? [{ options: [[NEW_ROLE, t('ui.access.role_new')] as [string, string]] }] : []),
+  ]
+  const pickRole = (key: string) => { setRoleKey(key); setG({ ...g, role: key === NEW_ROLE ? '' : key }) }
+  const togglePerm = (perm: string) => setNewRole((n) => ({ ...n, perms: n.perms.includes(perm) ? n.perms.filter((x) => x !== perm) : [...n.perms, perm] }))
+  const newRolePerms = [...new Set([...newRole.perms, ...newRole.extra.split(',').map((x) => x.trim()).filter(Boolean)])]
+
+  const reset = () => { setG(emptyGrant); setExpires(''); setResourceKey(''); setSubjectKey(''); setRoleKey(''); setNewRole({ name: '', perms: [], extra: '' }) }
   const create = useMutation({
-    mutationFn: () => api.createGrant({
-      ...g, subject: g.subject.trim(), role: g.role.trim(), resource_type: g.resource_type.trim(), resource_id: g.resource_id.trim(),
-      condition: g.condition?.trim() || undefined, expires_at: expires ? `${expires}T00:00:00Z` : null,
-    }),
+    mutationFn: async () => {
+      let role = g.role.trim()
+      if (definingRole) {
+        role = newRole.name.trim()
+        const defined = await api.upsertRole({ resource_type: resourceType, name: role, permissions: newRolePerms })
+        void qc.invalidateQueries({ queryKey: ['roles'] })
+        void qc.invalidateQueries({ queryKey: ['resources'] })
+        toast(t('ui.access.role_created_toast', { role: defined.name, type: defined.resource_type }))
+      }
+      return api.createGrant({
+        ...g, subject: g.subject.trim(), role, resource_type: resourceType, resource_id: g.resource_id.trim(),
+        condition: g.condition?.trim() || undefined, expires_at: expires ? `${expires}T00:00:00Z` : null,
+      })
+    },
     onSuccess: (r) => {
       for (const k of invalidateGrants) void qc.invalidateQueries({ queryKey: [k] })
       toast(t('ui.access.created_toast', { subject: r.subject.name, role: r.role, resource: `${r.resource.type}:${r.resource.id}` }))
-      setG(emptyGrant); setExpires('')
+      reset()
       onClose()
     },
   })
-  const submit = (e: FormEvent) => { e.preventDefault(); create.mutate() }
+  const roleReady = definingRole ? newRole.name.trim() !== '' && newRolePerms.length > 0 : g.role !== ''
+  const submit = (e: FormEvent) => { e.preventDefault(); if (roleReady) create.mutate() }
   return (
     <Drawer open={open} onClose={onClose} labelCode="ui.access.new_title" title={t('ui.access.new_title')}>
       <form onSubmit={submit}>
-        <SelectField labelCode="ui.access.subject_kind" value={g.subject_kind} onChange={set('subject_kind')}
+        <SelectField labelCode="ui.access.subject_kind" value={g.subject_kind} onChange={setSubjectKind}
           options={[['group', 'ui.access.subject_kind.group'], ['principal', 'ui.access.subject_kind.principal']]} />
-        <Field labelCode="ui.access.subject_name" hintCode="ui.access.subject_hint" value={g.subject} onChange={set('subject')} required autoComplete="off" autoCapitalize="none" spellCheck={false} />
-        <Field labelCode="ui.access.resource_type" hintCode="ui.access.resource_type_hint" value={g.resource_type} onChange={setResourceType} list={typesId} required autoComplete="off" autoCapitalize="none" spellCheck={false} />
-        <datalist id={typesId}>{resourceTypes.map((rt) => <option key={rt} value={rt} />)}</datalist>
-        {rolesForType.length > 0 ? (
-          <SelectField labelCode="ui.access.role" value={g.role} onChange={set('role')} required
-            options={[['', 'ui.access.role_pick'], ...rolesForType.map((r) => [r.name, undefined] as [string, undefined])]} />
-        ) : (
-          <Field labelCode="ui.access.role" hintCode={g.resource_type.trim() && roles.data ? 'ui.access.role_free_hint' : undefined} value={g.role} onChange={set('role')} required autoComplete="off" autoCapitalize="none" spellCheck={false} />
+        <PickField labelCode="ui.access.subject_name" value={subjectKey} onChange={pickSubject} groups={subjectGroups} required />
+        {subjectKey === OTHER && (
+          <Field labelCode="ui.access.subject_name" hintCode="ui.access.subject_hint" value={g.subject} onChange={set('subject')} required autoComplete="off" autoCapitalize="none" spellCheck={false} />
         )}
-        {rolesForType.length > 0 && g.role && <p className="note">{t('ui.access.role_permissions', { permissions: rolesForType.find((r) => r.name === g.role)?.permissions.join(', ') ?? '' })}</p>}
-        <Field labelCode="ui.access.resource_id" value={g.resource_id} onChange={set('resource_id')} required autoComplete="off" autoCapitalize="none" spellCheck={false} />
+        <ErrorNote error={groupList.error ?? people.error ?? resources.error ?? roles.error} />
+
+        <PickField labelCode="ui.access.resource" hintCode="ui.access.resource_hint" value={resourceKey} onChange={pickResource} groups={resourceGroups} required />
+        {resourceKey === OTHER && (
+          <div className="subform">
+            <Field labelCode="ui.access.resource_type" value={g.resource_type} onChange={setResourceType} required autoComplete="off" autoCapitalize="none" spellCheck={false} />
+            <Field labelCode="ui.access.resource_id" value={g.resource_id} onChange={set('resource_id')} required autoComplete="off" autoCapitalize="none" spellCheck={false} />
+          </div>
+        )}
+
+        {resourceType !== '' && (
+          <>
+            <PickField labelCode="ui.access.role" hintCode="ui.access.role_hint" value={roleKey} onChange={pickRole} groups={roleGroups} required />
+            {!definingRole && g.role && <p className="note">{t('ui.access.role_permissions', { permissions: rolesForType.find((r) => r.name === g.role)?.permissions.join(', ') ?? '' })}</p>}
+            {definingRole && (
+              <div className="subform">
+                <Field labelCode="ui.access.role_name" hintCode="ui.access.role_name_hint" value={newRole.name} onChange={(e) => setNewRole({ ...newRole, name: e.target.value })} required autoComplete="off" autoCapitalize="none" spellCheck={false} />
+                <div className="field">
+                  <label>{t('ui.access.role_perms')}</label>
+                  {knownPerms.length > 0 && (
+                    <div className="checks">
+                      {knownPerms.map((perm) => (
+                        <label key={perm}>
+                          <input type="checkbox" checked={newRole.perms.includes(perm)} onChange={() => togglePerm(perm)} />
+                          <span className={perm === '*' ? '' : 'mono'}>{perm === '*' ? t('ui.access.permission_all') : perm}</span>
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                  <small className="muted">{t('ui.access.role_perms_hint')}</small>
+                </div>
+                <Field labelCode="ui.access.role_perms_extra" hintCode="ui.access.role_perms_extra_hint" className="input mono" value={newRole.extra} onChange={(e) => setNewRole({ ...newRole, extra: e.target.value })} autoComplete="off" spellCheck={false} />
+                {newRole.name.trim() !== '' && newRolePerms.length === 0 && <p className="note">{t('ui.access.role_perms_none')}</p>}
+              </div>
+            )}
+          </>
+        )}
+
         <Field labelCode="ui.access.condition" hintCode="ui.access.condition_hint" className="input mono" value={g.condition ?? ''} onChange={set('condition')} autoComplete="off" spellCheck={false} />
         <Field labelCode="ui.access.expires" type="date" value={expires} onChange={(e) => setExpires(e.target.value)} />
         <ErrorNote error={create.error} />
         <div className="actions">
-          <button type="submit" className="btn primary" disabled={create.isPending}>{t(create.isPending ? 'ui.common.working' : 'ui.access.create')}</button>
-          <button type="button" className="btn quiet" onClick={onClose}>{t('ui.common.cancel')}</button>
+          <button type="submit" className="btn primary" disabled={create.isPending || !roleReady}>{t(create.isPending ? 'ui.common.working' : 'ui.access.create')}</button>
+          <button type="button" className="btn quiet" onClick={() => { reset(); onClose() }}>{t('ui.common.cancel')}</button>
         </div>
       </form>
     </Drawer>

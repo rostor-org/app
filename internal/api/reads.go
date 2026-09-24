@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -434,6 +435,86 @@ func (s *Server) handleListGrants(w http.ResponseWriter, r *http.Request) {
 	s.writeJSON(w, 200, map[string]any{"items": items, "total": len(items)})
 }
 
+// devicePermissions are the actions device agents check; they are not
+// admin-API routes, so the registry above never sees them.
+var devicePermissions = map[string][]string{"workstation": {"logon"}, "workstations": {"logon"}}
+
+// handleListResources feeds the grant form: every resource with its parent,
+// and the permissions known per resource type (the admin API's own checks for
+// `directory`, the device actions, and whatever existing roles already use),
+// so a role can be defined by ticking boxes instead of typing.
+func (s *Server) handleListResources(w http.ResponseWriter, r *http.Request) {
+	rows, err := s.DB.Query(r.Context(), `SELECT type, id, coalesce(parent_type,''), coalesce(parent_id,'')
+		FROM resources WHERE tenant_id=$1 ORDER BY type, id`, s.TenantID)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	defer rows.Close()
+	items := []map[string]any{}
+	perms := map[string]map[string]struct{}{}
+	note := func(typ string, actions ...string) {
+		if perms[typ] == nil {
+			perms[typ] = map[string]struct{}{}
+		}
+		for _, a := range actions {
+			perms[typ][a] = struct{}{}
+		}
+	}
+	for rows.Next() {
+		var typ, id, pt, pid string
+		if err := rows.Scan(&typ, &id, &pt, &pid); err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		var parent any
+		if pt != "" {
+			parent = map[string]string{"type": pt, "id": pid}
+		}
+		items = append(items, map[string]any{"type": typ, "id": id, "parent": parent})
+		note(typ)
+	}
+	if err := rows.Err(); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	for a := range s.actions {
+		note("directory", a)
+	}
+	for typ, actions := range devicePermissions {
+		note(typ, actions...)
+	}
+	roleRows, err := s.DB.Query(r.Context(), `SELECT resource_type, permissions FROM roles WHERE tenant_id=$1`, s.TenantID)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	defer roleRows.Close()
+	for roleRows.Next() {
+		var typ string
+		var actions []string
+		if err := roleRows.Scan(&typ, &actions); err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		note(typ, actions...)
+	}
+	if err := roleRows.Err(); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	out := map[string][]string{}
+	for typ, set := range perms {
+		list := make([]string, 0, len(set))
+		for a := range set {
+			list = append(list, a)
+		}
+		sort.Strings(list)
+		out[typ] = list
+	}
+	s.writeJSON(w, 200, map[string]any{"items": items, "total": len(items), "permissions": out})
+}
+
 // ---- devices ----------------------------------------------------------------
 
 func (s *Server) handleListDevices(w http.ResponseWriter, r *http.Request) {
@@ -475,10 +556,14 @@ func (s *Server) handleAuditList(w http.ResponseWriter, r *http.Request) {
 	if before <= 0 {
 		before = 1 << 62
 	}
+	// People first: what the appliance itself and devices do (built-ins on
+	// start, certificate checks, renewals) is hidden unless asked for.
+	includeSystem := r.URL.Query().Get("include_system") == "1"
 	rows, err := s.DB.Query(r.Context(), `SELECT seq, ts, actor_kind, actor_id, action, coalesce(target_type,''), coalesce(target_id,''),
 		coalesce(credential_type,''), coalesce(assurance,''), outcome, detail FROM audit_events
 		WHERE tenant_id=$1 AND seq < $2 AND ($3='' OR lower(action) LIKE $4 OR lower(actor_id) LIKE $4 OR lower(coalesce(target_id,'')) LIKE $4 OR lower(detail::text) LIKE $4)
-		ORDER BY seq DESC LIMIT $5`, s.TenantID, before, pg.Q, like(pg.Q), pg.Limit)
+		AND ($6 OR actor_kind NOT IN ('system','device'))
+		ORDER BY seq DESC LIMIT $5`, s.TenantID, before, pg.Q, like(pg.Q), pg.Limit, includeSystem)
 	if err != nil {
 		s.fail(w, r, err)
 		return

@@ -299,6 +299,8 @@ export interface AuditQuery {
   limit?: number
   before?: number
   q?: string
+  /** Also show what the appliance and devices did (actor kinds system and device); hidden by default. */
+  include_system?: boolean
 }
 
 export interface AuditVerify {
@@ -407,6 +409,18 @@ export interface MemberChange {
   member_kind: 'principal' | 'group'
   member: string // username, principal id, or group name
 }
+/** GET /v1/admin/resources: every resource with its parent, plus the permissions known per type (for defining roles). */
+export interface ResourceNode {
+  type: string
+  id: string
+  parent: { type: string; id: string } | null
+}
+export interface ResourceCatalog {
+  items: ResourceNode[]
+  total: number
+  permissions: Record<string, string[]>
+}
+
 export interface CreateGrant {
   subject_kind: 'principal' | 'group'
   subject: string
@@ -487,6 +501,10 @@ export interface Api {
   removeMember(name: string, body: MemberChange): Promise<void>
   grants(q?: string): Promise<List<Grant>>
   roles(): Promise<List<Role>>
+  /** Resources and per-type permissions for the grant form's pickers (grants.read). */
+  resources(): Promise<ResourceCatalog>
+  /** Defines or redefines a role (roles.write). */
+  upsertRole(body: Role): Promise<Role>
   createGrant(body: CreateGrant): Promise<Grant>
   revokeGrant(id: string): Promise<void>
   devices(q?: string): Promise<List<Device>>

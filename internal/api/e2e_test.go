@@ -834,3 +834,69 @@ func TestGrantsAreListed(t *testing.T) {
 		t.Fatalf("grant missing from group detail: %v", out)
 	}
 }
+
+// The grant form's pickers: every resource with its parent, and the
+// permissions known per type, so nothing has to be typed from memory.
+func TestResourcesForGrantForm(t *testing.T) {
+	h := newHarness(t)
+	h.adminCall("POST", "/v1/admin/resources", map[string]any{"type": "door", "id": "front"})
+	h.adminCall("POST", "/v1/admin/roles", map[string]any{"resource_type": "door", "name": "enter", "permissions": []string{"enter"}})
+	out := h.adminCall("GET", "/v1/admin/resources", nil)
+	found := map[string]any{}
+	for _, it := range out["items"].([]any) {
+		m := it.(map[string]any)
+		found[m["type"].(string)+":"+m["id"].(string)] = m["parent"]
+	}
+	for _, want := range []string{"directory:root", "workstations:all", "door:front"} {
+		if _, ok := found[want]; !ok {
+			t.Fatalf("resource %s missing: %v", want, out["items"])
+		}
+	}
+	perms := out["permissions"].(map[string]any)
+	has := func(typ, action string) bool {
+		list, _ := perms[typ].([]any)
+		for _, a := range list {
+			if a == action {
+				return true
+			}
+		}
+		return false
+	}
+	if !has("directory", "grants.write") || !has("directory", "*") {
+		t.Fatalf("directory permissions should include the API's checks and the admin wildcard: %v", perms["directory"])
+	}
+	if !has("workstations", "logon") || !has("workstation", "logon") {
+		t.Fatalf("device actions missing: %v", perms)
+	}
+	if !has("door", "enter") {
+		t.Fatalf("permissions from existing roles missing: %v", perms["door"])
+	}
+}
+
+// The audit screen shows people by default; the appliance's own work (the
+// built-ins it ensures on every start, device certificate checks) appears
+// only with include_system=1.
+func TestAuditHidesSystemByDefault(t *testing.T) {
+	h := newHarness(t)
+	h.adminCall("POST", "/v1/admin/groups", map[string]any{"name": "members"})
+	kinds := func(path string) map[string]int {
+		out := h.adminCall("GET", path, nil)
+		seen := map[string]int{}
+		for _, it := range out["items"].([]any) {
+			actor := it.(map[string]any)["actor"].(map[string]any)
+			seen[actor["kind"].(string)]++
+		}
+		return seen
+	}
+	people := kinds("/v1/admin/audit")
+	if people["system"] != 0 || people["device"] != 0 {
+		t.Fatalf("default view should hide system and device actors: %v", people)
+	}
+	if people["service"]+people["user"] == 0 {
+		t.Fatalf("default view lost the people: %v", people)
+	}
+	all := kinds("/v1/admin/audit?include_system=1")
+	if all["system"] == 0 {
+		t.Fatalf("include_system should show the built-ins the harness created: %v", all)
+	}
+}

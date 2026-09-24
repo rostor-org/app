@@ -2,7 +2,7 @@
 // backend (VITE_MOCK=1 or ?mock=1). Data mirrors the approved mockup.
 import type { LoginMethod,
   Api, AuditRow, AuthSettings, CA, CAList, Device, Downloads, Explanation, Grant, Group, GroupDetail, LiveEvent, LiveHandlers, LoginOK, LoginResponse,
-  LiveState, Member, Plugin, Role, Session, Summary, SystemInfo, UpdateState, User, UserDetail, Binding, Reason,
+  LiveState, Member, Plugin, Role, Session, Summary, SystemInfo, UpdateState, User, UserDetail, Binding, Reason, ResourceNode,
 } from './types'
 import catalogEn from '../../catalog.en.json'
 
@@ -569,6 +569,31 @@ export function createMockApi(_opts: { onUnauthorized?: () => void } = {}): Api 
     },
     async grants(q) { await delay(); return { items: clone(filter(grants, q, (g) => `${g.subject.name} ${g.role} ${g.resource.type}:${g.resource.id}`)), total: grants.length } },
     async roles() { await delay(); return { items: clone(roles), total: roles.length } },
+    async resources() {
+      await delay()
+      const items: ResourceNode[] = [
+        { type: 'directory', id: 'root', parent: null },
+        { type: 'workstations', id: 'all', parent: null },
+        ...devices.map((d): ResourceNode => ({ type: d.resource.type, id: d.resource.id, parent: d.resource.type === 'workstation' ? { type: 'workstations', id: 'all' } : null })),
+        { type: 'equipment', id: 'laser-1', parent: null },
+      ]
+      const permissions: Record<string, string[]> = {
+        directory: ['*', 'audit.read', 'authz.read', 'credentials.write', 'devices.read', 'devices.write', 'grants.read', 'grants.write', 'groups.read', 'groups.write', 'plugins.read', 'policies.write', 'resources.write', 'roles.write', 'system.read', 'system.write', 'updates.read', 'updates.write', 'users.read', 'users.write'],
+        workstation: ['logon'], workstations: ['logon'],
+      }
+      for (const r of roles) permissions[r.resource_type] = [...new Set([...(permissions[r.resource_type] ?? []), ...r.permissions])].sort()
+      for (const it of items) permissions[it.type] ??= []
+      return { items, total: items.length, permissions }
+    },
+    async upsertRole(body) {
+      await delay(200)
+      if (!body.resource_type || !body.name || body.permissions.length === 0) throw mockErr(400, 'request.malformed', { field: 'role' })
+      const i = roles.findIndex((r) => r.resource_type === body.resource_type && r.name === body.name)
+      const role = { resource_type: body.resource_type, name: body.name, permissions: [...body.permissions] }
+      if (i >= 0) roles[i] = role; else roles.push(role)
+      append(`user:${session?.principal.id ?? ''}`, 'role.upsert', `role:${role.resource_type}:${role.name}`, 'session', 'AL1', 'ok', { permissions: role.permissions })
+      return clone(role)
+    },
     async createGrant(body) {
       await delay(250)
       let subject: Grant['subject']
@@ -606,6 +631,7 @@ export function createMockApi(_opts: { onUnauthorized?: () => void } = {}): Api 
       await delay()
       let it = audit
       if (q.before) it = it.filter((r) => r.seq < q.before!)
+      if (!q.include_system) it = it.filter((r) => r.actor.kind !== 'system' && r.actor.kind !== 'device')
       it = filter(it, q.q, (r) => `${r.actor.id} ${r.action} ${r.target.type}:${r.target.id} ${r.outcome} ${JSON.stringify(r.detail)}`)
       return { items: it.slice(0, q.limit ?? 50).map(named), head: { seq } }
     },
