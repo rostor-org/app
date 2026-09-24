@@ -1,0 +1,90 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+
+jobs:
+  core:
+    name: Go core and agent
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: rostor_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Vet
+        run: go vet ./...
+      - name: Test (against PostgreSQL)
+        env:
+          ROSTOR_TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/rostor_test?sslmode=disable
+        run: go test ./...
+      - name: String catalog lint
+        run: make lint-strings GO=go
+      - name: Cross-build Windows agent
+        run: GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -o /dev/null ./cmd/rostor-agent
+      - name: Build core (linux/amd64 and arm64)
+        run: |
+          GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o /dev/null ./cmd/rostor
+          GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -o /dev/null ./cmd/rostor
+      - name: Installer syntax
+        run: sh -n deploy/install.sh
+
+  console:
+    name: Console
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: console
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: console/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run strings
+      - run: npm run build
+      - name: Console strings are in the server catalog
+        working-directory: .
+        run: |
+          python3 - <<'PY'
+          import json
+          server = json.load(open('internal/catalog/en.json'))
+          ui = json.load(open('console/catalog.en.json'))
+          missing = [k for k in ui if k not in server]
+          if missing:
+              print('missing from internal/catalog/en.json:', *missing, sep='\n  ')
+              raise SystemExit(1)
+          print('ok:', len(ui), 'console codes present in the server catalog')
+          PY
+
+  credprov:
+    name: Windows credential provider
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - name: Build DLL
+        shell: cmd
+        run: windows\credprov\build.cmd
+      - uses: actions/upload-artifact@v4
+        with:
+          name: RostorCredProv-${{ github.sha }}
+          path: windows/credprov/out/RostorCredProv.dll

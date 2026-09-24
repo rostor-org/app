@@ -2,6 +2,10 @@
 rem Builds RostorCredProv.dll (x64 Release) with MSVC Build Tools 2022.
 rem Run from any directory; output lands in %~dp0out\.
 setlocal
+rem If cl.exe is already on PATH (a developer prompt, or CI after msvc-dev-cmd)
+rem use that environment; otherwise initialise Build Tools 2022.
+where cl.exe >nul 2>&1
+if not errorlevel 1 goto :env_ready
 set VCVARS="C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat"
 if not exist %VCVARS% (
     echo vcvars64.bat not found at %VCVARS%
@@ -9,6 +13,7 @@ if not exist %VCVARS% (
 )
 call %VCVARS% >nul
 if errorlevel 1 exit /b 1
+:env_ready
 
 set SRC=%~dp0
 set OUT=%~dp0out
