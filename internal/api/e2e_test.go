@@ -610,3 +610,32 @@ func TestFirstAdminSetupAndSelfService(t *testing.T) {
 		t.Fatalf("badge with new pin: %d %v", st, out)
 	}
 }
+
+// EnsureBuiltins must be safe to run on every start, including on a tenant
+// that already has everything (the v0.3.0 crash: a failed INSERT aborted
+// the start-up transaction).
+func TestBuiltinsIdempotentOnExistingTenant(t *testing.T) {
+	h := newHarness(t) // harness already ran EnsureBuiltins once
+	eng, _ := authz.New()
+	for i := 0; i < 2; i++ {
+		if err := h.db.Tx(h.ctx, func(tx pgx.Tx) error {
+			// The same transaction also does other work afterwards, as serve does.
+			if err := directory.EnsureBuiltins(h.ctx, tx, h.tenantID, eng); err != nil {
+				return err
+			}
+			var n int
+			return tx.QueryRow(h.ctx, `SELECT count(*) FROM groups WHERE tenant_id=$1 AND name=$2`, h.tenantID, directory.AdminsGroup).Scan(&n)
+		}); err != nil {
+			t.Fatalf("run %d: %v", i+1, err)
+		}
+	}
+	var grants int
+	_ = h.db.QueryRow(h.ctx, `SELECT count(*) FROM grants WHERE tenant_id=$1 AND role='admin' AND subject_kind='group' AND revoked_at IS NULL`, h.tenantID).Scan(&grants)
+	if grants != 1 {
+		t.Fatalf("expected exactly one admins grant, got %d", grants)
+	}
+	// Migrations are idempotent too.
+	if applied, err := h.db.Migrate(h.ctx); err != nil || len(applied) != 0 {
+		t.Fatalf("second migrate: applied=%v err=%v", applied, err)
+	}
+}

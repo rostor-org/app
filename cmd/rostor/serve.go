@@ -108,6 +108,15 @@ func runServe(ctx context.Context, args []string) error {
 		return err
 	}
 	defer c.db.Close()
+	// A new binary migrates the database before serving (docs/appliance.md
+	// promises this; the updater relies on it).
+	applied, err := c.db.Migrate(ctx)
+	if err != nil {
+		return fmt.Errorf("migrate: %w", err)
+	}
+	for _, a := range applied {
+		c.log.Info("applied migration", "name", a)
+	}
 	if err := c.loadTenant(ctx); err != nil {
 		return err
 	}

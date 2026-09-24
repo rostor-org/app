@@ -17,12 +17,17 @@ import (
 // creation only.
 func EnsureBuiltins(ctx context.Context, tx pgx.Tx, tenantID string, cv ConditionValidator) error {
 	sys := Actor{Kind: "system", ID: "builtins", CorrelationID: ids.New("corr")}
+	// Existence is checked first: a failed INSERT aborts the surrounding
+	// transaction in PostgreSQL, so insert-and-catch is not idempotent.
 	ensureResource := func(typ, id string) error {
-		err := CreateResource(ctx, tx, tenantID, sys, Resource{Type: typ, ID: id})
-		if code, _ := CodeOf(err); code == "request.conflict" {
+		var exists bool
+		if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM resources WHERE tenant_id=$1 AND type=$2 AND id=$3)`, tenantID, typ, id).Scan(&exists); err != nil {
+			return err
+		}
+		if exists {
 			return nil
 		}
-		return err
+		return CreateResource(ctx, tx, tenantID, sys, Resource{Type: typ, ID: id})
 	}
 	if err := ensureResource("directory", "root"); err != nil {
 		return err
