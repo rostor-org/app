@@ -1,24 +1,24 @@
 {
   "channel": "stable",
-  "version": "v0.4.4",
-  "published": "2026-09-24T17:34:17.094577Z",
-  "notes": "Fix: dismissing a password manager's passkey prompt could leave the sign-in page stuck; the prompt is now cancellable and times out.",
+  "version": "v0.4.5",
+  "published": "2026-09-24T17:36:46.751345Z",
+  "notes": "Use passkey is offered on the Tap to access page as well.",
   "files": {
     "agent-windows-amd64": {
-      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/586464380",
-      "sha256": "74c6ea106b467d5483066d641873d7036fd7897c426ce186a18a5dd004b8ae78",
+      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/586468653",
+      "sha256": "ff08d78f127b91229c4f49c4c7903479df637d7bfaea3010dcfdf6e6e311c215",
       "size": 7793152
     },
     "linux-amd64": {
-      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/586464379",
-      "sha256": "6a5ac45d405bc57931af42c96fa3d3aab7a1cadaefc7184afbcc14cf9cff5a38",
+      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/586468657",
+      "sha256": "41dcb5910771d5c68df6d5cc7a047371c085a3ac754bf5d2aaf59df14099a22f",
       "size": 23838880
     },
     "linux-arm64": {
-      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/586464384",
-      "sha256": "5c12701884c42406781b8bc191c361327faa837a0b66d4b43c184d17dd0d8493",
+      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/586468652",
+      "sha256": "9372a08b1f17b62bfd472e7ab46b58efd72a998cdfdfcb26721e2b6ba8795170",
       "size": 22413472
     }
   },
-  "signature": "I4gt9n/FiZTR3LwDQ4DYy4ruEuoah3zG/8fUdEduIxbRFVP8gBuu8wBkJX2acf9y3vvDNBHQ2dvao/GiXgDDDw=="
+  "signature": "p+qZDAaKXpICeNoU8aGM/Il20YmHW5ii4FvD3xVvz4onbMPHW6/o7zGH1mfW/zwRS1lvTd6yni/n/PWyLJnqBw=="
 }
