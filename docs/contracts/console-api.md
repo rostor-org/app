@@ -111,3 +111,6 @@ plugin registry, key rotation, policy counts on groups.
   `decision: "CONTINUE"` with reason `auth.continue`.
 - Person detail bindings now include method `webauthn` (label = the manager
   or key name) and `badge`; both are revocable via `DELETE …/bindings/{bid}`.
+- `POST /v1/admin/updates/check` (v0.1.3) → fetches the channel now and returns
+  the update state; the server also emits an `update.state` event. "Check
+  now" calls this; `GET /v1/admin/updates` only reads the last recorded state.

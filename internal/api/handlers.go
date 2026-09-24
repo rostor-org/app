@@ -518,6 +518,21 @@ func (s *Server) handleUpdateStatus(w http.ResponseWriter, r *http.Request) {
 	s.writeJSON(w, 200, st)
 }
 
+// handleUpdateCheck asks the channel right now, so "Check now" means it.
+func (s *Server) handleUpdateCheck(w http.ResponseWriter, r *http.Request) {
+	if s.Channel == nil {
+		s.writeErr(w, r, 409, "request.conflict", map[string]any{"reason": "no_channel_configured"})
+		return
+	}
+	st, err := update.Check(r.Context(), s.Channel, s.StateDir, s.Version)
+	if err != nil {
+		s.Log.Warn("update check", "err", err)
+	}
+	// Tell open consoles: the SSE stream carries update.state.
+	s.emitSystemEvent(r.Context(), "update.state", map[string]any{"available": st.Available, "current": st.Current})
+	s.writeJSON(w, 200, st)
+}
+
 func (s *Server) handleUpdateApply(w http.ResponseWriter, r *http.Request) {
 	st := update.LoadState(s.StateDir)
 	if st.Available == "" {

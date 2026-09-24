@@ -281,3 +281,28 @@ func parse(v string) []int {
 	}
 	return out
 }
+
+// Check fetches the channel and records what is available. It needs no
+// privilege beyond writing the state file, so the core can run it on demand
+// from the API as well as the timer running the CLI.
+func Check(ctx context.Context, c *Client, stateDir, current string) (State, error) {
+	st := LoadState(stateDir)
+	st.Current = current
+	now := time.Now().UTC()
+	st.CheckedAt = &now
+	m, err := c.Fetch(ctx)
+	if err != nil {
+		st.LastError = err.Error()
+		_ = SaveState(stateDir, st)
+		return st, err
+	}
+	st.Channel = m.Channel
+	st.LastError = ""
+	st.Notes = m.Notes
+	if NewerThan(m.Version, current) {
+		st.Available = m.Version
+	} else {
+		st.Available = ""
+	}
+	return st, SaveState(stateDir, st)
+}

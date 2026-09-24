@@ -39,31 +39,18 @@ func runUpdate(ctx context.Context, args []string) error {
 		return err
 	}
 	c := &update.Client{ManifestURL: *channelURL, PublicKey: pub, Token: *token}
-	st := update.LoadState(cfg.StateDir)
-	st.Current = version
-	now := time.Now().UTC()
-
-	m, err := c.Fetch(ctx)
-	st.CheckedAt = &now
+	st, err := update.Check(ctx, c, cfg.StateDir, version)
 	if err != nil {
-		st.LastError = err.Error()
-		_ = update.SaveState(cfg.StateDir, st)
 		return err
 	}
-	st.Channel = m.Channel
-	st.LastError = ""
-	st.Notes = m.Notes
-	if update.NewerThan(m.Version, version) {
-		st.Available = m.Version
-	} else {
-		st.Available = ""
+	now := time.Now().UTC()
+	m, err := c.Fetch(ctx)
+	if err != nil {
+		return err
 	}
 
 	switch args[0] {
 	case "check":
-		if err := update.SaveState(cfg.StateDir, st); err != nil {
-			return err
-		}
 		if st.Available != "" {
 			fmt.Printf("update available: %s (running %s)\n", st.Available, version)
 		} else {

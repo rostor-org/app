@@ -27,6 +27,7 @@ import (
 	"rostor.org/app/internal/directory"
 	"rostor.org/app/internal/ids"
 	"rostor.org/app/internal/pki"
+	"rostor.org/app/internal/update"
 )
 
 type core struct {
@@ -127,7 +128,15 @@ func runServe(ctx context.Context, args []string) error {
 	}
 	// The CLI on this machine trusts the core through this file.
 	_ = os.WriteFile(filepath.Join(c.cfg.DataDir, "ca.crt"), ca.CertPEM(), 0o644)
-	srv := &api.Server{DB: c.db, Auth: c.auth, Authz: c.authz, Devices: c.devices, Catalog: c.catalog, CA: ca, TenantID: c.tenantID, Log: c.log,
+	var channel *update.Client
+	if url := os.Getenv("ROSTOR_CHANNEL_URL"); url != "" {
+		if pub, err := update.LoadPublicKey(c.cfg.ReleasePubKey); err == nil {
+			channel = &update.Client{ManifestURL: url, PublicKey: pub, Token: os.Getenv("ROSTOR_CHANNEL_TOKEN")}
+		} else {
+			c.log.Warn("release channel configured but public key unreadable", "err", err)
+		}
+	}
+	srv := &api.Server{DB: c.db, Auth: c.auth, Authz: c.authz, Devices: c.devices, Catalog: c.catalog, CA: ca, TenantID: c.tenantID, Log: c.log, Channel: channel,
 		StateDir: c.cfg.StateDir, Version: version, Events: api.NewBroadcaster(), Started: time.Now(), ReleaseKeyFP: releaseKeyFP(c.cfg.ReleasePubKey), Static: console.Handler()}
 	go srv.Listen(ctx)
 	// Passkey relying-party settings come from tenant policy at call time.

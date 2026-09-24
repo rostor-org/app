@@ -25,6 +25,7 @@ import (
 	"rostor.org/app/internal/directory"
 	"rostor.org/app/internal/ids"
 	"rostor.org/app/internal/pki"
+	"rostor.org/app/internal/update"
 )
 
 type Server struct {
@@ -41,7 +42,8 @@ type Server struct {
 	Events       *Broadcaster
 	Started      time.Time
 	ReleaseKeyFP string
-	Static       http.Handler // the embedded console; nil to serve API only
+	Static       http.Handler   // the embedded console; nil to serve API only
+	Channel      *update.Client // release channel client; nil when unconfigured
 }
 
 func (s *Server) Handler() http.Handler {
@@ -91,6 +93,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/admin/plugins", s.adminAuth("plugins.read", s.handlePlugins))
 	mux.HandleFunc("GET /v1/admin/updates", s.adminAuth("updates.read", s.handleUpdateStatus))
 	mux.HandleFunc("POST /v1/admin/updates/apply", s.adminAuth("updates.write", s.handleUpdateApply))
+	mux.HandleFunc("POST /v1/admin/updates/check", s.adminAuth("updates.read", s.handleUpdateCheck))
 	if s.Static != nil {
 		mux.Handle("/", s.Static)
 	}
@@ -317,4 +320,12 @@ func contains(list []string, s string) bool {
 		}
 	}
 	return false
+}
+
+// emitSystemEvent writes a typed event with no target so the live stream
+// can carry system state (update checks) to open consoles.
+func (s *Server) emitSystemEvent(ctx context.Context, typ string, payload map[string]any) {
+	raw, _ := json.Marshal(payload)
+	_, _ = s.DB.Exec(ctx, `INSERT INTO events (tenant_id, type, actor_id, payload, correlation_id) VALUES ($1,$2,'core',$3,$4)`,
+		s.TenantID, typ, raw, ids.New("corr"))
 }
