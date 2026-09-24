@@ -151,9 +151,12 @@ func runServe(ctx context.Context, args []string) error {
 	srv := &api.Server{DB: c.db, Auth: c.auth, Authz: c.authz, Devices: c.devices, Catalog: c.catalog, CA: ca, TenantID: c.tenantID, Log: c.log, Channel: channel,
 		StateDir: c.cfg.StateDir, Version: version, Events: api.NewBroadcaster(), Started: time.Now(), ReleaseKeyFP: releaseKeyFP(c.cfg.ReleasePubKey), Static: console.Handler()}
 	go srv.Listen(ctx)
-	// Passkey relying-party settings come from tenant policy at call time.
+	// Passkey relying-party settings come from tenant policy at call time;
+	// verification failures are logged with their reason (never secrets).
 	if m, ok := c.auth.Method("webauthn"); ok {
-		m.(*auth.WebAuthnMethod).Settings = srv.RelyingParty
+		wm := m.(*auth.WebAuthnMethod)
+		wm.Settings = srv.RelyingParty
+		wm.Log = func(msg string, kv ...any) { c.log.Warn(msg, kv...) }
 	}
 	tlsCfg, err := srv.TLSConfig(certPEM, keyPEM)
 	if err != nil {

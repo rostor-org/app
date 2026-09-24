@@ -24,6 +24,15 @@ type WebAuthnMethod struct {
 	// Settings returns the relying party for the tenant. It is a function so
 	// the value comes from policy at call time, never from a build constant.
 	Settings func(ctx context.Context) (RelyingParty, error)
+	// Log receives the reason a verification failed (never secrets), so an
+	// operator can tell an RP-ID mismatch from a bad counter. Optional.
+	Log func(msg string, kv ...any)
+}
+
+func (m *WebAuthnMethod) logf(msg string, kv ...any) {
+	if m.Log != nil {
+		m.Log(msg, kv...)
+	}
 }
 
 type RelyingParty struct {
@@ -183,10 +192,12 @@ func (m *WebAuthnMethod) Authenticate(ctx context.Context, bindingID string, sm 
 	}
 	var sess webauthn.SessionData
 	if err := json.Unmarshal([]byte(in.Fields["state"]), &sess); err != nil {
+		m.logf("webauthn: bad ceremony state", "binding", bindingID, "err", err)
 		return StepResult{Failed: true}, nil
 	}
 	parsed, err := protocol.ParseCredentialRequestResponseBytes([]byte(in.Fields["response"]))
 	if err != nil {
+		m.logf("webauthn: unparseable assertion", "binding", bindingID, "err", err)
 		return StepResult{Failed: true}, nil
 	}
 	// For identifier-first ceremonies the session carries the expected user
@@ -194,6 +205,7 @@ func (m *WebAuthnMethod) Authenticate(ctx context.Context, bindingID string, sm 
 	// must match the binding's principal, which the core checked by
 	// credential ID. Either way the binding decides, never the caller.
 	if exp := in.Fields["expect_principal"]; exp != "" && string(sess.UserID) != exp {
+		m.logf("webauthn: assertion for a different principal than the ceremony", "binding", bindingID)
 		return StepResult{Failed: true}, nil
 	}
 	if len(sess.UserID) == 0 {
@@ -202,9 +214,13 @@ func (m *WebAuthnMethod) Authenticate(ctx context.Context, bindingID string, sm 
 	u := user{id: string(sess.UserID), creds: []webauthn.Credential{mat.Credential}}
 	cred, err := w.ValidateLogin(u, sess, parsed)
 	if err != nil {
+		m.logf("webauthn: assertion rejected", "binding", bindingID, "err", err,
+			"stored_count", mat.Credential.Authenticator.SignCount, "presented_count", parsed.Response.AuthenticatorData.Counter)
 		return StepResult{Failed: true}, nil
 	}
 	if cred.Authenticator.CloneWarning {
+		m.logf("webauthn: clone warning (counter did not advance)", "binding", bindingID,
+			"stored_count", mat.Credential.Authenticator.SignCount, "presented_count", parsed.Response.AuthenticatorData.Counter)
 		return StepResult{Failed: true}, nil
 	}
 	props := []string{"possession", "user-verified", "phishing-resistant", "can-identify-user"}

@@ -23,7 +23,7 @@ type softAuthenticator struct {
 	credID []byte
 	rpID   string
 	origin string
-	count  uint32
+	count  int
 	backup bool
 }
 
@@ -51,7 +51,7 @@ func (a *softAuthenticator) authData(at bool) []byte {
 	rp := sha256.Sum256([]byte(a.rpID))
 	out := append([]byte{}, rp[:]...)
 	out = append(out, a.flags(at))
-	out = binary.BigEndian.AppendUint32(out, a.count)
+	out = binary.BigEndian.AppendUint32(out, uint32(a.count))
 	if at {
 		aaguid := make([]byte, 16)
 		out = append(out, aaguid...)
@@ -186,6 +186,32 @@ func TestPasskeys(t *testing.T) {
 	if st, _ := do("GET", "/v1/auth/session", nil); st != 200 {
 		t.Fatalf("session after passkey login: %d", st)
 	}
+	// A second, valid sign-in after the counter was re-sealed must work.
+	do("POST", "/v1/auth/logout", nil)
+	delete(jar, "rostor_session")
+	_, lbAgain := do("POST", "/v1/auth/login/passkey/begin", map[string]any{})
+	if _, lfAgain := do("POST", "/v1/auth/login/passkey/finish", map[string]any{"ceremony_id": lbAgain["ceremony_id"], "response": synced.assert(lbAgain["options"].(map[string]any), danID)}); lfAgain["assurance"] != "AL2" {
+		t.Fatalf("second passkey login: %v", lfAgain)
+	}
+	// Authenticators that never advance the counter (many synced passkeys
+	// report 0) must keep working.
+	zero := newSoftAuthenticator("example.org", "https://rostor.example.org", true)
+	do("POST", "/v1/auth/login", map[string]any{"identifier": "dan", "fields": map[string]string{"password": "hunter2hunter2"}})
+	_, bz := do("POST", "/v1/auth/passkeys/register/begin", nil)
+	do("POST", "/v1/auth/passkeys/register/finish", map[string]any{"ceremony_id": bz["ceremony_id"], "label": "zero", "response": zero.register(bz["options"].(map[string]any))})
+	do("POST", "/v1/auth/logout", nil)
+	delete(jar, "rostor_session")
+	for i := 0; i < 2; i++ {
+		zero.count = 0 // stays 0 across sign-ins
+		_, lbz := do("POST", "/v1/auth/login/passkey/begin", map[string]any{})
+		zero.count = -1 // assert() increments to 0
+		if _, lfz := do("POST", "/v1/auth/login/passkey/finish", map[string]any{"ceremony_id": lbz["ceremony_id"], "response": zero.assert(lbz["options"].(map[string]any), danID)}); lfz["assurance"] != "AL2" {
+			t.Fatalf("zero-counter passkey login %d: %v", i+1, lfz)
+		}
+		do("POST", "/v1/auth/logout", nil)
+		delete(jar, "rostor_session")
+	}
+
 	// A replayed assertion (same counter) fails.
 	do("POST", "/v1/auth/logout", nil)
 	delete(jar, "rostor_session")
