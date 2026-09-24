@@ -5,8 +5,6 @@ package api
 
 import (
 	"context"
-	"crypto/tls"
-	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -44,7 +42,14 @@ type Server struct {
 	ReleaseKeyFP string
 	Static       http.Handler   // the embedded console; nil to serve API only
 	Channel      *update.Client // release channel client; nil when unconfigured
+	trust        *trustState
+	// OnTrustChange runs after the active CA set changes (rotate/retire) so
+	// the serve command can reissue the server certificate.
+	OnTrustChange func()
 }
+
+// baseCtx is a context for work not tied to a request (trust reloads).
+func (s *Server) baseCtx() context.Context { return context.Background() }
 
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
@@ -66,6 +71,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/devices/enroll", s.handleEnroll)
 	mux.HandleFunc("POST /v1/verify", s.deviceAuth(s.handleVerify))
 	mux.HandleFunc("POST /v1/devices/self/posture", s.deviceAuth(s.handlePosture))
+	mux.HandleFunc("GET /v1/devices/self/trust", s.deviceAuth(s.handleTrust))
+	mux.HandleFunc("POST /v1/devices/self/renew", s.deviceAuth(s.handleRenew))
+	mux.HandleFunc("GET /v1/admin/ca", s.adminAuth("system.read", s.handleListCAs))
+	mux.HandleFunc("POST /v1/admin/ca/rotate", s.adminAuth("system.write", s.handleRotateCA))
+	mux.HandleFunc("POST /v1/admin/ca/{id}/retire", s.adminAuth("system.write", s.handleRetireCA))
 
 	// Admin surface: bearer API token, authorised via the same engine
 	// (§3.3: admin rights are roles on directory resources).
@@ -103,24 +113,6 @@ func (s *Server) Handler() http.Handler {
 		mux.Handle("/", s.Static)
 	}
 	return s.logging(mux)
-}
-
-// TLSConfig serves the core certificate and *requests* client certificates
-// without requiring them: enrollment and admin calls have none, device calls
-// do. Device handlers then insist on one.
-func (s *Server) TLSConfig(certPEM, keyPEM []byte) (*tls.Config, error) {
-	cert, err := tls.X509KeyPair(certPEM, keyPEM)
-	if err != nil {
-		return nil, err
-	}
-	pool := x509.NewCertPool()
-	pool.AddCert(s.CA.Cert)
-	return &tls.Config{
-		Certificates: []tls.Certificate{cert},
-		ClientAuth:   tls.VerifyClientCertIfGiven,
-		ClientCAs:    pool,
-		MinVersion:   tls.VersionTLS12,
-	}, nil
 }
 
 // ---- plumbing ---------------------------------------------------------------

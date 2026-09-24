@@ -7,6 +7,8 @@
   "auth.passkeys_unconfigured": "Passkeys are not set up for this organisation yet.",
   "auth.pin_required": "This account requires a PIN with the badge.",
   "binding.last_method": "You cannot remove your only sign-in method. Add another one first.",
+  "ca.in_use": "{devices} devices still hold certificates from this authority. Wait for them to renew, or force the retirement.",
+  "ca.last_active": "The last active certificate authority cannot be retired.",
   "device.not_trusted": "This device is not trusted.",
   "device.unknown": "This device is not enrolled.",
   "enrollment.token_invalid": "The enrollment token is invalid or has already been used.",

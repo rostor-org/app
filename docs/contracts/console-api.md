@@ -142,3 +142,20 @@ plugin registry, key rotation, policy counts on groups.
   `default_method` (`password|passkey|badge`) so the sign-in page opens on it
   (badge mode focuses the reader field). Set via `login.default_method` in
   `PUT /v1/admin/settings/auth` (also echoed by GET under `login`).
+
+## Certificates and trust (v0.5.0)
+
+Device side (mutual TLS):
+- `GET /v1/devices/self/trust` → `{"version","ca_pems":[…],"renew":bool,"cert_not_after"}`.
+  The agent replaces its pinned `ca.crt` with all `ca_pems` when `version`
+  changes, and renews when `renew` is true (expiry within 30 days, issuing CA
+  no longer newest, or presenting a superseded certificate).
+- `POST /v1/devices/self/renew` `{"csr_pem"}` → `{"certificate_pem","not_after","ca_pems","trust_version"}`.
+  The previous certificate stays valid for 24 h so a lost reply never locks
+  the device out. Device certificates now live 90 days.
+
+Admin:
+- `GET /v1/admin/ca` → `{"items":[{id,subject,not_after,created_at,retired_at?,newest,devices,fingerprint}],"trust_version","devices":{"total","on_older_bundle"}}`.
+- `POST /v1/admin/ca/rotate` → 201 the new CA (typed confirmation in the console).
+- `POST /v1/admin/ca/{id}/retire` `{"force":bool}` → 204; `ca.in_use` (400, params.devices) unless forced; `ca.last_active` (400).
+- Device rows: `cert_not_after` (existing), plus `ca_key_id`, `trust_version`, `cert_renewed_at` on `GET /v1/admin/devices` (v0.5.0).

@@ -125,20 +125,25 @@ func runServe(ctx context.Context, args []string) error {
 	}
 	var ca *pki.CA
 	if err := c.db.Tx(ctx, func(tx pgx.Tx) error {
-		var err error
-		ca, err = c.devices.EnsureCA(ctx, tx, c.tenantID, "rostor")
-		if err != nil {
+		if _, err := c.devices.EnsureCA(ctx, tx, c.tenantID, "rostor"); err != nil {
 			return err
 		}
 		return directory.EnsureBuiltins(ctx, tx, c.tenantID, c.authz)
 	}); err != nil {
 		return err
 	}
+	// The server certificate comes from the oldest active CA: the one every
+	// enrolled device already trusts. It moves only when that CA is retired.
+	_, ca, err = c.devices.OldestCA(ctx, c.db, c.tenantID)
+	if err != nil {
+		return err
+	}
 	certPEM, keyPEM, err := serverCert(c, ca)
 	if err != nil {
 		return err
 	}
-	// The CLI on this machine trusts the core through this file.
+	// The CLI on this machine trusts the core through this file (the CA that
+	// signs the server certificate).
 	_ = os.WriteFile(filepath.Join(c.cfg.DataDir, "ca.crt"), ca.CertPEM(), 0o644)
 	var channel *update.Client
 	if url := os.Getenv("ROSTOR_CHANNEL_URL"); url != "" {
@@ -161,6 +166,23 @@ func runServe(ctx context.Context, args []string) error {
 	tlsCfg, err := srv.TLSConfig(certPEM, keyPEM)
 	if err != nil {
 		return err
+	}
+	srv.OnTrustChange = func() {
+		_, oldest, err := c.devices.OldestCA(ctx, c.db, c.tenantID)
+		if err != nil {
+			c.log.Warn("server certificate reissue", "err", err)
+			return
+		}
+		cp, kp, err := serverCert(c, oldest)
+		if err == nil {
+			err = srv.SetServerCert(cp, kp)
+		}
+		if err != nil {
+			c.log.Warn("server certificate reissue", "err", err)
+			return
+		}
+		_ = os.WriteFile(filepath.Join(c.cfg.DataDir, "ca.crt"), oldest.CertPEM(), 0o644)
+		c.log.Info("server certificate reissued", "issuer", oldest.Cert.Subject.CommonName)
 	}
 	hs := &http.Server{Addr: c.cfg.Listen, Handler: srv.Handler(), TLSConfig: tlsCfg,
 		ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second}

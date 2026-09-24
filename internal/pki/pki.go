@@ -159,3 +159,12 @@ func Fingerprint(cert *x509.Certificate) []byte {
 	s := sha256.Sum256(cert.Raw)
 	return s[:]
 }
+
+// LoadCACert parses a CA certificate PEM without its key.
+func LoadCACert(certPEM []byte) (*x509.Certificate, error) {
+	block, _ := pem.Decode(certPEM)
+	if block == nil {
+		return nil, errors.New("pki: bad CA cert PEM")
+	}
+	return x509.ParseCertificate(block.Bytes)
+}

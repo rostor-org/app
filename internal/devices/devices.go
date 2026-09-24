@@ -9,6 +9,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -20,7 +21,7 @@ import (
 	"rostor.org/app/internal/pki"
 )
 
-const DeviceCertLifetime = 365 * 24 * time.Hour
+const DeviceCertLifetime = CertLifetime
 
 type Service struct {
 	Provider crypto.Provider
@@ -100,10 +101,20 @@ type Enrolled struct {
 // Enroll consumes the token atomically (the UPDATE … WHERE used_at IS NULL is
 // the single-use guarantee), creates the device principal and its resource,
 // and issues the certificate.
-func (s *Service) Enroll(ctx context.Context, tx pgx.Tx, ca *pki.CA, tenantID string, req EnrollRequest) (*Enrolled, error) {
+func (s *Service) Enroll(ctx context.Context, tx pgx.Tx, _ *pki.CA, tenantID string, req EnrollRequest) (*Enrolled, error) {
+	// Always issue from the newest active CA; the bundle handed back holds
+	// every active CA so the device trusts the server during a rotation.
+	caID, ca, err := s.NewestCA(ctx, tx, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	bundle, err := s.TrustBundle(ctx, tx, tenantID)
+	if err != nil {
+		return nil, err
+	}
 	h := sha256.Sum256([]byte(req.Token))
 	var tokID, resourceType string
-	err := tx.QueryRow(ctx, `UPDATE enrollment_tokens SET used_at=now() WHERE tenant_id=$1 AND token_hash=$2 AND used_at IS NULL AND expires_at > now()
+	err = tx.QueryRow(ctx, `UPDATE enrollment_tokens SET used_at=now() WHERE tenant_id=$1 AND token_hash=$2 AND used_at IS NULL AND expires_at > now()
 		RETURNING id, resource_type`, tenantID, h[:]).Scan(&tokID, &resourceType)
 	if err == pgx.ErrNoRows {
 		return nil, directory.Err("enrollment.token_invalid")
@@ -134,8 +145,8 @@ func (s *Service) Enroll(ctx context.Context, tx pgx.Tx, ca *pki.CA, tenantID st
 		return nil, directory.Err("request.malformed", "field", "csr_pem", "detail", err.Error())
 	}
 	posture, _ := json.Marshal(req.Posture)
-	if _, err := tx.Exec(ctx, `INSERT INTO devices (tenant_id, principal_id, lifecycle, cert_serial, cert_fingerprint, cert_not_after, posture, last_seen_at)
-		VALUES ($1,$2,'trusted',$3,$4,$5,$6,now())`, tenantID, p.ID, cert.SerialNumber.String(), pki.Fingerprint(cert), cert.NotAfter, posture); err != nil {
+	if _, err := tx.Exec(ctx, `INSERT INTO devices (tenant_id, principal_id, lifecycle, cert_serial, cert_fingerprint, cert_not_after, posture, last_seen_at, ca_key_id, trust_version)
+		VALUES ($1,$2,'trusted',$3,$4,$5,$6,now(),$7,$8)`, tenantID, p.ID, cert.SerialNumber.String(), pki.Fingerprint(cert), cert.NotAfter, posture, caID, bundle.Version); err != nil {
 		return nil, err
 	}
 	if _, err := tx.Exec(ctx, `UPDATE enrollment_tokens SET used_by=$3 WHERE tenant_id=$1 AND id=$2`, tenantID, tokID, p.ID); err != nil {
@@ -146,14 +157,20 @@ func (s *Service) Enroll(ctx context.Context, tx pgx.Tx, ca *pki.CA, tenantID st
 		Detail: map[string]any{"resource": resourceType + ":" + hostname, "cert_serial": cert.SerialNumber.String()}, CorrelationID: actor.CorrelationID}); err != nil {
 		return nil, err
 	}
-	return &Enrolled{DeviceID: p.ID, CertPEM: certPEM, CAPEM: ca.CertPEM(), ResourceType: resourceType, ResourceID: hostname}, nil
+	return &Enrolled{DeviceID: p.ID, CertPEM: certPEM, CAPEM: []byte(strings.Join(bundle.CAs, "")), ResourceType: resourceType, ResourceID: hostname}, nil
 }
 
 // ---- Resolution by certificate ---------------------------------------------
 
 type Device struct {
-	Principal *directory.Principal
-	Lifecycle string
+	Principal    *directory.Principal
+	Lifecycle    string
+	CAKeyID      string
+	CertNotAfter time.Time
+	TrustVersion string
+	// UsingPrevious is set when the device presented its superseded
+	// certificate inside the grace window; it should renew again.
+	UsingPrevious bool
 }
 
 // ByFingerprint maps a presented client certificate to its device. Lifecycle
@@ -161,7 +178,12 @@ type Device struct {
 // reason code (device.not_trusted vs device.unknown).
 func ByFingerprint(ctx context.Context, q directory.Querier, fp []byte) (tenantID string, d *Device, err error) {
 	var principalID, lifecycle string
-	err = q.QueryRow(ctx, `SELECT tenant_id, principal_id, lifecycle FROM devices WHERE cert_fingerprint=$1`, fp).Scan(&tenantID, &principalID, &lifecycle)
+	var caID, trust *string
+	var notAfter time.Time
+	var prev bool
+	err = q.QueryRow(ctx, `SELECT tenant_id, principal_id, lifecycle, ca_key_id, cert_not_after, trust_version, cert_fingerprint <> $1
+		FROM devices WHERE cert_fingerprint=$1 OR (prev_fingerprint=$1 AND prev_valid_until > now())`, fp).
+		Scan(&tenantID, &principalID, &lifecycle, &caID, &notAfter, &trust, &prev)
 	if err == pgx.ErrNoRows {
 		return "", nil, nil
 	}
@@ -172,7 +194,14 @@ func ByFingerprint(ctx context.Context, q directory.Querier, fp []byte) (tenantI
 	if err != nil {
 		return "", nil, err
 	}
-	return tenantID, &Device{Principal: p, Lifecycle: lifecycle}, nil
+	d = &Device{Principal: p, Lifecycle: lifecycle, CertNotAfter: notAfter, UsingPrevious: prev}
+	if caID != nil {
+		d.CAKeyID = *caID
+	}
+	if trust != nil {
+		d.TrustVersion = *trust
+	}
+	return tenantID, d, nil
 }
 
 func UpdatePosture(ctx context.Context, q directory.Querier, tenantID, principalID string, posture map[string]any) error {

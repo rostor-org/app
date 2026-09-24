@@ -683,3 +683,103 @@ func TestCatalogRevalidates(t *testing.T) {
 		t.Fatalf("expected 304 with matching ETag, got %d", resp.StatusCode)
 	}
 }
+
+// Certificate renewal and CA rotation (SPEC-cert-renewal): a device enrolls,
+// the CA rotates, the device learns the new bundle, renews from the new CA,
+// keeps working on the old certificate during the grace window, the old CA
+// can be retired only once nothing depends on it, and the old certificate
+// then stops working.
+func TestCertificateRenewalAndRotation(t *testing.T) {
+	h := newHarness(t)
+	tok := h.adminCall("POST", "/v1/admin/enrollment-tokens", map[string]any{"resource_type": "workstation"})["enrollment_token"].(string)
+	key1, csr1 := csr(t)
+	st, out := h.call(h.client(nil), "POST", "/v1/devices/enroll", "", map[string]any{"enrollment_token": tok, "csr_pem": csr1, "posture": map[string]any{"hostname": "WS-ROT"}})
+	if st != 201 {
+		t.Fatalf("enroll: %d %v", st, out)
+	}
+	mkCert := func(key *ecdsa.PrivateKey, certPEM string) tls.Certificate {
+		block, _ := pem.Decode([]byte(certPEM))
+		der, _ := x509.MarshalECPrivateKey(key)
+		c, err := tls.X509KeyPair(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: block.Bytes}), pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: der}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return c
+	}
+	cert1 := mkCert(key1, out["certificate_pem"].(string))
+	dev1 := h.client(&cert1)
+	trust := func(c *http.Client) map[string]any {
+		st, out := h.call(c, "GET", "/v1/devices/self/trust", "", nil)
+		if st != 200 {
+			t.Fatalf("trust: %d %v", st, out)
+		}
+		return out
+	}
+	if tr := trust(dev1); len(tr["ca_pems"].([]any)) != 1 || tr["renew"] != false {
+		t.Fatalf("initial trust: %v", tr)
+	}
+	// Rotate: a second CA appears; the old one is still the newest-but-one.
+	rot := h.adminCall("POST", "/v1/admin/ca/rotate", nil)
+	newCA := rot["id"].(string)
+	cas := h.adminCall("GET", "/v1/admin/ca", nil)
+	if len(cas["items"].([]any)) != 2 || cas["devices"].(map[string]any)["on_older_bundle"].(float64) != 1 {
+		t.Fatalf("after rotate: %v", cas)
+	}
+	// The device still connects (server cert still from the old CA) and is told to renew.
+	tr := trust(dev1)
+	if len(tr["ca_pems"].([]any)) != 2 || tr["renew"] != true {
+		t.Fatalf("trust after rotate: %v", tr)
+	}
+	if cas := h.adminCall("GET", "/v1/admin/ca", nil); cas["devices"].(map[string]any)["on_older_bundle"].(float64) != 0 {
+		t.Fatalf("device should now be on the current bundle: %v", cas)
+	}
+	// Retiring the old CA is refused while the device's cert came from it.
+	items := cas["items"].([]any)
+	var oldCA string
+	for _, it := range items {
+		m := it.(map[string]any)
+		if m["id"] != newCA {
+			oldCA = m["id"].(string)
+		}
+	}
+	if st, out := h.call(h.client(nil), "POST", "/v1/admin/ca/"+oldCA+"/retire", h.admin, nil); st != 400 || out["code"] != "ca.in_use" {
+		t.Fatalf("retire in use: %d %v", st, out)
+	}
+	// Renew with a fresh key: new cert from the new CA.
+	key2, csr2 := csr(t)
+	st, out = h.call(dev1, "POST", "/v1/devices/self/renew", "", map[string]any{"csr_pem": csr2})
+	if st != 200 {
+		t.Fatalf("renew: %d %v", st, out)
+	}
+	cert2 := mkCert(key2, out["certificate_pem"].(string))
+	dev2 := h.client(&cert2)
+	if tr := trust(dev2); tr["renew"] != false {
+		t.Fatalf("after renew: %v", tr)
+	}
+	// The old certificate still works inside the grace window, and says renew.
+	if tr := trust(dev1); tr["renew"] != true {
+		t.Fatalf("old cert in grace should still work and ask to renew: %v", tr)
+	}
+	// Now the old CA can be retired; the old certificate is no longer accepted
+	// (its CA is gone from the client pool), the new one is.
+	if st, _ := h.call(h.client(nil), "POST", "/v1/admin/ca/"+oldCA+"/retire", h.admin, nil); st != 204 {
+		t.Fatalf("retire after renew: %d", st)
+	}
+	if st, _ := h.call(dev2, "GET", "/v1/devices/self/trust", "", nil); st != 200 {
+		t.Fatalf("new cert after retire: %d", st)
+	}
+	// A fresh handshake is what the rotation protects; a kept-alive
+	// connection from before is torn down by the client here.
+	dev1.CloseIdleConnections()
+	req, _ := http.NewRequest("GET", h.ts.URL+"/v1/devices/self/trust", nil)
+	if resp, err := dev1.Do(req); err == nil && resp.StatusCode == 200 {
+		t.Fatal("old CA's certificate accepted after retirement")
+	}
+	// The last active CA cannot be retired.
+	if st, out := h.call(h.client(nil), "POST", "/v1/admin/ca/"+newCA+"/retire", h.admin, nil); st != 400 || out["code"] != "ca.last_active" {
+		t.Fatalf("retire last: %d %v", st, out)
+	}
+	if bad, err := audit.VerifyChain(h.ctx, h.db, h.tenantID); err != nil || bad != 0 {
+		t.Fatalf("audit chain: %d %v", bad, err)
+	}
+}

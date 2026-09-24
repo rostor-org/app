@@ -427,7 +427,8 @@ func (s *Server) handleListGrants(w http.ResponseWriter, r *http.Request) {
 // ---- devices ----------------------------------------------------------------
 
 func (s *Server) handleListDevices(w http.ResponseWriter, r *http.Request) {
-	rows, err := s.DB.Query(r.Context(), `SELECT p.id, p.display_name, p.attributes, d.lifecycle, d.last_seen_at, d.posture, d.cert_not_after
+	rows, err := s.DB.Query(r.Context(), `SELECT p.id, p.display_name, p.attributes, d.lifecycle, d.last_seen_at, d.posture, d.cert_not_after,
+		coalesce(d.ca_key_id,''), coalesce(d.trust_version,''), d.cert_renewed_at
 		FROM devices d JOIN principals p ON p.tenant_id=d.tenant_id AND p.id=d.principal_id WHERE d.tenant_id=$1 ORDER BY p.display_name::text`, s.TenantID)
 	if err != nil {
 		s.fail(w, r, err)
@@ -438,9 +439,10 @@ func (s *Server) handleListDevices(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var id, lifecycle string
 		var dn, attrs, posture []byte
-		var last *time.Time
+		var last, renewed *time.Time
 		var notAfter time.Time
-		if err := rows.Scan(&id, &dn, &attrs, &lifecycle, &last, &posture, &notAfter); err != nil {
+		var caID, trustVersion string
+		if err := rows.Scan(&id, &dn, &attrs, &lifecycle, &last, &posture, &notAfter, &caID, &trustVersion, &renewed); err != nil {
 			s.fail(w, r, err)
 			return
 		}
@@ -450,7 +452,7 @@ func (s *Server) handleListDevices(w http.ResponseWriter, r *http.Request) {
 		host, _ := a["hostname"].(string)
 		items = append(items, map[string]any{"id": id, "display_name": displayFrom(dn, host, locale(r)),
 			"resource": map[string]string{"type": rt, "id": host}, "lifecycle": lifecycle, "last_seen_at": last,
-			"posture": json.RawMessage(posture), "cert_not_after": notAfter})
+			"posture": json.RawMessage(posture), "cert_not_after": notAfter, "ca_key_id": caID, "trust_version": trustVersion, "cert_renewed_at": renewed})
 	}
 	s.writeJSON(w, 200, map[string]any{"items": items, "total": len(items)})
 }
