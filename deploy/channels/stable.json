@@ -1,24 +1,24 @@
 {
   "channel": "stable",
-  "version": "v0.3.0",
-  "published": "2026-09-24T16:13:53.882714Z",
-  "notes": "First-administrator setup, My account with self-service (change password, badge PIN, passkeys, badges), directory-admins group, role picker, name-first audit, Windows install bundle (attached by CI).",
+  "version": "v0.3.1",
+  "published": "2026-09-24T16:29:21.959736Z",
+  "notes": "Fixes v0.3.0: start-up crash on existing installs and migrations not running on start. Everything from v0.3.0: first-administrator setup, My account with self-service, directory-admins group, role picker, name-first audit, Windows install bundle.",
   "files": {
     "agent-windows-amd64": {
-      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/586325596",
-      "sha256": "1967326c06a3cd7dbb384a6929a853a3a8e13ae29eb26e5bd0a7b6c44ecd4e5a",
+      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/586352847",
+      "sha256": "5a49f9533596eb93af502604f8a6e54c79a6e6d19242d76ffe6f76b8021d6395",
       "size": 7793152
     },
     "linux-amd64": {
-      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/586325602",
-      "sha256": "8cdb4e74ff651a913bb46bc477c6edff8a78a9bf20881a8c450dbff4d8608216",
+      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/586352846",
+      "sha256": "d5c335a14e75747ae6c9ed16c4302ce4000d868c9a4b7d6a655518edf3049b53",
       "size": 23830688
     },
     "linux-arm64": {
-      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/586325597",
-      "sha256": "5e583baeb240d0c3ebaaa9496e0971a5789253f0a44eb57a7e1f021c8d8ac090",
+      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/586352842",
+      "sha256": "5024710a56faabd647f573da9d2f1e849e1da107146a3178a2492f206883cbc7",
       "size": 22413472
     }
   },
-  "signature": "arL3ckJ7bWkTo5j3+AoHt41J63CfR0yGKbuPy9BmzlGtUUw/n2kwg5lsPLCiDeUUQqdT95IIssXn7E0scjB6Cw=="
+  "signature": "kpHLwjJJMWxL4Ldl2JOwIJmYGFgLK56V2EpB8IZ2b7bi8O0m81A3yDSEuRS0l0ENR7GjkmoTfbd4Mvbq47g6Aw=="
 }
