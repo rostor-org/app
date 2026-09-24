@@ -21,6 +21,16 @@ $ProgramData = 'C:\ProgramData\Rostor'
 $ServiceName = 'RostorAgent'
 $Clsid       = '{7A4C2E10-5B0D-4F4E-9C1B-3E2D7F1A6B01}'
 $CpKey       = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Authentication\Credential Providers\$Clsid"
+$PolKey      = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System'
+
+# Revert the sign-in policies install.ps1 sets, first so the lock screen is
+# back to stock before the provider disappears.
+foreach ($name in 'ExcludedCredentialProviders', 'dontdisplaylastusername') {
+    if ((Get-ItemProperty $PolKey -Name $name -ErrorAction SilentlyContinue)) {
+        Remove-ItemProperty -Path $PolKey -Name $name
+        Write-Host "reverted policy $name"
+    }
+}
 $ClsidKey    = "HKLM:\SOFTWARE\Classes\CLSID\$Clsid"
 $DllTarget   = Join-Path $env:SystemRoot 'System32\RostorCredProv.dll'
 

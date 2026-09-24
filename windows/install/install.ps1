@@ -22,7 +22,10 @@ param(
     [string]$AgentExe = '',
     [string]$CredProvDll = '',
     [switch]$MockCore,
-    [switch]$SkipCredProv
+    [switch]$SkipCredProv,
+    # Hide the "Microsoft account" tile from Sign-in options. The local
+    # password tile is deliberately left in place as the fallback.
+    [switch]$ExcludeMicrosoftAccount
 )
 
 $ErrorActionPreference = 'Stop'
@@ -76,6 +79,12 @@ if (Test-Path $tile) { Copy-Item -Force $tile (Join-Path $InstallDir 'tile.bmp')
 # which is where a provider credential without a user SID is listed.
 $pol = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System'
 Set-ItemProperty -Path $pol -Name dontdisplaylastusername -Value 1 -Type DWord
+if ($ExcludeMicrosoftAccount) {
+    # WLIDCredentialProvider = the "Microsoft account" tile. PasswordProvider
+    # ({60b78e88-...}) is never excluded.
+    Set-ItemProperty -Path $pol -Name ExcludedCredentialProviders -Value '{F8A0B131-5F68-486c-8040-7E8FC3C85BB6}' -Type String
+    Write-Host "excluded the Microsoft account sign-in tile (local password tile kept)"
+}
 
 $svcArgs = @('install-service')
 if ($MockCore) { $svcArgs += '--mock-core' }
@@ -105,7 +114,17 @@ if (-not (Test-Path $CredProvDll)) {
     return
 }
 
-Copy-Item -Force $CredProvDll $DllTarget
+# LogonUI keeps the DLL mapped while a lock screen is showing; Windows lets
+# a mapped file be renamed but not overwritten, so move the old one aside
+# and let the next LogonUI pick up the new file.
+$old = "$DllTarget.old"
+Remove-Item $old -Force -ErrorAction SilentlyContinue
+try { Copy-Item -Force $CredProvDll $DllTarget }
+catch [System.IO.IOException] {
+    Rename-Item $DllTarget $old
+    Copy-Item -Force $CredProvDll $DllTarget
+    Write-Host "provider DLL was in use; replaced via rename (takes effect at the next lock screen)"
+}
 
 New-Item -Path $CpKey -Force | Out-Null
 Set-ItemProperty -Path $CpKey -Name '(Default)' -Value 'RostorCredProv'

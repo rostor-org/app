@@ -108,9 +108,12 @@ IFACEMETHODIMP CRostorProvider::GetFieldDescriptorAt(DWORD dwIndex, CREDENTIAL_P
 IFACEMETHODIMP CRostorProvider::GetCredentialCount(DWORD* pdwCount, DWORD* pdwDefault, BOOL* pbAutoLogonWithDefault)
 {
     *pdwCount = _pCredential ? 1 : 0;
-    // Never the default tile: the built-in password provider stays the
-    // safety net for the local admin (contract §4).
-    *pdwDefault = CREDENTIAL_PROVIDER_NO_DEFAULT;
+    // Rostor is the default tile on the "Other user" form, so the form opens
+    // with the identifier field focused. The built-in password provider is
+    // still listed under Sign-in options as the local admin's safety net
+    // (contract §4); only the "Microsoft account" provider is excluded, and
+    // that by installer policy, not here.
+    *pdwDefault = _pCredential ? 0 : CREDENTIAL_PROVIDER_NO_DEFAULT;
     *pbAutoLogonWithDefault = FALSE;
     return S_OK;
 }
