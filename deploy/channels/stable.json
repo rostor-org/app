@@ -1,24 +1,24 @@
 {
   "channel": "stable",
-  "version": "v0.1.2",
-  "published": "2026-09-23T12:57:28.76801Z",
-  "notes": "Fix: opening a suspended person in the console crashed (Why derivation returned null lists).",
+  "version": "v0.2.0",
+  "published": "2026-09-24T15:47:20.691063Z",
+  "notes": "Passkeys (including synced passkeys from password managers) and RFID badge sign-in for the console and Windows lock screen; self-service sign-in methods; Sign-in settings; real update check.",
   "files": {
     "agent-windows-amd64": {
-      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/583779226",
-      "sha256": "2ae2e8b160d4644d78f0bcfcc04bf2e1aacbd99f06c390baf5431f2251bafd2d",
-      "size": 7787520
+      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/586280620",
+      "sha256": "9f42736969117a54d13ab7cbe278a43d9a07150c19351e961b299de093c91ecc",
+      "size": 7793152
     },
     "linux-amd64": {
-      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/583779228",
-      "sha256": "fa2ed0c1a68573081b4fb052791ff03a9735dfd8457f8df49b70fab3202d730e",
-      "size": 21172384
+      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/586280621",
+      "sha256": "b5ea5dfccc6c36b624dccdf88228fc8403597de59e751b458fdab46615e5623a",
+      "size": 23765152
     },
     "linux-arm64": {
-      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/583779227",
-      "sha256": "c82ed87c5ea6126fbdf1e25753bfed07f7c9cce32094c975e7c5c8cbb17d6e7c",
-      "size": 19857568
+      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/586280618",
+      "sha256": "27c7832c416d7297e26891425f802a115f1cfe4d0e3d24630a5e9b5a81953cba",
+      "size": 22347936
     }
   },
-  "signature": "aT04IXCeP9hTvX70RfOY/y8VLt2CJcJhSVwOHNj4+MXdPIxF4wksxq6WO5drmnMD3+jdBMtJL00fnoioEKFGCg=="
+  "signature": "kXmIbWqS0p1unaCx1rkrewqYJNQEc54A1noBt+zOek8BJFAHcryzLGFXuca3qCb+n0FT7Mzj5pS16qH+RFljBw=="
 }
