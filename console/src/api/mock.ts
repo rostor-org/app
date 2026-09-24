@@ -1,6 +1,6 @@
 // In-memory implementation of the console API for development without the
 // backend (VITE_MOCK=1 or ?mock=1). Data mirrors the approved mockup.
-import type {
+import type { LoginMethod,
   Api, AuditRow, AuthSettings, Device, Explanation, Grant, Group, GroupDetail, LiveEvent, LiveHandlers, LoginOK, LoginResponse,
   LiveState, Member, Plugin, Role, Session, Summary, SystemInfo, UpdateState, User, UserDetail, Binding, Reason,
 } from './types'
@@ -100,8 +100,9 @@ const passwordOf = (id: string) => passwords[id] ?? DEFAULT_PASSWORD
 // Tenant sign-in settings (the tenant-wide auth policy). enrolled_passkeys is
 // derived from the bindings.
 let webauthn = { rp_id: 'localhost', display_name: 'ChattLab', origins: ['https://localhost:5173'] }
+let defaultMethod: LoginMethod = 'password'
 const enrolledPasskeys = () => Object.values(bindings).flat().filter((b) => b.method === 'webauthn' && b.state === 'active').length
-const authSettings = (): AuthSettings => ({ webauthn: { ...webauthn, origins: [...webauthn.origins], enrolled_passkeys: enrolledPasskeys() } })
+const authSettings = (): AuthSettings => ({ webauthn: { ...webauthn, origins: [...webauthn.origins], enrolled_passkeys: enrolledPasskeys() }, login: { default_method: defaultMethod } })
 
 // Pending passkey ceremonies: id → the principal it was begun for ('' = discoverable).
 const ceremonies = new Map<string, string>()
@@ -306,7 +307,7 @@ export function createMockApi(_opts: { onUnauthorized?: () => void } = {}): Api 
     },
     async session() { await delay(60); return session ? clone(session) : null },
     async logout() { await delay(60); session = null; saveSession(null) },
-    async setupStatus() { await delay(40); return { needed: !setupDone } },
+    async setupStatus() { await delay(40); return { needed: !setupDone, default_method: defaultMethod } },
     async setup(body) {
       await delay(400)
       if (setupDone) throw mockErr(400, 'setup.already_done')
@@ -611,7 +612,8 @@ export function createMockApi(_opts: { onUnauthorized?: () => void } = {}): Api 
       const origins = body.webauthn.origins.map((o) => o.trim()).filter(Boolean)
       if (origins.some((o) => !o.startsWith('https://'))) throw mockErr(400, 'request.malformed', { field: 'webauthn.origins' })
       webauthn = { rp_id, display_name: body.webauthn.display_name.trim(), origins }
-      append(`user:${session?.principal.id ?? ''}`, 'policy.update', 'policy:tenant-auth', 'session', 'AL1', 'ok', { 'webauthn.rp_id': rp_id, 'webauthn.origins': origins })
+      if (body.login) defaultMethod = body.login.default_method
+      append(`user:${session?.principal.id ?? ''}`, 'policy.update', 'policy:tenant-auth', 'session', 'AL1', 'ok', { 'webauthn.rp_id': rp_id, 'webauthn.origins': origins, 'login.default_method': defaultMethod })
       return authSettings()
     },
 

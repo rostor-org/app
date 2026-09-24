@@ -138,3 +138,7 @@ plugin registry, key rotation, policy counts on groups.
 - Audit rows (v0.3.0): `actor.name` and `target.name` are present when the
   actor/target is a known principal, group or device; `detail.principal_name`
   accompanies `detail.principal_id`. Lead with names; show IDs on demand.
+- Sign-in default (v0.4.0): `GET /v1/auth/setup` also returns
+  `default_method` (`password|passkey|badge`) so the sign-in page opens on it
+  (badge mode focuses the reader field). Set via `login.default_method` in
+  `PUT /v1/admin/settings/auth` (also echoed by GET under `login`).

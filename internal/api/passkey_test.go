@@ -142,8 +142,17 @@ func TestPasskeys(t *testing.T) {
 	if st, out := do("POST", "/v1/auth/passkeys/register/begin", nil); st != 400 || out["code"] != "auth.passkeys_unconfigured" {
 		t.Fatalf("unconfigured: %d %v", st, out)
 	}
-	if st, _ := do("PUT", "/v1/admin/settings/auth", map[string]any{"webauthn": map[string]any{"rp_id": "example.org", "display_name": "Example", "origins": []string{"https://rostor.example.org"}}}); st != 200 {
+	if st, _ := do("PUT", "/v1/admin/settings/auth", map[string]any{"webauthn": map[string]any{"rp_id": "example.org", "display_name": "Example", "origins": []string{"https://rostor.example.org"}},
+		"login": map[string]any{"default_method": "badge"}}); st != 200 {
 		t.Fatalf("settings: %d", st)
+	}
+	// The default sign-in method is public (the sign-in page needs it).
+	if _, out := do("GET", "/v1/auth/setup", nil); out["default_method"] != "badge" {
+		t.Fatalf("default method: %v", out)
+	}
+	if st, _ := do("PUT", "/v1/admin/settings/auth", map[string]any{"webauthn": map[string]any{"rp_id": "example.org", "origins": []string{"https://rostor.example.org"}},
+		"login": map[string]any{"default_method": "carrier-pigeon"}}); st != 400 {
+		t.Fatalf("bad default method should be 400, got %d", st)
 	}
 
 	// Register a synced passkey (backup-eligible) as the signed-in person.

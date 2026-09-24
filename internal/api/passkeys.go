@@ -80,7 +80,22 @@ func (s *Server) handleGetAuthSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	var enrolled int
 	_ = s.DB.QueryRow(r.Context(), `SELECT count(*) FROM authenticator_bindings WHERE tenant_id=$1 AND method='webauthn' AND state='active'`, s.TenantID).Scan(&enrolled)
-	s.writeJSON(w, 200, map[string]any{"webauthn": map[string]any{"rp_id": rp.ID, "display_name": rp.DisplayName, "origins": rp.Origins, "enrolled_passkeys": enrolled}})
+	s.writeJSON(w, 200, map[string]any{"webauthn": map[string]any{"rp_id": rp.ID, "display_name": rp.DisplayName, "origins": rp.Origins, "enrolled_passkeys": enrolled},
+		"login": map[string]any{"default_method": s.defaultLoginMethod(r.Context())}})
+}
+
+// defaultLoginMethod is the method the sign-in page opens on (auth policy
+// `login.default_method`): password, passkey or badge. Password when unset.
+func (s *Server) defaultLoginMethod(ctx context.Context) string {
+	pol, _, err := directory.EffectivePolicy(ctx, s.DB, s.TenantID, "auth", "")
+	if err != nil {
+		return "password"
+	}
+	switch m, _ := pol["login.default_method"].(string); m {
+	case "badge", "passkey", "password":
+		return m
+	}
+	return "password"
 }
 
 // handlePutAuthSettings writes the tenant-wide auth policy (priority 0). It
@@ -93,6 +108,9 @@ func (s *Server) handlePutAuthSettings(w http.ResponseWriter, r *http.Request) {
 			DisplayName string   `json:"display_name"`
 			Origins     []string `json:"origins"`
 		} `json:"webauthn"`
+		Login struct {
+			DefaultMethod string `json:"default_method"`
+		} `json:"login"`
 	}
 	if err := decode(r, &req); err != nil {
 		s.fail(w, r, err)
@@ -109,7 +127,20 @@ func (s *Server) handlePutAuthSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	doc := map[string]any{"webauthn.rp_id": rpID, "webauthn.display_name": req.WebAuthn.DisplayName, "webauthn.origins": req.WebAuthn.Origins}
+	switch req.Login.DefaultMethod {
+	case "", "password", "passkey", "badge":
+	default:
+		s.fail(w, r, directory.Err("request.malformed", "field", "login.default_method"))
+		return
+	}
+	if req.Login.DefaultMethod == "" {
+		req.Login.DefaultMethod = "password"
+	}
+	if req.WebAuthn.Origins == nil {
+		req.WebAuthn.Origins = []string{}
+	}
+	doc := map[string]any{"webauthn.rp_id": rpID, "webauthn.display_name": req.WebAuthn.DisplayName, "webauthn.origins": req.WebAuthn.Origins,
+		"login.default_method": req.Login.DefaultMethod}
 	err := s.tx(r, func(tx pgx.Tx) error {
 		// Replace the tenant-wide auth policy in place so there is exactly one.
 		raw, _ := json.Marshal(doc)

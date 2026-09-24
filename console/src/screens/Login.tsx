@@ -47,6 +47,13 @@ export function Login() {
   useEffect(() => { if (session) nav('/me', { replace: true }) }, [session, nav])
   // The offer disappears once setup is done (or was never needed).
   useEffect(() => { if (mode === 'setup' && setupStatus.data && !setupStatus.data.needed) setMode('password') }, [mode, setupStatus.data])
+  // Open on the tenant's default method (Sign-in settings) until the person
+  // picks another. Badge mode focuses the reader field so a tap needs no click.
+  const [chosen, setChosen] = useState(false)
+  useEffect(() => {
+    if (chosen || !setupStatus.data || setupStatus.data.needed) return
+    if (setupStatus.data.default_method === 'badge' && mode === 'password') setMode('badge')
+  }, [chosen, setupStatus.data, mode])
   useEffect(() => { if (step === 'password') pw.current?.focus() }, [step])
   useEffect(() => { if (mode === 'badge') (needPin ? pinRef : num).current?.focus() }, [mode, needPin])
 
@@ -154,7 +161,7 @@ export function Login() {
   }
 
   const switchMode = (m: Mode) => {
-    setMode(m); setError(null); setNeedPin(false); setPin(''); setNumber(''); setPassword(''); setStep('identifier'); setSetup(emptySetup)
+    setChosen(true); setMode(m); setError(null); setNeedPin(false); setPin(''); setNumber(''); setPassword(''); setStep('identifier'); setSetup(emptySetup)
   }
 
   const tenant = brand.data?.tenant_name ?? ''

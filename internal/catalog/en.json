@@ -314,6 +314,8 @@
   "ui.setup.token_hint": "Printed once by the installer (rostor bootstrap). Single use.",
   "ui.setup.username": "Username",
   "ui.setup.working": "Creating…",
+  "ui.signin.default_method": "Default sign-in method",
+  "ui.signin.default_method_hint": "What the sign-in page opens on. Badge focuses the reader field so a tap needs no click; the other methods stay one click away.",
   "ui.signin.display_name": "Display name",
   "ui.signin.enrolled": "{n} passkey(s) enrolled",
   "ui.signin.note": "Passkeys are bound to this domain. Browsers only offer them on pages served from it.",

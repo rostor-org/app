@@ -22,7 +22,7 @@ func (s *Server) handleSetupStatus(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	s.writeJSON(w, 200, map[string]any{"needed": !exists})
+	s.writeJSON(w, 200, map[string]any{"needed": !exists, "default_method": s.defaultLoginMethod(r.Context())})
 }
 
 // handleSetup creates the first human administrator. It is gated by the

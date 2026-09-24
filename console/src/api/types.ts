@@ -82,11 +82,14 @@ export interface WebAuthnSettings {
   display_name: string
   origins: string[]
 }
+export type LoginMethod = 'password' | 'passkey' | 'badge'
 export interface AuthSettings {
   webauthn: WebAuthnSettings & { enrolled_passkeys: number }
+  login: { default_method: LoginMethod }
 }
 export interface AuthSettingsUpdate {
   webauthn: WebAuthnSettings
+  login?: { default_method: LoginMethod }
 }
 
 export interface Session {
@@ -99,6 +102,7 @@ export interface Session {
 
 export interface SetupStatus {
   needed: boolean
+  default_method?: LoginMethod
 }
 export interface SetupRequest {
   bootstrap_token: string
