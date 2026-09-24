@@ -33,6 +33,9 @@ type Config struct {
 	CoreURL  string        `json:"core_url"`
 	DeviceID string        `json:"device_id"`
 	Resource core.Resource `json:"resource"`
+	// TrustVersion is the version of the CA bundle last written to ca.crt
+	// (GET /v1/devices/self/trust). Empty until the first trust check.
+	TrustVersion string `json:"trust_version,omitempty"`
 }
 
 // Posture is the §1.1 posture block.
@@ -210,4 +213,21 @@ func httpClient(o Options) (*http.Client, error) {
 		tlsCfg.InsecureSkipVerify = true
 	}
 	return &http.Client{Timeout: 20 * time.Second, Transport: &http.Transport{TLSClientConfig: tlsCfg, Proxy: nil}}, nil
+}
+
+// SaveConfig rewrites agent.json atomically (write path.new, rename).
+func SaveConfig(path string, c *Config) error {
+	b, err := json.MarshalIndent(c, "", "  ")
+	if err != nil {
+		return err
+	}
+	tmp := path + ".new"
+	if err := os.WriteFile(tmp, b, 0o644); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	return nil
 }

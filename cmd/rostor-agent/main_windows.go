@@ -29,6 +29,7 @@ import (
 	"rostor.org/app/cmd/rostor-agent/internal/paths"
 	"rostor.org/app/cmd/rostor-agent/internal/pipe"
 	"rostor.org/app/cmd/rostor-agent/internal/pipeproto"
+	"rostor.org/app/cmd/rostor-agent/internal/trust"
 )
 
 const version = "0.1.0"
@@ -46,6 +47,9 @@ commands:
   uninstall-service stop and remove the RostorAgent service
   pipe-test         send one request to the agent pipe and print the reply
                     flags: --op ui|logon [--identifier ID --secret S | --badge N [--pin P]] [--locale L]
+  trust             print the pinned CA fingerprints, the device certificate's issuer
+                    and expiry, and the last trust bundle version (no network)
+  renew             renew the device certificate; flags: --now (required)
   version           print the agent version
 `
 
@@ -66,6 +70,10 @@ func main() {
 		err = cmdUninstallService()
 	case "pipe-test":
 		err = cmdPipeTest(os.Args[2:])
+	case "trust":
+		err = cmdTrust()
+	case "renew":
+		err = cmdRenew(os.Args[2:])
 	case "version":
 		fmt.Println(version)
 	default:
@@ -144,21 +152,60 @@ func buildBroker(logger *log.Logger, mock bool) (*broker.Broker, error) {
 	if cfg.Resource.ID != "" {
 		b.Resource = cfg.Resource
 	}
-	client, err := core.NewClient(cfg.CoreURL, paths.DeviceCert, paths.DeviceKey, paths.CACert, b.Resource, version)
+	mgr, err := newTrustManager(cfg, b.Resource, logger)
 	if err != nil {
 		return nil, err
 	}
-	b.Verifier = client
-	go heartbeat(client, logger)
+	b.Verifier = mgr
+	go heartbeat(mgr, logger)
 	return b, nil
 }
 
-// heartbeat posts posture every ten minutes (§1.3); failures are only logged.
-func heartbeat(client *core.Client, logger *log.Logger) {
+func agentFiles() trust.Files {
+	return trust.Files{AgentJSON: paths.AgentJSON, DeviceKey: paths.DeviceKey, DeviceCert: paths.DeviceCert, CACert: paths.CACert}
+}
+
+// newTrustManager builds the mTLS client and the trust manager around it.
+// A renewal interrupted between its two renames is repaired first, because
+// the client cannot load a key that no longer matches its certificate.
+func newTrustManager(cfg *enroll.Config, res core.Resource, logger *log.Logger) (*trust.Manager, error) {
+	files := agentFiles()
+	if _, err := trust.Recover(files); err != nil {
+		logger.Printf("recover certificate files: %v", err)
+	}
+	client, err := core.NewClient(cfg.CoreURL, paths.DeviceCert, paths.DeviceKey, paths.CACert, res, version)
+	if err != nil {
+		return nil, err
+	}
+	return &trust.Manager{
+		Client:    client,
+		Files:     files,
+		Config:    cfg,
+		SecureKey: enroll.SecureKeyFile,
+		Logger:    logger,
+	}, nil
+}
+
+// heartbeat runs the trust check (bundle update, renewal) and posts posture
+// (§1.3) at start and every ten minutes; failures are only logged.
+func heartbeat(mgr *trust.Manager, logger *log.Logger) {
 	osVersion := windowsVersion()
+	first := true
 	for {
-		ctx, cancel := context.WithTimeout(context.Background(), core.Timeout)
-		if err := client.Posture(ctx, osVersion); err != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 4*core.Timeout)
+		var err error
+		if first {
+			err = mgr.Start(ctx)
+			first = false
+		} else {
+			err = mgr.Check(ctx)
+		}
+		if err != nil {
+			logger.Printf("trust check: %v", err)
+		}
+		cancel()
+		ctx, cancel = context.WithTimeout(context.Background(), core.Timeout)
+		if err := mgr.Client.Posture(ctx, osVersion); err != nil {
 			logger.Printf("posture: %v", err)
 		}
 		cancel()
@@ -313,6 +360,49 @@ func cmdUninstallService() error {
 		return fmt.Errorf("delete service: %w", err)
 	}
 	fmt.Printf("removed %s\n", paths.ServiceName)
+	return nil
+}
+
+// ---- trust / renew -----------------------------------------------------------
+
+func cmdTrust() error {
+	trust.Inspect(agentFiles()).Write(os.Stdout, time.Now())
+	return nil
+}
+
+// cmdRenew renews from the command line. The running service notices the
+// new device.crt at its next check (within ten minutes) and reloads; until
+// then it keeps using the old certificate, which core accepts for 24 h.
+func cmdRenew(args []string) error {
+	fs := flag.NewFlagSet("renew", flag.ContinueOnError)
+	now := fs.Bool("now", false, "renew immediately regardless of expiry")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if !*now {
+		return errors.New("renew: pass --now to renew the certificate immediately")
+	}
+	cfg, err := enroll.LoadConfig(paths.AgentJSON)
+	if err != nil {
+		return fmt.Errorf("not enrolled: %w", err)
+	}
+	res := cfg.Resource
+	if res.ID == "" {
+		hostname, _ := os.Hostname()
+		res = core.Resource{Type: "workstation", ID: hostname}
+	}
+	mgr, err := newTrustManager(cfg, res, log.New(os.Stderr, "", 0))
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 4*core.Timeout)
+	defer cancel()
+	if err := mgr.Renew(ctx); err != nil {
+		return err
+	}
+	leaf := mgr.Client.Certificate()
+	fmt.Printf("renewed: issuer %s, expires %s\n", leaf.Issuer.CommonName, leaf.NotAfter.UTC().Format(time.RFC3339))
+	fmt.Println("the RostorAgent service picks the new certificate up at its next trust check (within 10 minutes) or on restart")
 	return nil
 }
 

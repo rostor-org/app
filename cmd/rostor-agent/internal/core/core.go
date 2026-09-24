@@ -3,7 +3,10 @@
 // lets `run --mock-core` stand in for core until it exists.
 package core
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 // Credential is the §1.2 credential presentation: "password" carries
 // identifier+secret, "badge" carries the number as typed by a reader plus an
@@ -86,4 +89,24 @@ func (r *VerifyResponse) Need() string {
 		}
 	}
 	return "pin"
+}
+
+// TrustResponse is GET /v1/devices/self/trust (console-api.md, "Certificates
+// and trust"). CAPEMs lists every active CA, newest first; Version changes
+// whenever that set changes. Renew is core's own verdict: expiry within 30
+// days, issuing CA no longer the newest, or the device is presenting a
+// superseded certificate inside the grace window.
+type TrustResponse struct {
+	Version      string    `json:"version"`
+	CAPEMs       []string  `json:"ca_pems"`
+	Renew        bool      `json:"renew"`
+	CertNotAfter time.Time `json:"cert_not_after"`
+}
+
+// RenewResponse is POST /v1/devices/self/renew.
+type RenewResponse struct {
+	CertificatePEM string    `json:"certificate_pem"`
+	NotAfter       time.Time `json:"not_after"`
+	CAPEMs         []string  `json:"ca_pems"`
+	TrustVersion   string    `json:"trust_version"`
 }

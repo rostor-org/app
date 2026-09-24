@@ -8,7 +8,7 @@ has been verified so far.
 
 | path | what | builds on |
 |---|---|---|
-| `cmd/rostor-agent/` | Go Windows service `RostorAgent` + CLI (`enroll`, `install-service`, `uninstall-service`, `pipe-test`, `run`) | macOS/Linux cross-compile |
+| `cmd/rostor-agent/` | Go Windows service `RostorAgent` + CLI (`enroll`, `install-service`, `uninstall-service`, `pipe-test`, `trust`, `renew`, `run`) | macOS/Linux cross-compile |
 | `windows/credprov/` | C++ Credential Provider `RostorCredProv.dll` | Windows, MSVC Build Tools 2022 |
 | `windows/install/` | `install.ps1`, `uninstall.ps1` | run on the workstation, elevated |
 
@@ -102,6 +102,38 @@ Uninstall:
 ```powershell
 .\uninstall.ps1          # removes CP registry keys, DLL, service, Program Files; keeps C:\ProgramData\Rostor
 .\uninstall.ps1 -Purge   # also removes C:\ProgramData\Rostor (never local accounts); machine is stock afterwards
+```
+
+## Trust and renewal
+
+The agent pins the core CA bundle (`ca.crt`, all active CAs concatenated)
+and holds a 90-day device certificate. Both are kept current by the
+`RostorAgent` service itself, per `docs/contracts/console-api.md`
+("Certificates and trust"):
+
+- At service start and every 10 minutes the agent calls
+  `GET /v1/devices/self/trust`. When `version` differs from `trust_version`
+  in `agent.json` it rewrites `ca.crt` (write `ca.crt.new`, rename) and
+  reloads its TLS pool without a restart.
+- It renews when core says `renew: true`, or locally when the certificate
+  expires within 30 days or was not issued by the newest CA in the bundle:
+  a fresh P-256 key and CSR go to `POST /v1/devices/self/renew`; the reply
+  is written as `device.key.new` + `device.crt.new` (key ACLed like
+  `device.key`), *proven* with one `GET trust` over the staged pair, and only
+  then renamed over the live pair (key first, then certificate). Any failure
+  before that point discards the staged files and keeps the old pair, which
+  core accepts for 24 h after issuing the new one. A crash between the two
+  renames is repaired at the next start. Log line: `certificate renewed,
+  expires <RFC 3339>`.
+- A logon `Verify` that fails in the TLS handshake (the usual sign of a CA
+  rotation the device slept through) triggers a trust refresh and one retry
+  before the credprov sees `agent.core_unreachable`.
+
+Operator commands (elevated):
+
+```powershell
+rostor-agent trust        # pinned CA fingerprints, device cert issuer + expiry, last trust version; no network
+rostor-agent renew --now  # force a renewal; the service reloads within 10 minutes or on restart
 ```
 
 ## Debugging

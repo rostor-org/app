@@ -9,9 +9,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -20,48 +22,104 @@ import (
 const Timeout = 8 * time.Second
 
 // Client talks to core over mTLS with the enrolled device certificate and
-// pins the core CA from enrollment (contract §1.2/§1.3).
+// pins the core CA bundle from enrollment (contract §1.2/§1.3). The key pair
+// and bundle are read from files so that trust updates and certificate
+// renewal (console-api.md "Certificates and trust") can swap them on disk and
+// call Reload without restarting the service.
 type Client struct {
 	BaseURL      string
 	Resource     Resource
 	AgentVersion string
-	http         *http.Client
+
+	certPath, keyPath, caPath string
+
+	mu   sync.RWMutex
+	http *http.Client
+	leaf *x509.Certificate
 }
 
 // ErrUnreachable wraps any transport-level failure so the broker can map it to
 // agent.core_unreachable without inspecting error strings.
 var ErrUnreachable = errors.New("core unreachable")
 
-// NewClient loads the device key pair and CA from the given paths.
+// ErrTLS additionally marks a transport failure that happened in the TLS
+// handshake itself: the server's certificate is not signed by a pinned CA, or
+// core rejected the device certificate. Both are what a CA rotation looks
+// like from a device that has not applied the new bundle yet, so the caller
+// re-fetches trust and retries once. Errors carrying ErrTLS always carry
+// ErrUnreachable too.
+var ErrTLS = errors.New("tls failure")
+
+// NewClient loads the device key pair and CA bundle from the given paths.
 func NewClient(baseURL, certPath, keyPath, caPath string, res Resource, agentVersion string) (*Client, error) {
-	cert, err := tls.LoadX509KeyPair(certPath, keyPath)
-	if err != nil {
-		return nil, fmt.Errorf("load device certificate: %w", err)
+	c := &Client{
+		BaseURL:      strings.TrimRight(baseURL, "/"),
+		Resource:     res,
+		AgentVersion: agentVersion,
+		certPath:     certPath,
+		keyPath:      keyPath,
+		caPath:       caPath,
 	}
-	caPEM, err := os.ReadFile(caPath)
-	if err != nil {
-		return nil, fmt.Errorf("read ca.crt: %w", err)
+	if err := c.Reload(); err != nil {
+		return nil, err
 	}
+	return c, nil
+}
+
+// Reload re-reads device.crt, device.key and ca.crt and swaps the transport.
+// On any error the previous transport stays in use, so a half-written file
+// never takes the logon path down.
+func (c *Client) Reload() error {
+	cert, err := tls.LoadX509KeyPair(c.certPath, c.keyPath)
+	if err != nil {
+		return fmt.Errorf("load device certificate: %w", err)
+	}
+	leaf, err := x509.ParseCertificate(cert.Certificate[0])
+	if err != nil {
+		return fmt.Errorf("parse device certificate: %w", err)
+	}
+	caPEM, err := os.ReadFile(c.caPath)
+	if err != nil {
+		return fmt.Errorf("read ca.crt: %w", err)
+	}
+	// AppendCertsFromPEM walks every CERTIFICATE block in the file, so a
+	// bundle of several CAs (enrollment and trust both return all active
+	// ones concatenated) is pinned as a whole.
 	pool := x509.NewCertPool()
 	if !pool.AppendCertsFromPEM(caPEM) {
-		return nil, errors.New("ca.crt contains no certificates")
+		return errors.New("ca.crt contains no certificates")
 	}
 	tr := &http.Transport{
 		TLSClientConfig: &tls.Config{
 			Certificates: []tls.Certificate{cert},
-			RootCAs:      pool, // pin: only the core CA, never the system store
+			RootCAs:      pool, // pin: only the core CAs, never the system store
 			MinVersion:   tls.VersionTLS12,
 		},
 		TLSHandshakeTimeout:   Timeout,
 		ResponseHeaderTimeout: Timeout,
 		Proxy:                 nil, // LogonUI-time traffic must not depend on a user proxy
 	}
-	return &Client{
-		BaseURL:      strings.TrimRight(baseURL, "/"),
-		Resource:     res,
-		AgentVersion: agentVersion,
-		http:         &http.Client{Transport: tr, Timeout: Timeout},
-	}, nil
+	c.mu.Lock()
+	old := c.http
+	c.http = &http.Client{Transport: tr, Timeout: Timeout}
+	c.leaf = leaf
+	c.mu.Unlock()
+	if old != nil {
+		old.CloseIdleConnections()
+	}
+	return nil
+}
+
+// Certificate returns the device certificate currently presented to core.
+func (c *Client) Certificate() *x509.Certificate {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.leaf
+}
+
+// Files returns the paths the client loads from.
+func (c *Client) Files() (certPath, keyPath, caPath string) {
+	return c.certPath, c.keyPath, c.caPath
 }
 
 // Verify implements Verifier via POST /v1/verify.
@@ -70,7 +128,7 @@ func (c *Client) Verify(ctx context.Context, req VerifyRequest) (*VerifyResponse
 		req.Resource = c.Resource
 	}
 	var out VerifyResponse
-	status, err := c.postJSON(ctx, "/v1/verify", req, &out)
+	status, err := c.doJSON(ctx, http.MethodPost, "/v1/verify", req, &out)
 	if err != nil {
 		return nil, err
 	}
@@ -88,7 +146,7 @@ func (c *Client) Verify(ctx context.Context, req VerifyRequest) (*VerifyResponse
 // Posture implements §1.3; failures are logged by the caller, never fatal.
 func (c *Client) Posture(ctx context.Context, osVersion string) error {
 	body := map[string]string{"agent_version": c.AgentVersion, "os_version": osVersion}
-	status, err := c.postJSON(ctx, "/v1/devices/self/posture", body, nil)
+	status, err := c.doJSON(ctx, http.MethodPost, "/v1/devices/self/posture", body, nil)
 	if err != nil {
 		return err
 	}
@@ -98,22 +156,66 @@ func (c *Client) Posture(ctx context.Context, osVersion string) error {
 	return nil
 }
 
-func (c *Client) postJSON(ctx context.Context, path string, in, out any) (int, error) {
-	b, err := json.Marshal(in)
+// Trust implements GET /v1/devices/self/trust.
+func (c *Client) Trust(ctx context.Context) (*TrustResponse, error) {
+	var out TrustResponse
+	status, err := c.doJSON(ctx, http.MethodGet, "/v1/devices/self/trust", nil, &out)
 	if err != nil {
-		return 0, err
+		return nil, err
+	}
+	if status != http.StatusOK {
+		return nil, fmt.Errorf("%w: trust returned HTTP %d", ErrUnreachable, status)
+	}
+	if out.Version == "" || len(out.CAPEMs) == 0 {
+		return nil, fmt.Errorf("%w: trust response missing version or ca_pems", ErrUnreachable)
+	}
+	return &out, nil
+}
+
+// Renew implements POST /v1/devices/self/renew.
+func (c *Client) Renew(ctx context.Context, csrPEM string) (*RenewResponse, error) {
+	var out RenewResponse
+	status, err := c.doJSON(ctx, http.MethodPost, "/v1/devices/self/renew", map[string]string{"csr_pem": csrPEM}, &out)
+	if err != nil {
+		return nil, err
+	}
+	if status != http.StatusOK && status != http.StatusCreated {
+		return nil, fmt.Errorf("renew returned HTTP %d", status)
+	}
+	if out.CertificatePEM == "" {
+		return nil, errors.New("renew response missing certificate_pem")
+	}
+	return &out, nil
+}
+
+func (c *Client) doJSON(ctx context.Context, method, path string, in, out any) (int, error) {
+	var body io.Reader
+	if in != nil {
+		b, err := json.Marshal(in)
+		if err != nil {
+			return 0, err
+		}
+		body = bytes.NewReader(b)
 	}
 	ctx, cancel := context.WithTimeout(ctx, Timeout)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.BaseURL+path, bytes.NewReader(b))
+	req, err := http.NewRequestWithContext(ctx, method, c.BaseURL+path, body)
 	if err != nil {
 		return 0, err
 	}
-	req.Header.Set("Content-Type", "application/json")
+	if in != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("User-Agent", "rostor-agent/"+c.AgentVersion)
-	resp, err := c.http.Do(req)
+	c.mu.RLock()
+	hc := c.http
+	c.mu.RUnlock()
+	resp, err := hc.Do(req)
 	if err != nil {
+		if isTLSError(err) {
+			return 0, fmt.Errorf("%w: %w: %v", ErrUnreachable, ErrTLS, err)
+		}
 		return 0, fmt.Errorf("%w: %v", ErrUnreachable, err)
 	}
 	defer resp.Body.Close()
@@ -127,4 +229,23 @@ func (c *Client) postJSON(ctx context.Context, path string, in, out any) (int, e
 		}
 	}
 	return resp.StatusCode, nil
+}
+
+// isTLSError recognises the handshake failures a CA rotation produces:
+// our pool no longer trusts the server (a verification error on our side)
+// or the server no longer trusts us (an alert such as "bad certificate",
+// "unknown certificate authority" or "certificate required"). crypto/tls
+// delivers a peer alert as an unexported type inside a *net.OpError whose
+// Op is "remote error"; that Op is used by nothing else, so it is matched
+// structurally rather than by message text.
+func isTLSError(err error) bool {
+	var verify *tls.CertificateVerificationError
+	var alert tls.AlertError
+	var unknownCA x509.UnknownAuthorityError
+	var invalid x509.CertificateInvalidError
+	var header tls.RecordHeaderError
+	var op *net.OpError
+	return errors.As(err, &verify) || errors.As(err, &alert) ||
+		errors.As(err, &unknownCA) || errors.As(err, &invalid) || errors.As(err, &header) ||
+		(errors.As(err, &op) && op.Op == "remote error")
 }
