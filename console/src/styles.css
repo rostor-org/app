@@ -153,6 +153,24 @@ tr.row td .rowlink{all:unset;cursor:pointer;font-weight:600}
 .ev .t{font-family:var(--font-mono);font-size:12px;color:var(--muted)}
 .ev .what{min-width:0;overflow-wrap:anywhere}
 .ev .outcome{font-size:12px}
+/* version banner (a new build is serving this page) */
+.banner{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:0 0 16px;padding:10px 14px;border:1px solid var(--signal);border-radius:8px;background:color-mix(in srgb,var(--signal) 10%,transparent)}
+/* certificates */
+.expiring{color:var(--bad);font-weight:600}
+.nowrap{white-space:nowrap}
+td small{display:block;font-size:12px}
+.calist > div{align-items:flex-start;flex-wrap:wrap}
+.calist .ca{min-width:0;flex:1}
+.calist .ca b{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.calist .meta{display:flex;gap:6px 10px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-top:3px;align-items:center}
+.calist .retirewarn{flex-basis:100%;margin-top:6px}
+.card .list{margin:10px 0 4px}
+/* install panel */
+.steps{margin:8px 0 0;padding-left:20px;color:var(--muted)}
+.steps li{margin:4px 0}
+.drawer h3{font-size:13px;margin:18px 0 6px}
+.drawer h3:first-of-type{margin-top:4px}
+textarea.input.cmd{width:100%;max-width:none;font-family:var(--font-mono);font-size:12.5px;resize:none;overflow-wrap:anywhere}
 /* system */
 .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:16px}

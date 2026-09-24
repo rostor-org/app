@@ -1,6 +1,7 @@
 import type { Api } from './types'
 import { createHttpApi } from './client'
 import { createMockApi } from './mock'
+import { observeVersion } from '../lib/version'
 
 const MOCK_KEY = 'rostor-console-mock'
 
@@ -19,9 +20,17 @@ export function isMock(): boolean {
 let unauthorized: () => void = () => {}
 export function onUnauthorized(fn: () => void) { unauthorized = fn }
 
-export const api: Api = isMock()
+const raw: Api = isMock()
   ? createMockApi({ onUnauthorized: () => unauthorized() })
   : createHttpApi({ onUnauthorized: () => unauthorized() })
+
+// Every GET /v1/admin/system passes through the version watch, so a bump
+// (an applied update, whether from this tab or the timer) is noticed wherever
+// the call happened.
+export const api: Api = {
+  ...raw,
+  system: async () => { const s = await raw.system(); observeVersion(s.version); return s },
+}
 
 export { ApiError } from './client'
 export type * from './types'

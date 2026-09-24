@@ -20,9 +20,9 @@ function keysFor(type: string): string[][] {
   if (type.startsWith('user.')) return [['users'], ['user'], ['summary'], ['why']]
   if (type.startsWith('grant.')) return [['grants'], ['group'], ['summary'], ['why']]
   if (type.startsWith('group.')) return [['groups'], ['group'], ['users'], ['summary'], ['why']]
-  if (type.startsWith('device.')) return [['devices'], ['summary']]
-  if (type === 'audit.appended') return [['audit'], ['user']]
-  if (type === 'update.state') return [['updates'], ['system']]
+  if (type.startsWith('device.')) return [['devices'], ['summary'], ['ca']]
+  if (type === 'audit.appended') return [['audit'], ['user'], ['ca']]
+  if (type === 'update.state') return [['updates'], ['system'], ['downloads']]
   return []
 }
 

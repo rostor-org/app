@@ -10,6 +10,10 @@ export interface Fmt {
   relDay: (ts: string | number | null | undefined) => string
   /** "2026-12-31" */
   date: (ts: string | number | null | undefined) => string
+  /** "in 78 days" / "today" / "3 days ago" — via ui.time.* codes. */
+  relDays: (ts: string | number | null | undefined) => string
+  /** Whole days from now to the instant (negative when past); null when unknown. */
+  daysUntil: (ts: string | number | null | undefined) => number | null
   /** "2 h 06 m" via ui.time.duration */
   duration: (seconds: number | null | undefined) => string
   /** "18 MB" */
@@ -18,6 +22,8 @@ export interface Fmt {
   int: (n: number | null | undefined) => string
   /** Short opaque id: "usr_f40101ae…" */
   shortId: (id: string) => string
+  /** Short key fingerprint: "f63294b2…4b76" */
+  fingerprint: (fp: string) => string
   /** display_name may be a string or a locale map. */
   name: (v: string | Record<string, string> | undefined | null, fallback?: string) => string
 }
@@ -30,6 +36,12 @@ export function makeFormat(t: T, locale: string): Fmt {
   const ymd = new Intl.DateTimeFormat(locale, { year: 'numeric', month: '2-digit', day: '2-digit', timeZone: 'UTC' })
   const num = new Intl.NumberFormat(locale)
   const toDate = (ts: string | number) => new Date(ts)
+  const daysUntil = (ts: string | number | null | undefined): number | null => {
+    if (ts === null || ts === undefined || ts === '') return null
+    const d = toDate(ts)
+    if (Number.isNaN(d.getTime())) return null
+    return Math.ceil((d.getTime() - Date.now()) / 86_400_000)
+  }
   const sameDay = (a: Date, b: Date) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()
   return {
     clock: (ts) => clock.format(toDate(ts)),
@@ -52,6 +64,14 @@ export function makeFormat(t: T, locale: string): Fmt {
       const get = (k: string) => p.find((x) => x.type === k)?.value ?? ''
       return `${get('year')}-${get('month')}-${get('day')}`
     },
+    daysUntil,
+    relDays: (ts) => {
+      const n = daysUntil(ts)
+      if (n === null) return t('ui.time.never')
+      if (n > 0) return t('ui.time.in_days', { n })
+      if (n === 0) return t('ui.time.today_plain')
+      return t('ui.time.days_ago', { n: -n })
+    },
     duration: (s) => {
       if (s === null || s === undefined) return t('ui.time.never')
       const h = Math.floor(s / 3600)
@@ -68,6 +88,7 @@ export function makeFormat(t: T, locale: string): Fmt {
     },
     int: (n) => (n === null || n === undefined ? '' : num.format(n)),
     shortId: (id) => (id.length > 12 ? `${id.slice(0, 12)}…` : id),
+    fingerprint: (fp) => { const h = fp.replace(/:/g, ''); return h.length > 16 ? `${h.slice(0, 8)}…${h.slice(-4)}` : fp },
     name: (v, fallback = '') => {
       if (!v) return fallback
       if (typeof v === 'string') return v

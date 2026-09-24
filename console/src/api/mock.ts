@@ -1,7 +1,7 @@
 // In-memory implementation of the console API for development without the
 // backend (VITE_MOCK=1 or ?mock=1). Data mirrors the approved mockup.
 import type { LoginMethod,
-  Api, AuditRow, AuthSettings, Device, Explanation, Grant, Group, GroupDetail, LiveEvent, LiveHandlers, LoginOK, LoginResponse,
+  Api, AuditRow, AuthSettings, CA, CAList, Device, Downloads, Explanation, Grant, Group, GroupDetail, LiveEvent, LiveHandlers, LoginOK, LoginResponse,
   LiveState, Member, Plugin, Role, Session, Summary, SystemInfo, UpdateState, User, UserDetail, Binding, Reason,
 } from './types'
 import catalogEn from '../../catalog.en.json'
@@ -138,14 +138,54 @@ const roles: Role[] = [
   { resource_type: 'equipment', name: 'steward', permissions: ['operate', 'certify'] },
 ]
 
+// ---- certificates and trust (v0.5.0) ---------------------------------------
+// Two CAs: the newest one from a rotation three days ago, and the original
+// one that two devices still hold certificates from. The trust version is
+// the bundle devices pin; a device on an older bundle has not checked in
+// since the rotation.
+const hex = (n: number) => { let s = ''; for (let i = 0; i < n; i++) s += Math.floor(Math.random() * 16).toString(16); return s }
+const cas: CA[] = [
+  { id: 'cak_7c1d9e2a', subject: 'Rostor CA (chattlab) 2026-09', not_after: iso(now + 3650 * day), created_at: iso(now - 3 * day), newest: true, devices: 0, fingerprint: 'a7c1d9e24f0b8d3e6c5a2b1f9e8d7c6b5a4f3e2d1c0b9a8f7e6d5c4b3a2f1e0d' },
+  { id: 'cak_3f0a5b7e', subject: 'Rostor CA (chattlab)', not_after: '2036-09-22T00:00:00Z', created_at: iso(now - 400 * day), newest: false, devices: 0, fingerprint: '3f0a5b7e9c2d4e6f8a1b3c5d7e9f0a2b4c6d8e0f1a3b5c7d9e1f2a4b6c8d0e2f' },
+]
+let trustVersion = 'tv_0002'
+const OLD_TRUST = 'tv_0001'
+const caList = (): CAList => {
+  for (const ca of cas) ca.devices = devices.filter((d) => d.ca_key_id === ca.id).length
+  const enrolled = devices.filter((d) => d.lifecycle === 'trusted' || d.lifecycle === 'enrolled')
+  return { items: clone(cas), trust_version: trustVersion, devices: { total: enrolled.length, on_older_bundle: enrolled.filter((d) => d.trust_version !== trustVersion).length } }
+}
+/** Devices renew onto the newest CA one at a time, as the agents would on their next check-in. */
+function renewOnto(caId: string, from?: string) {
+  const due = devices.filter((d) => d.ca_key_id !== caId && (!from || d.ca_key_id === from))
+  due.forEach((d, i) => setTimeout(() => {
+    d.ca_key_id = caId; d.trust_version = trustVersion; d.cert_renewed_at = iso(Date.now()); d.cert_not_after = iso(Date.now() + 90 * day)
+    append(`device:${d.id}`, 'device.renew', `device:${d.id}`, 'mtls', '', 'ok', { ca: caId, not_after: d.cert_not_after })
+    emit('device.renewed')
+  }, 2500 + i * 2000))
+}
+
 const devices: Device[] = [
   { id: 'dev_12ce4c4b9f0a', display_name: 'DESKTOP-UPJD27E', resource: { type: 'workstation', id: 'DESKTOP-UPJD27E' }, lifecycle: 'trusted', last_seen_at: iso(now - 1 * min),
-    posture: { os: 'Windows 10.0.19045', agent: '0.1.0', via: 'heartbeat' }, cert_not_after: '2027-09-22T00:00:00Z' },
+    posture: { os: 'Windows 10.0.19045', agent: '0.1.0', via: 'heartbeat' }, cert_not_after: iso(now + 87 * day), ca_key_id: 'cak_7c1d9e2a', trust_version: trustVersion, cert_renewed_at: iso(now - 3 * day) },
   { id: 'dev_a91c0b3e7d21', display_name: 'Front door controller', resource: { type: 'door', id: 'front' }, lifecycle: 'trusted', last_seen_at: iso(now - 3 * min),
-    posture: { model: 'WG2004', snapshot: 'v418', doors_wired: '2 of 4', cards: 432, managed: 124 }, cert_not_after: '2027-06-01T00:00:00Z' },
+    posture: { model: 'WG2004', snapshot: 'v418', doors_wired: '2 of 4', cards: 432, managed: 124 }, cert_not_after: iso(now + 21 * day), ca_key_id: 'cak_3f0a5b7e', trust_version: OLD_TRUST, cert_renewed_at: null },
   { id: 'dev_77e0f5a2c318', display_name: 'Laser interlock', resource: { type: 'interlock', id: 'laser-cutter-2' }, lifecycle: 'degraded', last_seen_at: iso(now - 26 * hour),
-    posture: { model: 'ESP32', snapshot: 'v402', ladder: 'staff-only' }, cert_not_after: '2027-03-14T00:00:00Z' },
+    posture: { model: 'ESP32', snapshot: 'v402', ladder: 'staff-only' }, cert_not_after: iso(now + 60 * day), ca_key_id: 'cak_3f0a5b7e', trust_version: trustVersion, cert_renewed_at: iso(now - 30 * day) },
 ]
+
+// ---- downloads (v0.5.0) ------------------------------------------------------
+// The bundle is "not cached yet" until the first download; the console asks
+// for the status again after a download, so the second status call reports it
+// cached. An applied update starts over for the new version.
+let downloadsAsked = 0
+const WINDOWS_BUNDLE = 'rostor-windows-amd64.zip'
+const downloads = (): Downloads => {
+  const cached = downloadsAsked > 1
+  return { windows: { name: WINDOWS_BUNDLE, version: system.version, cached, ...(cached ? { size: 24_117_248, fetched_at: iso(Date.now() - 5000) } : {}) } }
+}
+/** An empty zip (just the end-of-central-directory record): a link with `download` saves it like the real bundle. */
+const FAKE_BUNDLE_URL = 'data:application/zip;base64,UEsFBgAAAAAAAAAAAAAAAAAAAAAAAA=='
 
 let seq = 1184
 const audit: AuditRow[] = [
@@ -201,6 +241,7 @@ const system: SystemInfo = {
   db: { size_bytes: 18_874_368, engine: 'PostgreSQL 15' }, uptime_seconds: 2 * 3600 + 6 * 60,
   ca: { subject: 'Rostor CA (chattlab)', not_after: '2036-09-22T00:00:00Z' },
   release_key_fingerprint: 'f63294b2c1a04e9d7b3f5a6c8d2e1f0a4b76', profile: 'standard',
+  device_url: 'https://rostor.chattlab.org:8443',
 }
 
 const plugins: Plugin[] = []
@@ -597,6 +638,7 @@ export function createMockApi(_opts: { onUnauthorized?: () => void } = {}): Api 
       setTimeout(() => {
         updateState = { channel: 'stable', current: target, applied_at: iso(Date.now()), checked_at: iso(Date.now()), apply_requested: false, notes: UPDATE_NOTES }
         system.version = target
+        downloadsAsked = 0 // a new version means a new bundle to fetch
         append('system:updater', 'update.applied', `release:${target}`, '', '', 'ok', { channel: 'stable', signature: 'verified' })
         emit('update.state')
       }, 3200)
@@ -604,6 +646,36 @@ export function createMockApi(_opts: { onUnauthorized?: () => void } = {}): Api 
     },
     async system() { await delay(); return clone(system) },
     async plugins() { await delay(); return { items: clone(plugins), total: plugins.length } },
+    async cas() { await delay(); return caList() },
+    async rotateCA() {
+      await delay(600)
+      const stamp = new Date().toISOString().slice(0, 7)
+      const ca: CA = { id: 'cak_' + hex(8), subject: `Rostor CA (chattlab) ${stamp}`, not_after: iso(Date.now() + 3650 * day), created_at: iso(Date.now()), newest: true, devices: 0, fingerprint: hex(64) }
+      for (const c of cas) c.newest = false
+      cas.unshift(ca)
+      trustVersion = 'tv_' + String(Number(trustVersion.slice(3)) + 1).padStart(4, '0')
+      append(`user:${session?.principal.id ?? ''}`, 'ca.rotate', `ca:${ca.id}`, 'session', 'AL1', 'ok', { subject: ca.subject, trust_version: trustVersion })
+      emit('device.trust')
+      renewOnto(ca.id)
+      return clone(ca)
+    },
+    async retireCA(id, force) {
+      await delay(300)
+      const i = cas.findIndex((c) => c.id === id)
+      const ca = cas[i]
+      if (!ca) throw mockErr(404, 'request.not_found')
+      if (ca.newest || cas.length === 1) throw mockErr(400, 'ca.last_active')
+      const dependents = devices.filter((d) => d.ca_key_id === id).length
+      if (dependents > 0 && !force) throw mockErr(400, 'ca.in_use', { devices: dependents })
+      cas.splice(i, 1) // the list endpoint only returns active CAs
+      append(`user:${session?.principal.id ?? ''}`, 'ca.retire', `ca:${id}`, 'session', 'AL1', 'ok', { subject: ca.subject, forced: force, devices: dependents })
+      emit('device.trust')
+      // Forced: the devices it issued re-enroll onto the newest CA (mock stand-in for the operator doing so).
+      const newest = cas.find((c) => c.newest)
+      if (dependents > 0 && newest) renewOnto(newest.id, id)
+    },
+    async downloads() { await delay(); downloadsAsked++; return downloads() },
+    downloadUrl: () => FAKE_BUNDLE_URL,
     async authSettings() { await delay(); return authSettings() },
     async setAuthSettings(body) {
       await delay(300)
@@ -645,7 +717,9 @@ function signIn(u: User, method: string, assurance: string): LoginResponse {
 function mockErr(status: number, code: string, params: Record<string, unknown> = {}) {
   const e = new Error(code) as Error & { status: number; body: { code: string; params: Record<string, unknown>; message?: string } }
   e.status = status
-  e.body = { code, params, message: serverCodes[code] }
+  // Like the server: the rendered message carries the params.
+  const tpl = serverCodes[code]
+  e.body = { code, params, message: tpl?.replace(/\{(\w+)\}/g, (m, k: string) => (params[k] === undefined ? m : String(params[k]))) }
   return e
 }
 
@@ -673,4 +747,7 @@ const serverCodes: Record<string, string> = {
   'request.not_found': 'Not found.',
   'request.conflict': 'That is already registered.',
   'internal.error': 'Something went wrong on the server.',
+  'ca.in_use': '{devices} devices still hold certificates from this authority. Wait for them to renew, or force the retirement.',
+  'ca.last_active': 'The last active certificate authority cannot be retired.',
+  'download.unavailable': 'The installer for this version could not be fetched from the release host.',
 }

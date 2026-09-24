@@ -1,5 +1,5 @@
 import type {
-  Api, ApiErrorBody, AuditPage, AuditQuery, AuditVerify, AuthSettings, Binding, Brand, Catalog, CreationOptionsJSON, Device,
+  Api, ApiErrorBody, AuditPage, AuditQuery, AuditVerify, AuthSettings, Binding, Brand, CA, CAList, Catalog, CreationOptionsJSON, Device, Downloads,
   EnrollmentToken, Explanation, Grant, Group, GroupDetail, List, LiveHandlers, LoginOK,
   LoginRequest, LoginResponse, PasskeyCeremony, Plugin, Principal, RequestOptionsJSON, Role, Session, SetupStatus, Summary, SystemInfo, UpdateState,
   User, UserDetail, WhyQuery,
@@ -97,6 +97,11 @@ export function createHttpApi(opts: ClientOptions = {}): Api {
     applyUpdate: () => call<UpdateState>('POST', '/v1/admin/updates/apply'),
     system: () => call<SystemInfo>('GET', '/v1/admin/system'),
     plugins: () => call<List<Plugin>>('GET', '/v1/admin/plugins'),
+    cas: () => call<CAList>('GET', '/v1/admin/ca'),
+    rotateCA: () => call<CA>('POST', '/v1/admin/ca/rotate'),
+    retireCA: (id, force) => call<void>('POST', `/v1/admin/ca/${encodeURIComponent(id)}/retire`, { force }),
+    downloads: () => call<Downloads>('GET', '/v1/admin/downloads'),
+    downloadUrl: (name) => `${base}/v1/admin/downloads/${name}`,
     authSettings: () => call<AuthSettings>('GET', '/v1/admin/settings/auth'),
     setAuthSettings: (body) => call<AuthSettings>('PUT', '/v1/admin/settings/auth', body),
 

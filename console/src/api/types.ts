@@ -238,6 +238,43 @@ export interface Device {
   last_seen_at: string | null
   posture: Record<string, unknown> | null
   cert_not_after: string | null
+  /** v0.5.0: the CA that issued the current certificate, the trust bundle the device holds, and its last renewal. */
+  ca_key_id?: string
+  trust_version?: string
+  cert_renewed_at?: string | null
+}
+
+// ---- certificates and trust (GET /v1/admin/ca, v0.5.0) ----------------------
+
+export interface CA {
+  id: string
+  subject: string
+  not_after: string
+  created_at: string
+  retired_at?: string | null
+  newest: boolean
+  /** Devices whose current certificate this CA issued. */
+  devices: number
+  fingerprint: string
+}
+export interface CAList {
+  items: CA[]
+  trust_version: string
+  devices: { total: number; on_older_bundle: number }
+}
+
+// ---- downloads (GET /v1/admin/downloads, v0.5.0) ---------------------------
+
+export interface DownloadStatus {
+  name: string
+  version: string
+  cached: boolean
+  size?: number
+  fetched_at?: string
+  error?: string
+}
+export interface Downloads {
+  windows: DownloadStatus
 }
 
 export interface AuditRow {
@@ -334,6 +371,8 @@ export interface SystemInfo {
   ca: { subject: string; not_after: string }
   release_key_fingerprint: string
   profile: string
+  /** v0.5.0: the address devices enroll against (the mTLS listener), for the install command. */
+  device_url?: string
 }
 
 export interface Plugin {
@@ -459,6 +498,16 @@ export interface Api {
   applyUpdate(): Promise<UpdateState>
   system(): Promise<SystemInfo>
   plugins(): Promise<List<Plugin>>
+  /** Certificate authorities and the trust bundle devices hold (system.read). */
+  cas(): Promise<CAList>
+  /** Adds a new CA alongside the current one (system.write); devices renew onto it by themselves. */
+  rotateCA(): Promise<CA>
+  /** Retires a non-newest CA; `ca.in_use` unless forced, `ca.last_active` for the only one. */
+  retireCA(id: string, force: boolean): Promise<void>
+  /** Cache state of the installer bundles the appliance serves (devices.read). */
+  downloads(): Promise<Downloads>
+  /** Cookie-authenticated GET for the bundle, used as a plain link with `download`. */
+  downloadUrl(name: 'windows'): string
   authSettings(): Promise<AuthSettings>
   setAuthSettings(body: AuthSettingsUpdate): Promise<AuthSettings>
 

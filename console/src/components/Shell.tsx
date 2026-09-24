@@ -5,6 +5,7 @@ import { useT } from '../i18n/catalog'
 import { useSession } from '../auth/session'
 import { useLive } from '../live/LiveProvider'
 import { useFormat } from '../lib/format'
+import { reloadApp, useVersion } from '../lib/version'
 import { IconAccess, IconAudit, IconDevices, IconGroups, IconMe, IconPeople, IconPlugins, IconSystem, Mark } from './Icons'
 import { ToastHost } from './Toast'
 
@@ -37,6 +38,15 @@ export function Shell() {
     : t(`ui.live.${live.state}`)
   const host = typeof window !== 'undefined' ? window.location.host : ''
   const tenant = brand.data ? `${brand.data.tenant_name} · ${host}` : host
+  // A GET /v1/admin/system answered with another version than this page loaded
+  // with: a new build is serving the assets. Offer the reload; never force it mid-work.
+  const version = useVersion()
+  const banner = version.changed && !version.autoReloading ? (
+    <div className="banner" role="status">
+      <span>{t('ui.updates.new_version_banner', { version: version.current ?? '' })}</span>
+      <button type="button" className="btn primary" onClick={reloadApp}>{t('ui.updates.reload')}</button>
+    </div>
+  ) : null
 
   const me = (
     <div className="me">
@@ -61,6 +71,7 @@ export function Shell() {
           {me}
         </header>
         <main>
+          {banner}
           <Outlet />
         </main>
         <ToastHost />
@@ -83,6 +94,7 @@ export function Shell() {
         {me}
       </aside>
       <main>
+        {banner}
         <Outlet />
       </main>
       <ToastHost />

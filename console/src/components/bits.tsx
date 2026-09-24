@@ -40,17 +40,28 @@ export function Dash() {
   return <span className="muted">{t('ui.common.none')}</span>
 }
 
+/** The API error body behind a failure (ApiError, or the mock's plain error carrying `body`), if any. */
+export function apiBody(error: unknown): { code: string; params?: Record<string, unknown>; message?: string } | null {
+  if (error instanceof ApiError) return error.body
+  if (error && typeof error === 'object' && 'body' in error) {
+    const b = (error as { body: unknown }).body
+    if (b && typeof b === 'object' && 'code' in b) return b as { code: string; params?: Record<string, unknown>; message?: string }
+  }
+  return null
+}
+
+/** The server's rendered message for a failure, or the code through the catalog. */
+export function describeError(error: unknown, t: (code: string, params?: Record<string, string>) => string): string {
+  const b = apiBody(error)
+  if (b) return b.message ?? t(b.code, b.params as Record<string, string>)
+  return error instanceof Error ? error.message : String(error)
+}
+
 /** Renders an API failure using the server's rendered message, or the code via the catalog. */
 export function ErrorNote({ error }: { error: unknown }) {
   const t = useT()
   if (!error) return null
-  let message: string
-  if (error instanceof ApiError) message = error.body.message ?? t(error.body.code, error.body.params as Record<string, string>)
-  else if (error && typeof error === 'object' && 'body' in error) {
-    const b = (error as { body: { code: string; params?: Record<string, string> } }).body
-    message = t(b.code, b.params)
-  } else message = error instanceof Error ? error.message : String(error)
-  return <p className="form-error" role="alert">{t('ui.common.error', { message })}</p>
+  return <p className="form-error" role="alert">{t('ui.common.error', { message: describeError(error, t) })}</p>
 }
 
 export function Empty({ code = 'ui.common.empty' }: { code?: string }) {
