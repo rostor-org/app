@@ -1,24 +1,24 @@
 {
   "channel": "stable",
-  "version": "v0.2.0",
-  "published": "2026-09-24T15:47:20.691063Z",
-  "notes": "Passkeys (including synced passkeys from password managers) and RFID badge sign-in for the console and Windows lock screen; self-service sign-in methods; Sign-in settings; real update check.",
+  "version": "v0.3.0",
+  "published": "2026-09-24T16:13:53.882714Z",
+  "notes": "First-administrator setup, My account with self-service (change password, badge PIN, passkeys, badges), directory-admins group, role picker, name-first audit, Windows install bundle (attached by CI).",
   "files": {
     "agent-windows-amd64": {
-      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/586280620",
-      "sha256": "9f42736969117a54d13ab7cbe278a43d9a07150c19351e961b299de093c91ecc",
+      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/586325596",
+      "sha256": "1967326c06a3cd7dbb384a6929a853a3a8e13ae29eb26e5bd0a7b6c44ecd4e5a",
       "size": 7793152
     },
     "linux-amd64": {
-      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/586280621",
-      "sha256": "b5ea5dfccc6c36b624dccdf88228fc8403597de59e751b458fdab46615e5623a",
-      "size": 23765152
+      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/586325602",
+      "sha256": "8cdb4e74ff651a913bb46bc477c6edff8a78a9bf20881a8c450dbff4d8608216",
+      "size": 23830688
     },
     "linux-arm64": {
-      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/586280618",
-      "sha256": "27c7832c416d7297e26891425f802a115f1cfe4d0e3d24630a5e9b5a81953cba",
-      "size": 22347936
+      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/586325597",
+      "sha256": "5e583baeb240d0c3ebaaa9496e0971a5789253f0a44eb57a7e1f021c8d8ac090",
+      "size": 22413472
     }
   },
-  "signature": "kXmIbWqS0p1unaCx1rkrewqYJNQEc54A1noBt+zOek8BJFAHcryzLGFXuca3qCb+n0FT7Mzj5pS16qH+RFljBw=="
+  "signature": "arL3ckJ7bWkTo5j3+AoHt41J63CfR0yGKbuPy9BmzlGtUUw/n2kwg5lsPLCiDeUUQqdT95IIssXn7E0scjB6Cw=="
 }
