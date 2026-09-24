@@ -1,24 +1,24 @@
 {
   "channel": "stable",
-  "version": "v0.6.0",
-  "published": "2026-09-24T19:33:03.85734Z",
-  "notes": "New grant form picks subject, resource and role from the directory, and can define a new role from known permissions; Audit shows people by default with a tick for system activity.",
+  "version": "v0.6.1",
+  "published": "2026-09-24T19:35:30.928818Z",
+  "notes": "Fixes v0.6.0 showing raw string codes on the Access screen. Grant form picks subject, resource and role from the directory and can define a new role; Audit shows people by default with a tick for system activity.",
   "files": {
     "agent-windows-amd64": {
-      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/586672518",
-      "sha256": "7fad5ed2ed953c80f95a6c3a04cec571a1669ceb3cb58badc8ec8b87e49c8f4c",
+      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/586676916",
+      "sha256": "e210666ae78b19bf7e259cd2720e9aa8ae0ff11284fa1a32070cc5e7b38436b3",
       "size": 7870464
     },
     "linux-amd64": {
-      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/586672519",
-      "sha256": "16a925ce5a40607641d6ab8dd24ecffbe49152e487e7347f51ae24ea16c19ff7",
+      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/586676913",
+      "sha256": "26100be033966a58184a0c4a456c1ce3f50d9e028539683c736e2686acd3caac",
       "size": 23945376
     },
     "linux-arm64": {
-      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/586672516",
-      "sha256": "873b16b9e160af253a3401f4a21fc07bebd2746520b43d90a4b82e82b335f694",
+      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/586676920",
+      "sha256": "b7b3dde1b229140c5e66fbdd06bf71bdd9d157abbae08cc409903eb34ae50d7b",
       "size": 22544544
     }
   },
-  "signature": "sN0m+OlBUhZdmrCPmjkz7EMxToLBnp5z4aKQ5BPF6utAG+K2/9iQZppxv1O6ruMTb+St5sqAWEluDnU2vU74AA=="
+  "signature": "9s1sSamTcnKQW8Ii9YCe7nv8rvzKkv54KABRKRJlY37MSxIpiUCVoHYlFOlL0Cm0d4eJ6Z68P5ofYDAhQdluDQ=="
 }
