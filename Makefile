@@ -6,7 +6,7 @@ export PATH := /opt/homebrew/opt/postgresql@17/bin:/opt/homebrew/bin:$(PATH)
 # Build the React console and stage it for embedding.
 console:
 	cd console && npm ci --silent && npm run build --silent
-	rm -rf internal/console/dist && cp -R console/dist internal/console/dist
+	rm -rf internal/console/dist && cp -R console/dist internal/console/dist && touch internal/console/dist/.gitkeep
 
 build:
 	$(GO) build -o bin/rostor ./cmd/rostor
