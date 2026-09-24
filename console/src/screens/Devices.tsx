@@ -174,7 +174,8 @@ function InstallDrawer({ open, onClose }: { open: boolean; onClose: () => void }
 
       <h3>{t('ui.install.command_title')}</h3>
       <textarea ref={cmdField} className="input cmd" readOnly rows={3} value={command} onFocus={(e) => e.target.select()} aria-label={t('ui.install.command_label')} />
-      <div className="row" style={{ marginTop: 8 }}>
+      {/* `.row` is only laid out inside cards; in the drawer it needs `.actions` for the gap. */}
+      <div className="actions" style={{ marginTop: 8 }}>
         <span className="muted">{result ? '' : t('ui.install.command_hint')}</span>
         <button type="button" className="btn primary" disabled={!result} onClick={() => void copy(command, cmdField.current)}>{t('ui.common.copy')}</button>
       </div>
