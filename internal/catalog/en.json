@@ -11,6 +11,7 @@
   "ca.last_active": "The last active certificate authority cannot be retired.",
   "device.not_trusted": "This device is not trusted.",
   "device.unknown": "This device is not enrolled.",
+  "download.unavailable": "The installer for this version could not be fetched from the release host.",
   "enrollment.token_invalid": "The enrollment token is invalid or has already been used.",
   "grant.condition_failed": "A condition on your access was not met.",
   "grant.matched": "Allowed by {role} via {via}.",

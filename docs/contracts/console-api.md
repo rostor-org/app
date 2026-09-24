@@ -159,3 +159,15 @@ Admin:
 - `POST /v1/admin/ca/rotate` → 201 the new CA (typed confirmation in the console).
 - `POST /v1/admin/ca/{id}/retire` `{"force":bool}` → 204; `ca.in_use` (400, params.devices) unless forced; `ca.last_active` (400).
 - Device rows: `cert_not_after` (existing), plus `ca_key_id`, `trust_version`, `cert_renewed_at` on `GET /v1/admin/devices` (v0.5.0).
+
+## Downloads (v0.5.0)
+
+- `GET /v1/admin/downloads` → `{"windows":{name,version,cached,size?,fetched_at?}}`.
+- `GET /v1/admin/downloads/windows` → the `rostor-windows-amd64.zip` for the
+  running version as an attachment (fetched from the release and cached on
+  first request; prefetched after start). `download.unavailable` (502) when
+  the release host cannot be reached and nothing is cached. The console's
+  Devices screen offers the link next to a ready command:
+  `powershell -ExecutionPolicy Bypass -File .\install.ps1 -CoreUrl <https://host:8443> -Token <enr_…>`
+  where the token comes from `POST /v1/admin/enrollment-tokens` and the core
+  URL is the devices endpoint (`GET /v1/admin/system` gains `device_url`).

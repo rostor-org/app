@@ -46,6 +46,13 @@ type Server struct {
 	// OnTrustChange runs after the active CA set changes (rotate/retire) so
 	// the serve command can reissue the server certificate.
 	OnTrustChange func()
+	// ReleaseRepo/ReleaseToken locate release assets (downloads); token only
+	// for private repositories.
+	ReleaseRepo  string
+	ReleaseToken string
+	// DeviceURL is the address devices enroll against (the mTLS listener),
+	// shown beside the installer download.
+	DeviceURL string
 }
 
 // baseCtx is a context for work not tied to a request (trust reloads).
@@ -73,6 +80,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/devices/self/posture", s.deviceAuth(s.handlePosture))
 	mux.HandleFunc("GET /v1/devices/self/trust", s.deviceAuth(s.handleTrust))
 	mux.HandleFunc("POST /v1/devices/self/renew", s.deviceAuth(s.handleRenew))
+	mux.HandleFunc("GET /v1/admin/downloads", s.adminAuth("devices.read", s.handleDownloadStatus))
+	mux.HandleFunc("GET /v1/admin/downloads/windows", s.adminAuth("devices.read", s.handleDownloadWindows))
 	mux.HandleFunc("GET /v1/admin/ca", s.adminAuth("system.read", s.handleListCAs))
 	mux.HandleFunc("POST /v1/admin/ca/rotate", s.adminAuth("system.write", s.handleRotateCA))
 	mux.HandleFunc("POST /v1/admin/ca/{id}/retire", s.adminAuth("system.write", s.handleRetireCA))

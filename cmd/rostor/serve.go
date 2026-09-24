@@ -156,6 +156,21 @@ func runServe(ctx context.Context, args []string) error {
 	srv := &api.Server{DB: c.db, Auth: c.auth, Authz: c.authz, Devices: c.devices, Catalog: c.catalog, CA: ca, TenantID: c.tenantID, Log: c.log, Channel: channel,
 		StateDir: c.cfg.StateDir, Version: version, Events: api.NewBroadcaster(), Started: time.Now(), ReleaseKeyFP: releaseKeyFP(c.cfg.ReleasePubKey), Static: console.Handler()}
 	go srv.Listen(ctx)
+	srv.ReleaseRepo, srv.ReleaseToken = os.Getenv("ROSTOR_RELEASE_REPO"), os.Getenv("ROSTOR_CHANNEL_TOKEN")
+	srv.DeviceURL = os.Getenv("ROSTOR_DEVICE_URL")
+	if srv.DeviceURL == "" {
+		// Best guess: this host's first non-loopback IPv4 and the TLS port.
+		_, port, _ := net.SplitHostPort(c.cfg.Listen)
+		if addrs, err := net.InterfaceAddrs(); err == nil {
+			for _, a := range addrs {
+				if ipn, ok := a.(*net.IPNet); ok && !ipn.IP.IsLoopback() && ipn.IP.To4() != nil {
+					srv.DeviceURL = "https://" + ipn.IP.String() + ":" + port
+					break
+				}
+			}
+		}
+	}
+	go srv.PrefetchDownloads(ctx)
 	// Passkey relying-party settings come from tenant policy at call time;
 	// verification failures are logged with their reason (never secrets).
 	if m, ok := c.auth.Method("webauthn"); ok {

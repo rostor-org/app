@@ -495,6 +495,7 @@ func (s *Server) handleSystem(w http.ResponseWriter, r *http.Request) {
 		"db":                      map[string]any{"size_bytes": dbSize},
 		"ca":                      map[string]any{"subject": s.CA.Cert.Subject.CommonName, "not_after": s.CA.Cert.NotAfter},
 		"release_key_fingerprint": s.ReleaseKeyFP, "profile": "standard",
+		"device_url": s.DeviceURL,
 	})
 }
 
