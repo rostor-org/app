@@ -130,6 +130,8 @@ func TestPasskeys(t *testing.T) {
 		return resp.StatusCode, out
 	}
 
+	// Passkeys are off until the tenant sets a relying party.
+	do("POST", "/v1/auth/login", map[string]any{"identifier": "dan", "fields": map[string]string{"password": "hunter2hunter2"}})
 	// Unset settings serialise with an empty origins list, never null (the
 	// v0.3.1 System screen crash).
 	if st, out := do("GET", "/v1/admin/settings/auth", nil); st != 200 {
@@ -137,8 +139,6 @@ func TestPasskeys(t *testing.T) {
 	} else if o, ok := out["webauthn"].(map[string]any)["origins"].([]any); !ok || len(o) != 0 {
 		t.Fatalf("origins should be [] when unset: %v", out)
 	}
-	// Passkeys are off until the tenant sets a relying party.
-	do("POST", "/v1/auth/login", map[string]any{"identifier": "dan", "fields": map[string]string{"password": "hunter2hunter2"}})
 	if st, out := do("POST", "/v1/auth/passkeys/register/begin", nil); st != 400 || out["code"] != "auth.passkeys_unconfigured" {
 		t.Fatalf("unconfigured: %d %v", st, out)
 	}
