@@ -6,6 +6,7 @@
   "auth.passkey_rejected": "That passkey could not be registered.",
   "auth.passkeys_unconfigured": "Passkeys are not set up for this organisation yet.",
   "auth.pin_required": "This account requires a PIN with the badge.",
+  "binding.last_method": "You cannot remove your only sign-in method. Add another one first.",
   "device.not_trusted": "This device is not trusted.",
   "device.unknown": "This device is not enrolled.",
   "enrollment.token_invalid": "The enrollment token is invalid or has already been used.",

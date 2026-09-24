@@ -104,6 +104,7 @@ export function PersonPanel({ id, page = false }: { id: string; page?: boolean }
 
   const suspended = u?.state === 'suspended'
   const hasPassword = !!u?.bindings.some((b) => b.method === 'password' && b.state === 'active')
+  const activeCount = u?.bindings.filter((b) => b.state === 'active').length ?? 0
   const candidateGroups = groups.data?.items.filter((g) => !u?.groups.some((m) => m.name === g.name)) ?? []
   const error = user.error ?? setState.error ?? setPassword.error ?? changePassword.error ?? setPin.error ?? revoke.error ?? addGroup.error ?? removeGroup.error ?? passkeyError
 
@@ -231,7 +232,8 @@ export function PersonPanel({ id, page = false }: { id: string; page?: boolean }
                           </>
                         )}
                         {canCredentials && b.state === 'active' && (
-                          <button type="button" className="btn quiet danger" disabled={revoke.isPending}
+                          <button type="button" className="btn quiet danger" disabled={revoke.isPending || (isSelf && activeCount <= 1)}
+                            title={isSelf && activeCount <= 1 ? t('binding.last_method') : undefined}
                             onClick={() => { if (confirm(t('ui.common.confirm_revoke', { what: b.label || methodName(t, b.method) }))) revoke.mutate(b.id) }}>{t('ui.person.revoke')}</button>
                         )}
                       </span>

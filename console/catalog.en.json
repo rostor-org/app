@@ -1,4 +1,5 @@
 {
+  "binding.last_method": "You cannot remove your only sign-in method. Add another one first.",
   "ui.access.ask_why": "Ask “why?”",
   "ui.access.col.class": "Class",
   "ui.access.col.condition": "Condition",

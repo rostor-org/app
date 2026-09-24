@@ -521,12 +521,32 @@ func TestSelfServiceCredentials(t *testing.T) {
 	if st, _ := do("GET", "/v1/admin/users/sam", nil); st != 403 {
 		t.Fatalf("other's record should be 403, got %d", st)
 	}
+	// Her last method cannot be removed by herself (badge + password exist now, so
+	// removing the badge is fine; then the password is the last one).
+	if st, out := do("DELETE", "/v1/admin/users/dana/bindings/"+b["id"].(string), nil); st != 204 {
+		t.Fatalf("own revoke (not last): %d %v", st, out)
+	}
+	var pwID string
+	_ = h.db.QueryRow(h.ctx, `SELECT id FROM authenticator_bindings WHERE tenant_id=$1 AND method='password' AND state='active' AND principal_id=(SELECT id FROM principals WHERE tenant_id=$1 AND username='dana')`, h.tenantID).Scan(&pwID)
+	if st, out := do("DELETE", "/v1/admin/users/dana/bindings/"+pwID, nil); st != 400 || out["code"] != "binding.last_method" {
+		t.Fatalf("last method should be refused: %d %v", st, out)
+	}
+	// An admin may still remove it (offboarding).
+	if st, out := h.call(h.client(nil), "DELETE", "/v1/admin/users/dana/bindings/"+pwID, h.admin, nil); st != 204 {
+		t.Fatalf("admin revoke of last method: %d %v", st, out)
+	}
+	// Re-register a badge so the remaining assertions still hold.
+	st, b = do("POST", "/v1/admin/users/dana/bindings", map[string]any{"method": "badge", "fields": map[string]string{"number": "4857727", "pin": "1357"}})
+	if st != 201 {
+		t.Fatalf("re-register: %d %v", st, b)
+	}
 	// Revoking her own badge works; revoking through another person's path does not.
 	if st, _ := do("DELETE", "/v1/admin/users/sam/bindings/"+b["id"].(string), nil); st == 204 {
 		t.Fatal("revoke via another person's path succeeded")
 	}
-	if st, _ := do("DELETE", "/v1/admin/users/dana/bindings/"+b["id"].(string), nil); st != 204 {
-		t.Fatalf("own revoke: %d", st)
+	// It is now her only method again, so she cannot remove it herself.
+	if st, out := do("DELETE", "/v1/admin/users/dana/bindings/"+b["id"].(string), nil); st != 400 || out["code"] != "binding.last_method" {
+		t.Fatalf("own revoke of last method should be refused: %d %v", st, out)
 	}
 }
 

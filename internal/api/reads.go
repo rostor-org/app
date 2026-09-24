@@ -512,6 +512,18 @@ func (s *Server) handleRevokeBinding(w http.ResponseWriter, r *http.Request) {
 		if err := tx.QueryRow(r.Context(), `SELECT principal_id FROM authenticator_bindings WHERE tenant_id=$1 AND id=$2`, s.TenantID, r.PathValue("bid")).Scan(&owner); err != nil || owner != p.ID {
 			return directory.Err("request.not_found", "type", "binding")
 		}
+		// A person may not lock themselves out: their last active method
+		// stays until another exists. Admins acting on someone else may
+		// (offboarding); the recovery floor policy will refine this (§7.6).
+		if actorOf(r).ID == p.ID {
+			var active int
+			if err := tx.QueryRow(r.Context(), `SELECT count(*) FROM authenticator_bindings WHERE tenant_id=$1 AND principal_id=$2 AND state='active'`, s.TenantID, p.ID).Scan(&active); err != nil {
+				return err
+			}
+			if active <= 1 {
+				return directory.Err("binding.last_method")
+			}
+		}
 		return s.Auth.RevokeBinding(r.Context(), tx, s.TenantID, actorOf(r), r.PathValue("bid"))
 	})
 	if err != nil {
