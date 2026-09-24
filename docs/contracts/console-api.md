@@ -114,3 +114,24 @@ plugin registry, key rotation, policy counts on groups.
 - `POST /v1/admin/updates/check` (v0.1.3) → fetches the channel now and returns
   the update state; the server also emits an `update.state` event. "Check
   now" calls this; `GET /v1/admin/updates` only reads the last recorded state.
+
+## First administrator, My account, self-service (v0.3.0)
+
+- `GET /v1/auth/setup` (public) → `{"needed": bool}`. While true, the sign-in
+  page offers "Set up the first administrator".
+- `POST /v1/auth/setup` `{"bootstrap_token","username","display_name","password"}`
+  → `201` session view and cookie (the person is created, given a password,
+  added to `directory-admins`, signed in). Errors: `setup.token_invalid`
+  (401), `setup.already_done` (400).
+- Admin rights come from membership of the built-in group `directory-admins`
+  (grant: role `admin` on `directory:root`). Show it like any group.
+- Self-service rule: a signed-in person may `GET /v1/admin/users/{self}` and
+  manage their own sign-in methods without admin permissions. `{id}` may be
+  the principal id or the username.
+- `POST /v1/admin/users/{id}/password` `{"current","new"}` → 204. Self must
+  send `current` (checked, counts toward lockout); an admin resetting someone
+  else omits it. Audited as `password.change` / `password.reset`.
+- `POST /v1/admin/users/{id}/bindings/{bid}/pin` `{"pin"}` → 204 (badge
+  bindings only; empty pin removes it). Audited as `binding.pin_set`.
+- Person detail `groups[]` entries carry `direct: bool` (direct vs inherited).
+- Roles for the grant form: `GET /v1/admin/roles` → `{"items":[{resource_type,name,permissions}]}`.

@@ -21,6 +21,8 @@
   "request.malformed": "The request could not be understood.",
   "request.not_found": "Not found.",
   "request.unauthorized": "Authentication is required.",
+  "setup.already_done": "This organisation already has an administrator.",
+  "setup.token_invalid": "That bootstrap token is not valid.",
   "ui.access.ask_why": "Ask “why?”",
   "ui.access.col.class": "Class",
   "ui.access.col.condition": "Condition",

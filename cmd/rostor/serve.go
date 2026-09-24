@@ -118,7 +118,10 @@ func runServe(ctx context.Context, args []string) error {
 	if err := c.db.Tx(ctx, func(tx pgx.Tx) error {
 		var err error
 		ca, err = c.devices.EnsureCA(ctx, tx, c.tenantID, "rostor")
-		return err
+		if err != nil {
+			return err
+		}
+		return directory.EnsureBuiltins(ctx, tx, c.tenantID, c.authz)
 	}); err != nil {
 		return err
 	}
@@ -236,23 +239,9 @@ func runBootstrap(ctx context.Context, args []string) error {
 			return err
 		}
 		sys := directory.Actor{Kind: "system", ID: "bootstrap", CorrelationID: ids.New("corr")}
-		// Built-in directory administration roles are scoped and enumerable
-		// (§2.4). "admin" on directory:root is the widest one.
-		if err := directory.CreateResource(ctx, tx, tenantID, sys, directory.Resource{Type: "directory", ID: "root"}); err != nil {
-			return err
-		}
-		if err := directory.UpsertRole(ctx, tx, tenantID, sys, directory.Role{ResourceType: "directory", Name: "admin", Permissions: []string{"*"}}); err != nil {
-			return err
-		}
-		// Workstation resource type and its single role, so the Windows
-		// connector registers nothing itself (it is a translator, §8.1).
-		if err := directory.CreateResource(ctx, tx, tenantID, sys, directory.Resource{Type: "workstations", ID: "all"}); err != nil {
-			return err
-		}
-		if err := directory.UpsertRole(ctx, tx, tenantID, sys, directory.Role{ResourceType: "workstation", Name: "user", Permissions: []string{"logon"}}); err != nil {
-			return err
-		}
-		if err := directory.UpsertRole(ctx, tx, tenantID, sys, directory.Role{ResourceType: "workstations", Name: "user", Permissions: []string{"logon"}}); err != nil {
+		// Built-in resources, roles and the directory-admins group (§2.4,
+		// §3.3). The same call runs on every start for existing installs.
+		if err := directory.EnsureBuiltins(ctx, tx, tenantID, c.authz); err != nil {
 			return err
 		}
 		admin, err := directory.CreatePrincipal(ctx, tx, tenantID, sys, directory.Principal{Kind: "service", Username: "admin-cli",

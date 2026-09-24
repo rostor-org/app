@@ -16,6 +16,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/json"
 	"encoding/pem"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -86,11 +87,7 @@ func newHarness(t *testing.T) *harness {
 				t.Fatal(err)
 			}
 		}
-		must(directory.CreateResource(ctx, tx, h.tenantID, sys, directory.Resource{Type: "directory", ID: "root"}))
-		must(directory.UpsertRole(ctx, tx, h.tenantID, sys, directory.Role{ResourceType: "directory", Name: "admin", Permissions: []string{"*"}}))
-		must(directory.CreateResource(ctx, tx, h.tenantID, sys, directory.Resource{Type: "workstations", ID: "all"}))
-		must(directory.UpsertRole(ctx, tx, h.tenantID, sys, directory.Role{ResourceType: "workstations", Name: "user", Permissions: []string{"logon"}}))
-		must(directory.UpsertRole(ctx, tx, h.tenantID, sys, directory.Role{ResourceType: "workstation", Name: "user", Permissions: []string{"logon"}}))
+		must(directory.EnsureBuiltins(ctx, tx, h.tenantID, eng))
 		admin, err := directory.CreatePrincipal(ctx, tx, h.tenantID, sys, directory.Principal{Kind: "service", Username: "admin"})
 		must(err)
 		_, err = directory.CreateGrant(ctx, tx, h.tenantID, sys, directory.Grant{SubjectKind: "principal", SubjectID: admin.ID, Role: "admin", ResourceType: "directory", ResourceID: "root"}, eng)
@@ -530,5 +527,86 @@ func TestSelfServiceCredentials(t *testing.T) {
 	}
 	if st, _ := do("DELETE", "/v1/admin/users/dana/bindings/"+b["id"].(string), nil); st != 204 {
 		t.Fatalf("own revoke: %d", st)
+	}
+}
+
+func TestFirstAdminSetupAndSelfService(t *testing.T) {
+	h := newHarness(t)
+	c := h.client(nil)
+	jar := map[string]string{}
+	do := func(method, path string, body any) (int, map[string]any) {
+		req, _ := jsonReq(method, h.ts.URL+path, body)
+		if v, ok := jar["rostor_session"]; ok {
+			req.AddCookie(&http.Cookie{Name: "rostor_session", Value: v})
+		}
+		req.Header.Set("X-Requested-With", "rostor-console")
+		resp, err := c.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		for _, ck := range resp.Cookies() {
+			jar[ck.Name] = ck.Value
+		}
+		out := map[string]any{}
+		_ = json.NewDecoder(resp.Body).Decode(&out)
+		return resp.StatusCode, out
+	}
+	// A fresh install needs its first administrator.
+	if _, out := do("GET", "/v1/auth/setup", nil); out["needed"] != true {
+		t.Fatalf("setup should be needed: %v", out)
+	}
+	if st, out := do("POST", "/v1/auth/setup", map[string]any{"bootstrap_token": "rst_wrong", "username": "dan", "password": "hunter2hunter2"}); st != 401 {
+		t.Fatalf("bad token: %d %v", st, out)
+	}
+	st, out := do("POST", "/v1/auth/setup", map[string]any{"bootstrap_token": h.admin, "username": "dan", "display_name": "Dan", "password": "hunter2hunter2"})
+	if st != 201 || jar["rostor_session"] == "" {
+		t.Fatalf("setup: %d %v", st, out)
+	}
+	if perms, _ := out["permissions"].([]any); len(perms) != 1 || perms[0] != "*" {
+		t.Fatalf("first admin should have all permissions via directory-admins: %v", out["permissions"])
+	}
+	if _, out := do("GET", "/v1/auth/setup", nil); out["needed"] != false {
+		t.Fatalf("setup should be done: %v", out)
+	}
+	if st, out := do("POST", "/v1/auth/setup", map[string]any{"bootstrap_token": h.admin, "username": "eve", "password": "hunter2hunter2"}); st != 400 || out["code"] != "setup.already_done" {
+		t.Fatalf("second setup should be refused: %d %v", st, out)
+	}
+	// Why shows the group path, not a direct grant.
+	why := h.adminCall("GET", "/v1/admin/why?principal=dan&action=users.write&resource_type=directory&resource_id=root", nil)
+	if why["decision"] != "ALLOW" || !strings.Contains(fmt.Sprint(why["reason"]), "group:") {
+		t.Fatalf("admin via group: %v", why)
+	}
+
+	// Self-service: change own password needs the current one.
+	if st, out := do("POST", "/v1/admin/users/dan/password", map[string]any{"current": "wrong", "new": "newpassword123"}); st == 204 {
+		t.Fatalf("wrong current password accepted: %v", out)
+	}
+	if st, _ := do("POST", "/v1/admin/users/dan/password", map[string]any{"current": "hunter2hunter2", "new": "newpassword123"}); st != 204 {
+		t.Fatalf("change password: %d", st)
+	}
+	do("POST", "/v1/auth/logout", nil)
+	delete(jar, "rostor_session")
+	if _, out := do("POST", "/v1/auth/login", map[string]any{"identifier": "dan", "fields": map[string]string{"password": "hunter2hunter2"}}); out["code"] != "auth.failed" {
+		t.Fatalf("old password should fail: %v", out)
+	}
+	if st, out := do("POST", "/v1/auth/login", map[string]any{"identifier": "dan", "fields": map[string]string{"password": "newpassword123"}}); st != 200 || out["assurance"] != "AL1" {
+		t.Fatalf("new password: %d %v", st, out)
+	}
+	// Set a PIN on own badge, then it is required.
+	st, b := do("POST", "/v1/admin/users/dan/bindings", map[string]any{"method": "badge", "fields": map[string]string{"number": "1234567"}})
+	if st != 201 {
+		t.Fatalf("badge: %d %v", st, b)
+	}
+	if st, _ := do("POST", "/v1/admin/users/dan/bindings/"+b["id"].(string)+"/pin", map[string]any{"pin": "9876"}); st != 204 {
+		t.Fatalf("set pin: %d", st)
+	}
+	do("POST", "/v1/auth/logout", nil)
+	delete(jar, "rostor_session")
+	if _, out := do("POST", "/v1/auth/login", map[string]any{"method": "badge", "fields": map[string]string{"number": "1234567"}}); out["code"] != "auth.continue" {
+		t.Fatalf("badge without pin should ask for it: %v", out)
+	}
+	if st, out := do("POST", "/v1/auth/login", map[string]any{"method": "badge", "fields": map[string]string{"number": "1234567", "pin": "9876"}}); st != 200 || out["assurance"] != "AL2" {
+		t.Fatalf("badge with new pin: %d %v", st, out)
 	}
 }

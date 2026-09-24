@@ -192,3 +192,26 @@ func (m *BadgeMethod) Authenticate(ctx context.Context, bindingID string, sm Sea
 	}
 	return StepResult{Assertion: &Assertion{Method: "badge", BindingID: bindingID, At: time.Now().UTC(), Properties: props, Assurance: assurance}}, nil
 }
+
+// SetPIN returns the material with a new PIN hash (or none when pin is
+// empty, which makes the badge possession-only again).
+func (m *BadgeMethod) SetPIN(raw []byte, pin string) ([]byte, error) {
+	var mat badgeMaterial
+	if err := json.Unmarshal(raw, &mat); err != nil {
+		return nil, err
+	}
+	pin = strings.TrimSpace(pin)
+	if pin == "" {
+		mat.PINHash = nil
+	} else {
+		if len(pin) < 4 || !decRe.MatchString(pin) {
+			return nil, errors.New("pin must be at least 4 digits")
+		}
+		h, err := m.Provider.PasswordHash([]byte(pin))
+		if err != nil {
+			return nil, err
+		}
+		mat.PINHash = h
+	}
+	return json.Marshal(mat)
+}

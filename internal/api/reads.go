@@ -463,3 +463,22 @@ func (s *Server) handleRevokeBinding(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(204)
 }
+
+func (s *Server) handleListRoles(w http.ResponseWriter, r *http.Request) {
+	rows, err := s.DB.Query(r.Context(), `SELECT resource_type, name, permissions FROM roles WHERE tenant_id=$1 ORDER BY resource_type, name`, s.TenantID)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	defer rows.Close()
+	items := []directory.Role{}
+	for rows.Next() {
+		var ro directory.Role
+		if err := rows.Scan(&ro.ResourceType, &ro.Name, &ro.Permissions); err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		items = append(items, ro)
+	}
+	s.writeJSON(w, 200, map[string]any{"items": items, "total": len(items)})
+}

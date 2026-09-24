@@ -103,8 +103,9 @@ func printJSON(v any) {
 }
 
 func runAdmin(ctx context.Context, args []string) error {
-	if len(args) < 2 || (args[0] == "why" && len(args) < 2) {
+	if len(args) < 2 {
 		return errors.New(`usage: rostor admin <object> <verb> [flags]
+  setup-admin --username U --display "Name" --password P   (first human administrator; uses ROSTOR_TOKEN as the bootstrap token)
   user create --username U --display "Name"
   user password --user U --password P
   user suspend --user U | user activate --user U
@@ -122,7 +123,7 @@ func runAdmin(ctx context.Context, args []string) error {
 		return err
 	}
 	obj, verb, rest := args[0], args[1], args[2:]
-	if obj == "why" {
+	if obj == "why" || obj == "setup-admin" {
 		verb, rest = "", args[1:]
 	}
 	fs := flag.NewFlagSet(obj+" "+verb, flag.ExitOnError)
@@ -184,6 +185,8 @@ func runAdmin(ctx context.Context, args []string) error {
 		out, err = c.do(ctx, "DELETE", "/v1/admin/grants/"+url.PathEscape(*id), nil)
 	case "device token":
 		out, err = c.do(ctx, "POST", "/v1/admin/enrollment-tokens", map[string]any{"resource_type": *rtype, "ttl_seconds": *ttl})
+	case "setup-admin ":
+		out, err = c.do(ctx, "POST", "/v1/auth/setup", map[string]any{"bootstrap_token": c.token, "username": *username, "display_name": *display, "password": *password})
 	case "why ":
 		q := url.Values{"principal": {*user}, "action": {*action}, "resource_type": {*rtype}, "resource_id": {*rid}}
 		out, err = c.do(ctx, "GET", "/v1/admin/why?"+q.Encode(), nil)

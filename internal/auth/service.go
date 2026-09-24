@@ -494,3 +494,40 @@ func (s *Service) MaterialsFor(ctx context.Context, q directory.Querier, tenantI
 	}
 	return out, rows.Err()
 }
+
+// SetBadgePIN re-seals a badge binding's material with a new PIN. The
+// binding must belong to principalID.
+func (s *Service) SetBadgePIN(ctx context.Context, tx pgx.Tx, tenantID string, actor directory.Actor, principalID, bindingID, pin string) error {
+	m, ok := s.methods["badge"].(*BadgeMethod)
+	if !ok {
+		return directory.Err("auth.method_unavailable", "method", "badge")
+	}
+	var owner, method string
+	var sealed []byte
+	err := tx.QueryRow(ctx, `SELECT b.principal_id, b.method, c.sealed FROM authenticator_bindings b JOIN credential_material c ON c.tenant_id=b.tenant_id AND c.binding_id=b.id
+		WHERE b.tenant_id=$1 AND b.id=$2 AND b.state='active'`, tenantID, bindingID).Scan(&owner, &method, &sealed)
+	if err == pgx.ErrNoRows || owner != principalID || method != "badge" {
+		return directory.Err("request.not_found", "type", "binding")
+	}
+	if err != nil {
+		return err
+	}
+	raw, err := s.Provider.Open(sealed, []byte(tenantID+"/"+bindingID))
+	if err != nil {
+		return err
+	}
+	updated, err := m.SetPIN(raw, pin)
+	if err != nil {
+		return directory.Err("request.malformed", "field", "pin", "detail", err.Error())
+	}
+	resealed, err := s.Provider.Seal(updated, []byte(tenantID+"/"+bindingID))
+	if err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `UPDATE credential_material SET sealed=$3 WHERE tenant_id=$1 AND binding_id=$2`, tenantID, bindingID, resealed); err != nil {
+		return err
+	}
+	_, err = audit.Append(ctx, tx, tenantID, audit.Event{ActorKind: actor.Kind, ActorID: actor.ID, Action: "binding.pin_set",
+		TargetType: "principal", TargetID: principalID, Outcome: "ok", Detail: map[string]any{"binding_id": bindingID, "has_pin": pin != ""}, CorrelationID: actor.CorrelationID})
+	return err
+}
