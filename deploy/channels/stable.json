@@ -1,24 +1,24 @@
 {
   "channel": "stable",
-  "version": "v0.5.2",
-  "published": "2026-09-24T19:16:56.595501Z",
-  "notes": "Open tabs learn about a new build from the live stream and offer a reload on any screen; install drawer spacing.",
+  "version": "v0.6.0",
+  "published": "2026-09-24T19:33:03.85734Z",
+  "notes": "New grant form picks subject, resource and role from the directory, and can define a new role from known permissions; Audit shows people by default with a tick for system activity.",
   "files": {
     "agent-windows-amd64": {
-      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/586643057",
-      "sha256": "129b079ee6f834e08e6286b5f9461f6389dc711b5684ee1ddeebb9aaeece30b9",
+      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/586672518",
+      "sha256": "7fad5ed2ed953c80f95a6c3a04cec571a1669ceb3cb58badc8ec8b87e49c8f4c",
       "size": 7870464
     },
     "linux-amd64": {
-      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/586643060",
-      "sha256": "2fb6582811fd17c8f5c7398fd4a326ea49e76963d04a78985cb39432cae6d7c0",
-      "size": 23924896
+      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/586672519",
+      "sha256": "16a925ce5a40607641d6ab8dd24ecffbe49152e487e7347f51ae24ea16c19ff7",
+      "size": 23945376
     },
     "linux-arm64": {
-      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/586643062",
-      "sha256": "4fbdcd11a4aad96bbb0a15e345a5d184cb8dea55a9c5355c15685ac2aab63e35",
+      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/586672516",
+      "sha256": "873b16b9e160af253a3401f4a21fc07bebd2746520b43d90a4b82e82b335f694",
       "size": 22544544
     }
   },
-  "signature": "FJD7hKUySEt5fk+CTfqKKISO2X+vxoYktviCwX0d3iULAJiBZsdM2uS54xkmDM5Sqdl2yXpBgG1tMbjwiqc+DA=="
+  "signature": "sN0m+OlBUhZdmrCPmjkz7EMxToLBnp5z4aKQ5BPF6utAG+K2/9iQZppxv1O6ruMTb+St5sqAWEluDnU2vU74AA=="
 }
