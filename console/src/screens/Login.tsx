@@ -35,6 +35,7 @@ export function Login() {
   const [number, setNumber] = useState('')
   const [pin, setPin] = useState('')
   const [needPin, setNeedPin] = useState(false)
+  const [typeBadge, setTypeBadge] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [condGen, setCondGen] = useState(0) // bump to restart the autofill request
@@ -161,7 +162,7 @@ export function Login() {
   }
 
   const switchMode = (m: Mode) => {
-    setChosen(true); setMode(m); setError(null); setNeedPin(false); setPin(''); setNumber(''); setPassword(''); setStep('identifier'); setSetup(emptySetup)
+    setChosen(true); setMode(m); setError(null); setNeedPin(false); setTypeBadge(false); setPin(''); setNumber(''); setPassword(''); setStep('identifier'); setSetup(emptySetup)
   }
 
   const tenant = brand.data?.tenant_name ?? ''
@@ -196,10 +197,26 @@ export function Login() {
         <div className="sub">{t('ui.login.subtitle')}</div>
         {mode === 'badge' ? (
           <>
-            <label htmlFor="login-badge">{t('ui.login.badge')}</label>
-            <input id="login-badge" ref={num} className="input mono" value={number} onChange={(e) => setNumber(e.target.value)} readOnly={needPin}
-              autoComplete="off" autoCapitalize="none" spellCheck={false} inputMode="numeric" required />
-            {!needPin && <div className="sub">{t('ui.login.badge_hint')}</div>}
+            {!needPin && !typeBadge ? (
+              // "Tap to access": the reader types into an invisible field
+              // that keeps focus; nothing to click. Typing the number by
+              // hand is one link away.
+              <div className="tap" onClick={() => num.current?.focus()}>
+                <div className="tap-mark" aria-hidden="true"><Mark /></div>
+                <div className="tap-text">{t('ui.login.tap_to_access')}</div>
+                <input id="login-badge" ref={num} className="tap-input" value={number} onChange={(e) => setNumber(e.target.value)}
+                  onBlur={() => setTimeout(() => { if (mode === 'badge' && !needPin && !typeBadge) num.current?.focus() }, 50)}
+                  autoComplete="off" autoCapitalize="none" spellCheck={false} inputMode="none" aria-label={t('ui.login.badge')} required />
+                <button type="button" className="btn quiet" onClick={(e) => { e.stopPropagation(); setTypeBadge(true) }}>{t('ui.login.type_badge_instead')}</button>
+              </div>
+            ) : (
+              <>
+                <label htmlFor="login-badge">{t('ui.login.badge')}</label>
+                <input id="login-badge" ref={num} className="input mono" value={number} onChange={(e) => setNumber(e.target.value)} readOnly={needPin}
+                  autoComplete="off" autoCapitalize="none" spellCheck={false} inputMode="numeric" required />
+                {!needPin && <div className="sub">{t('ui.login.badge_hint')}</div>}
+              </>
+            )}
             {needPin && (
               <>
                 <label htmlFor="login-pin">{t('ui.login.pin')}</label>
@@ -220,11 +237,13 @@ export function Login() {
           </>
         )}
         {error && <p className="form-error" role="alert">{error}</p>}
-        <div className="actions">
-          <button type="submit" className="btn primary" disabled={busy}>
-            {t(busy ? 'ui.login.working' : mode === 'password' && step === 'identifier' ? 'ui.login.continue' : 'ui.login.submit')}
-          </button>
-        </div>
+        {!(mode === 'badge' && !needPin && !typeBadge) && (
+          <div className="actions">
+            <button type="submit" className="btn primary" disabled={busy}>
+              {t(busy ? 'ui.login.working' : mode === 'password' && step === 'identifier' ? 'ui.login.continue' : 'ui.login.submit')}
+            </button>
+          </div>
+        )}
         <div className="alt">
           {mode === 'password' && passkeys && <button type="button" className="btn quiet" disabled={busy} onClick={() => void usePasskey()}>{t('ui.login.use_passkey')}</button>}
           {mode === 'password'
