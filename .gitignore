@@ -13,3 +13,4 @@ windows/credprov/x64/
 console/node_modules/
 internal/console/dist/*
 !internal/console/dist/.gitkeep
+console/dist/
