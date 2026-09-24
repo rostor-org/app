@@ -130,7 +130,11 @@ function openStream(url: string, h: LiveHandlers, lastId: string | null, onUnaut
       if (!res.ok || !res.body) throw new Error(String(res.status))
       h.onState('connected')
       attempt = 0
-      await readEvents(res.body, (id, type) => {
+      await readEvents(res.body, (id, type, data) => {
+        if (type === 'ready') {
+          try { h.onReady?.(JSON.parse(data) as { version: string }) } catch { /* malformed ready frame: ignore */ }
+          return
+        }
         if (id) lastId = id
         if (type) h.onEvent({ id: id ?? '', type })
       })
@@ -154,12 +158,13 @@ function openStream(url: string, h: LiveHandlers, lastId: string | null, onUnaut
   }
 }
 
-async function readEvents(body: ReadableStream<Uint8Array>, emit: (id: string | null, type: string | null) => void) {
+async function readEvents(body: ReadableStream<Uint8Array>, emit: (id: string | null, type: string | null, data: string) => void) {
   const reader = body.getReader()
   const dec = new TextDecoder()
   let buf = ''
   let id: string | null = null
   let type: string | null = null
+  let data = ''
   for (;;) {
     const { done, value } = await reader.read()
     if (done) return
@@ -169,8 +174,9 @@ async function readEvents(body: ReadableStream<Uint8Array>, emit: (id: string | 
       const line = buf.slice(0, nl).replace(/\r$/, '')
       buf = buf.slice(nl + 1)
       if (line === '') {
-        if (type) emit(id, type)
+        if (type) emit(id, type, data)
         type = null
+        data = ''
         continue
       }
       if (line.startsWith(':')) continue // heartbeat comment
@@ -179,7 +185,8 @@ async function readEvents(body: ReadableStream<Uint8Array>, emit: (id: string | 
       const val = colon < 0 ? '' : line.slice(colon + 1).replace(/^ /, '')
       if (field === 'id') id = val
       else if (field === 'event') type = val
-      // `data` is intentionally ignored: the console only invalidates by type.
+      else if (field === 'data') data = data ? data + '\n' + val : val
+      // Domain events invalidate by type only; `data` is read just for the ready frame.
     }
   }
 }

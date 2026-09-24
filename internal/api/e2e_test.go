@@ -380,14 +380,31 @@ func TestEventStream(t *testing.T) {
 		t.Fatalf("stream: %d %s", resp.StatusCode, resp.Header.Get("Content-Type"))
 	}
 	got := make(chan string, 16)
+	data := make(chan string, 16)
 	go func() {
 		sc := bufio.NewScanner(resp.Body)
 		for sc.Scan() {
 			if line := sc.Text(); strings.HasPrefix(line, "event: ") {
 				got <- strings.TrimPrefix(line, "event: ")
+			} else if strings.HasPrefix(line, "data: ") {
+				data <- strings.TrimPrefix(line, "data: ")
 			}
 		}
 	}()
+	// The stream opens with `ready` carrying the serving build, so a tab left
+	// open learns about an update from the reconnect alone.
+	select {
+	case e := <-got:
+		if e != "ready" {
+			t.Fatalf("first frame should be ready, got %q", e)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("no ready frame")
+	}
+	var readyBody map[string]string
+	if err := json.Unmarshal([]byte(<-data), &readyBody); err != nil || readyBody["version"] != h.srv.Version {
+		t.Fatalf("ready payload: %v (%v)", readyBody, err)
+	}
 	h.adminCall("POST", "/v1/admin/groups", map[string]any{"name": "live"})
 	deadline := time.After(5 * time.Second)
 	seen := map[string]bool{}

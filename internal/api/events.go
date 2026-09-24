@@ -126,6 +126,14 @@ func (s *Server) handleEventStream(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("X-Accel-Buffering", "no")
 	w.WriteHeader(200)
+	// Every connect (and every reconnect after a restart) says which build is
+	// serving, so a tab left open on any screen learns about an update. No id:
+	// it must not disturb the client's Last-Event-ID.
+	ready, _ := json.Marshal(map[string]string{"version": s.Version})
+	if _, err := fmt.Fprintf(w, "event: ready\ndata: %s\n\n", ready); err != nil {
+		return
+	}
+	fl.Flush()
 	full, _ := r.Context().Value(ctxFullStream).(bool)
 	self := actorOf(r).ID
 	// A member sees only events about themselves; the payload is dropped

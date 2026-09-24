@@ -692,7 +692,7 @@ export function createMockApi(_opts: { onUnauthorized?: () => void } = {}): Api 
     stream(h, _lastEventId) {
       let state: LiveState = 'connecting'
       h.onState(state)
-      const t = setTimeout(() => { state = 'connected'; h.onState(state); listeners.add(h); ensureTicker() }, 300)
+      const t = setTimeout(() => { state = 'connected'; h.onState(state); h.onReady?.({ version: system.version }); listeners.add(h); ensureTicker() }, 300)
       return () => { clearTimeout(t); listeners.delete(h); h.onState('off') }
     },
   }

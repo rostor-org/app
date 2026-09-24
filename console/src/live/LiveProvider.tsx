@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useRef, useState, type ReactNode 
 import { useQueryClient } from '@tanstack/react-query'
 import { api, type LiveEvent, type LiveState } from '../api'
 import { useSession } from '../auth/session'
+import { observeVersion } from '../lib/version'
 
 export interface Live {
   state: LiveState
@@ -37,6 +38,8 @@ export function LiveProvider({ children }: { children: ReactNode }) {
     try { lastId.current = sessionStorage.getItem(LAST_ID_KEY) } catch { lastId.current = null }
     const close = api.stream({
       onState: (state) => setLive((l) => ({ ...l, state, at: Date.now() })),
+      // A reconnect to a newer build raises the "new version" banner on whatever screen is open.
+      onReady: ({ version }) => observeVersion(version),
       onEvent: (e: LiveEvent) => {
         if (e.id) { lastId.current = e.id; try { sessionStorage.setItem(LAST_ID_KEY, e.id) } catch { /* ignore */ } }
         for (const k of keysFor(e.type)) void qc.invalidateQueries({ queryKey: k })

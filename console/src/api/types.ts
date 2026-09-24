@@ -447,6 +447,8 @@ export type LiveState = 'off' | 'connecting' | 'connected' | 'reconnecting'
 export interface LiveHandlers {
   onEvent: (e: LiveEvent) => void
   onState: (s: LiveState) => void
+  /** The stream's opening frame: which build is serving, on every (re)connect. */
+  onReady?: (info: { version: string }) => void
 }
 
 /** The single fetch interface both the HTTP client and the mock implement. */
