@@ -1,24 +1,24 @@
 {
   "channel": "stable",
-  "version": "v0.3.3",
-  "published": "2026-09-24T16:46:27.38212Z",
-  "notes": "Fix: strings could show as raw codes for a few minutes after an update (catalog was browser-cached); the catalog is now revalidated on every load.",
+  "version": "v0.4.0",
+  "published": "2026-09-24T16:54:01.309803Z",
+  "notes": "Default sign-in method setting (password, passkey or badge); badge mode opens with the reader field focused.",
   "files": {
     "agent-windows-amd64": {
-      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/586382045",
-      "sha256": "a1e1b94d9b2b3ff4b14f337be65a1d6e445b67be2eecb6b54541ee73ec0d0ddf",
+      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/586394520",
+      "sha256": "a92e4c86b58f28c0a24ec4b2ee81c46bbdc4a611b39b12da97744de5a73b80dd",
       "size": 7793152
     },
     "linux-amd64": {
-      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/586382046",
-      "sha256": "b613ef5c65ee05561b02a697f8bf0738efee53f2ccfa1fc8c7b4c23af5021bf9",
-      "size": 23830688
+      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/586394523",
+      "sha256": "f28fbfdd0bee5051536ff3e2c6654b61dae4b95720de6ba82629bcf534b46b7d",
+      "size": 23834784
     },
     "linux-arm64": {
-      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/586382041",
-      "sha256": "7e8798f2f743771b0c88e2b0ec697963495661b1540994ac332f9f2816ab9509",
+      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/586394524",
+      "sha256": "92e312a6bf55428067a81dbad51ce28f7f71d4832c8c548fcd21a743a4d211ac",
       "size": 22413472
     }
   },
-  "signature": "VHRXLvsN0fYI+SUO1udZnbHcgLxzn1l78WYrTlO/1ELsV5rVEeBBvgI2TQ9QG93jaeDCWeudQfOW8jgsZl3nDQ=="
+  "signature": "AhwoCIpnpSyS3yHAtj81P+HBMpTBePasYcrbRxhPdqwZ9omSGxzf3SnXkTld7bPaUb6ECvs+Tn00VqrOsFLgCQ=="
 }
