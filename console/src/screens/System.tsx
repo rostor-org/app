@@ -120,11 +120,11 @@ function SignInSettings({ canWrite }: { canWrite: boolean }) {
   const [confirm, setConfirm] = useState('')
   const saved = q.data?.webauthn
   // Edit a copy; the query stays the source of truth until save.
-  const cur = form ?? (saved ? { rp_id: saved.rp_id, display_name: saved.display_name, origins: saved.origins.join('\n') } : null)
+  const cur = form ?? (saved ? { rp_id: saved.rp_id, display_name: saved.display_name, origins: (saved.origins ?? []).join('\n') } : null)
   const enrolled = saved?.enrolled_passkeys ?? 0
   const rpChanged = !!saved && !!cur && cur.rp_id.trim().toLowerCase() !== saved.rp_id
   const needConfirm = rpChanged && enrolled > 0
-  const dirty = !!saved && !!cur && (rpChanged || cur.display_name !== saved.display_name || cur.origins !== saved.origins.join('\n'))
+  const dirty = !!saved && !!cur && (rpChanged || cur.display_name !== saved.display_name || cur.origins !== (saved.origins ?? []).join('\n'))
   // Type the new domain back; when the domain is being cleared, the old one.
   const confirmWord = (cur?.rp_id.trim().toLowerCase() || saved?.rp_id) ?? ''
   const confirmed = !needConfirm || confirm.trim().toLowerCase() === confirmWord

@@ -31,7 +31,7 @@ func (s *Server) RelyingParty(ctx context.Context) (auth.RelyingParty, error) {
 	if err != nil {
 		return auth.RelyingParty{}, err
 	}
-	rp := auth.RelyingParty{}
+	rp := auth.RelyingParty{Origins: []string{}} // never null on the wire
 	rp.ID, _ = pol["webauthn.rp_id"].(string)
 	rp.DisplayName, _ = pol["webauthn.display_name"].(string)
 	if rp.DisplayName == "" {
