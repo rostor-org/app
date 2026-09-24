@@ -27,12 +27,16 @@ import (
 // Manifest is what a channel publishes. The signature covers the canonical
 // JSON of Manifest with Signature empty.
 type Manifest struct {
-	Channel   string          `json:"channel"`
-	Version   string          `json:"version"`
-	Published time.Time       `json:"published"`
-	Notes     string          `json:"notes,omitempty"`
-	Files     map[string]File `json:"files"`               // key: "<os>-<arch>", e.g. linux-amd64
-	Signature string          `json:"signature,omitempty"` // base64 ed25519 over canonical bytes
+	Channel   string    `json:"channel"`
+	Version   string    `json:"version"`
+	Published time.Time `json:"published"`
+	Notes     string    `json:"notes,omitempty"`
+	// MinUpgradeFrom, when set, is the oldest running version this release
+	// can be applied from in one jump; older boxes must install that version
+	// first. Optional and additive, so old updaters ignore it safely.
+	MinUpgradeFrom string          `json:"min_upgrade_from,omitempty"`
+	Files          map[string]File `json:"files"`               // key: "<os>-<arch>", e.g. linux-amd64
+	Signature      string          `json:"signature,omitempty"` // base64 ed25519 over canonical bytes
 }
 
 type File struct {
@@ -215,6 +219,9 @@ type State struct {
 	LastError string     `json:"last_error,omitempty"`
 	Requested bool       `json:"apply_requested"`
 	Notes     string     `json:"notes,omitempty"`
+	// Blocked names the version that must be installed first when the
+	// channel's release cannot be applied from Current in one jump.
+	Blocked string `json:"blocked_needs_version,omitempty"`
 }
 
 func StatePath(stateDir string) string   { return filepath.Join(stateDir, "update-state.json") }
@@ -299,8 +306,14 @@ func Check(ctx context.Context, c *Client, stateDir, current string) (State, err
 	st.Channel = m.Channel
 	st.LastError = ""
 	st.Notes = m.Notes
+	st.Blocked = ""
 	if NewerThan(m.Version, current) {
 		st.Available = m.Version
+		if m.MinUpgradeFrom != "" && NewerThan(m.MinUpgradeFrom, current) {
+			// Too big a jump: name the stepping stone instead of trying.
+			st.Available = ""
+			st.Blocked = m.MinUpgradeFrom
+		}
 	} else {
 		st.Available = ""
 	}

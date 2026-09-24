@@ -37,3 +37,34 @@ func TestNewerThan(t *testing.T) {
 		}
 	}
 }
+
+func TestMinUpgradeFrom(t *testing.T) {
+	pub, priv, _ := ed25519.GenerateKey(rand.Reader)
+	m := Manifest{Channel: "stable", Version: "v2.0.0", MinUpgradeFrom: "v1.5.0", Published: time.Now().UTC(),
+		Files: map[string]File{"linux-amd64": {URL: "https://x/y", SHA256: "ab", Size: 1}}}
+	if err := Sign(&m, priv); err != nil {
+		t.Fatal(err)
+	}
+	if err := Verify(m, pub); err != nil {
+		t.Fatal(err)
+	}
+	// Simulate Check's decision without the network.
+	decide := func(current string) (available, blocked string) {
+		if NewerThan(m.Version, current) {
+			if m.MinUpgradeFrom != "" && NewerThan(m.MinUpgradeFrom, current) {
+				return "", m.MinUpgradeFrom
+			}
+			return m.Version, ""
+		}
+		return "", ""
+	}
+	if a, b := decide("v1.2.0"); a != "" || b != "v1.5.0" {
+		t.Fatalf("too old: available=%q blocked=%q", a, b)
+	}
+	if a, b := decide("v1.5.0"); a != "v2.0.0" || b != "" {
+		t.Fatalf("stepping stone: available=%q blocked=%q", a, b)
+	}
+	if a, b := decide("v2.0.0"); a != "" || b != "" {
+		t.Fatalf("current: available=%q blocked=%q", a, b)
+	}
+}

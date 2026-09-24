@@ -43,9 +43,16 @@ jobs:
         run: sh -n deploy/install.sh
 
   upgrade:
-    name: Upgrade from previous release
+    name: Upgrade from ${{ matrix.from }}
     runs-on: ubuntu-latest
     needs: core
+    strategy:
+      fail-fast: false
+      matrix:
+        # "previous" resolves to the latest non-pre-release; the oldest
+        # supported release is pinned here and moves only by a deliberate commit
+        # (engineering.md, "Upgrades must work from any version").
+        from: [previous, v0.1.0]
     services:
       postgres:
         image: postgres:17
@@ -61,12 +68,16 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-      - name: Fetch the previous release binary
+      - name: Fetch the starting release binary
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          tag="$(gh release list --repo ${{ github.repository }} --exclude-drafts --exclude-pre-releases --limit 1 --json tagName --jq '.[0].tagName')"
-          echo "previous release: $tag"
+          if [ "${{ matrix.from }}" = "previous" ]; then
+            tag="$(gh release list --repo ${{ github.repository }} --exclude-drafts --exclude-pre-releases --limit 1 --json tagName --jq '.[0].tagName')"
+          else
+            tag="${{ matrix.from }}"
+          fi
+          echo "starting release: $tag"
           gh release download "$tag" --repo ${{ github.repository }} --pattern rostor-linux-amd64 --output /tmp/rostor-prev
           chmod +x /tmp/rostor-prev
       - name: Build the candidate

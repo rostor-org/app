@@ -95,6 +95,7 @@ func manifest(args []string) error {
 	dir := fs.String("dir", "dist", "")
 	notes := fs.String("notes", "", "")
 	urlMap := fs.String("url-map", "", "optional name=url,name=url overrides (e.g. GitHub asset API URLs)")
+	minFrom := fs.String("min-upgrade-from", "", "oldest version this release can be applied from in one jump (BREAKING releases only)")
 	fs.Parse(args)
 	if *key == "" || *ver == "" || (*base == "" && *urlMap == "") {
 		return errors.New("--key, --version and --base-url (or --url-map) are required")
@@ -109,7 +110,7 @@ func manifest(args []string) error {
 	if err != nil {
 		return err
 	}
-	m := update.Manifest{Channel: *channel, Version: *ver, Published: time.Now().UTC(), Notes: *notes, Files: map[string]update.File{}}
+	m := update.Manifest{Channel: *channel, Version: *ver, Published: time.Now().UTC(), Notes: *notes, MinUpgradeFrom: *minFrom, Files: map[string]update.File{}}
 	entries, err := os.ReadDir(*dir)
 	if err != nil {
 		return err
