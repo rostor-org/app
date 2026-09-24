@@ -1,7 +1,7 @@
 GO ?= go
 export PATH := /opt/homebrew/opt/postgresql@17/bin:/opt/homebrew/bin:$(PATH)
 
-.PHONY: build test vet agent lint-strings console
+.PHONY: build test vet agent lint-strings lint-ui-strings console
 
 # Build the React console and stage it for embedding.
 console:
@@ -42,7 +42,13 @@ SIGNKEY   ?= $(HOME)/.rostor/release-signing.key
 LDFLAGS    = -s -w -X main.version=$(VERSION)
 
 .PHONY: dist release
-dist: console
+# Every console string must exist in the server catalog the appliance serves,
+# or the screen shows raw codes after an update (v0.6.0 shipped that way).
+# Same check as CI, run before any release build.
+lint-ui-strings:
+	@python3 -c "import json,sys; s=json.load(open('internal/catalog/en.json')); u=json.load(open('console/catalog.en.json')); m=[k for k in u if k not in s]; print('missing from internal/catalog/en.json:', *m, sep='\n  ') if m else print('ok:', len(u), 'console codes present in the server catalog'); sys.exit(1 if m else 0)"
+
+dist: console lint-ui-strings
 	@test -n "$(VERSION)" || { echo "VERSION=vX.Y.Z is required"; exit 1; }
 	rm -rf dist && mkdir -p dist
 	GOOS=linux  GOARCH=amd64 CGO_ENABLED=0 $(GO) build -trimpath -ldflags '$(LDFLAGS)' -o dist/rostor-linux-amd64 ./cmd/rostor
