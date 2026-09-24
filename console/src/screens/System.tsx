@@ -5,6 +5,7 @@ import { useT } from '../i18n/catalog'
 import { useSession } from '../auth/session'
 import { useFormat } from '../lib/format'
 import { loadedVersion, reloadApp, setAutoReloading } from '../lib/version'
+import { setTheme, storedTheme, type Theme } from '../lib/theme'
 import { useToast } from '../components/Toast'
 import { Drawer } from '../components/Drawer'
 import { apiBody, describeError, ErrorNote, Head, Pill } from '../components/bits'
@@ -131,8 +132,29 @@ export function System() {
           {sys.data && <p><b>{t(`ui.system.profile.${sys.data.profile}`)}</b></p>}
         </div>
         {can('system.read') && <SignInSettings canWrite={can('policies.write')} />}
+        <AppearanceCard />
       </div>
     </section>
+  )
+}
+
+/** This browser's console theme (see lib/theme). Dark unless light is chosen here. */
+function AppearanceCard() {
+  const t = useT()
+  const id = useId()
+  const [theme, setLocal] = useState<Theme>(storedTheme)
+  return (
+    <div className="card">
+      <h3>{t('ui.system.appearance')}</h3>
+      <div className="field">
+        <label htmlFor={id}>{t('ui.system.theme')}</label>
+        <select id={id} className="input" value={theme} onChange={(e) => { const v = e.target.value as Theme; setLocal(v); setTheme(v) }}>
+          <option value="dark">{t('ui.system.theme.dark')}</option>
+          <option value="light">{t('ui.system.theme.light')}</option>
+        </select>
+        <small className="muted">{t('ui.system.theme_hint')}</small>
+      </div>
+    </div>
   )
 }
 

@@ -8,13 +8,6 @@
   --font-mono:"IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
   color-scheme: dark;
 }
-@media (prefers-color-scheme: light){ :root:not([data-theme="dark"]){
-  --bg:#f4f2ee; --bg-2:#ece9e2; --panel:#fbfaf7; --text:#14161a; --muted:#5f6370; --line:#d9d5cc; --line-2:#c9c4b9;
-  --rail:#14161a; --rail-text:#c9c6bf; --rail-active:#f4f2ee; --rail-hover:#1e2126;
-  --good:#2f8f5b; --warn:#b98418; --bad:#c2412d; --info:#3a6ea5;
-  --chip:#e8e4db; --focus:#e07a24;
-  color-scheme: light;
-}}
 :root[data-theme="light"]{
   --bg:#f4f2ee; --bg-2:#ece9e2; --panel:#fbfaf7; --text:#14161a; --muted:#5f6370; --line:#d9d5cc; --line-2:#c9c4b9;
   --rail:#14161a; --rail-text:#c9c6bf; --rail-active:#f4f2ee; --rail-hover:#1e2126;

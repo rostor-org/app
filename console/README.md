@@ -71,5 +71,8 @@ back to the same catalog.
   (with first-administrator setup). `components/PersonPanel.tsx` is the
   person record shared by My account and the People drawer;
   `components/AuditEvent.tsx` the name-first audit row.
-- `src/styles.css` — tokens and rules from the approved mockup; dark first,
-  light via `prefers-color-scheme` or `data-theme`.
+- `src/styles.css` — tokens and rules from the approved mockup; dark by
+  default whatever the OS prefers, light via `data-theme="light"`.
+- `src/lib/theme.ts` — the viewer's dark/light choice (System → Appearance),
+  kept per browser in localStorage and applied before first render, so it
+  also covers the sign-in screen. Not a tenant setting.

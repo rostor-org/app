@@ -15,6 +15,12 @@ export function Drawer({ open, onClose, labelCode, title, subtitle, children }: 
   const t = useT()
   const ref = useRef<HTMLElement>(null)
   const returnTo = useRef<Element | null>(null)
+  // Read onClose through a ref so the effect below runs only when open flips.
+  // Callers often pass a fresh closure each render; depending on it re-ran the
+  // effect on every keystroke, and its focus hand-off pulled focus out of the
+  // field being typed in (a badge reader's burst kept only its first digit).
+  const onCloseRef = useRef(onClose)
+  onCloseRef.current = onClose
 
   useEffect(() => {
     if (!open) return
@@ -26,7 +32,7 @@ export function Drawer({ open, onClose, labelCode, title, subtitle, children }: 
       if (e.key !== 'Escape') return
       const open = document.querySelectorAll('.drawer.open')
       if (open.length && open[open.length - 1] !== ref.current) return
-      e.stopPropagation(); onClose()
+      e.stopPropagation(); onCloseRef.current()
     }
     document.addEventListener('keydown', onKey)
     return () => {
@@ -34,7 +40,7 @@ export function Drawer({ open, onClose, labelCode, title, subtitle, children }: 
       const el = returnTo.current
       if (el instanceof HTMLElement && document.contains(el)) el.focus({ preventScroll: true })
     }
-  }, [open, onClose])
+  }, [open])
 
   return (
     <aside ref={ref} className={open ? 'drawer open' : 'drawer'} role="dialog" aria-label={t(labelCode)} aria-hidden={!open} tabIndex={-1}>
