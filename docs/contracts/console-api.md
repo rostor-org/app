@@ -135,3 +135,6 @@ plugin registry, key rotation, policy counts on groups.
   bindings only; empty pin removes it). Audited as `binding.pin_set`.
 - Person detail `groups[]` entries carry `direct: bool` (direct vs inherited).
 - Roles for the grant form: `GET /v1/admin/roles` → `{"items":[{resource_type,name,permissions}]}`.
+- Audit rows (v0.3.0): `actor.name` and `target.name` are present when the
+  actor/target is a known principal, group or device; `detail.principal_name`
+  accompanies `detail.principal_id`. Lead with names; show IDs on demand.

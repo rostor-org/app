@@ -4,6 +4,7 @@ package api
 // queries shaped for screens; no authorization logic lives here.
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"strconv"
@@ -215,12 +216,7 @@ func (s *Server) handleGetUser(w http.ResponseWriter, r *http.Request) {
 	s.writeJSON(w, 200, out)
 }
 
-func (s *Server) recentAudit(ctx interface {
-	Done() <-chan struct{}
-	Err() error
-	Value(any) any
-	Deadline() (time.Time, bool)
-}, principalID string, n int) []map[string]any {
+func (s *Server) recentAudit(ctx context.Context, principalID string, n int) []map[string]any {
 	rows, err := s.DB.Query(ctx, `SELECT seq, ts, actor_kind, actor_id, action, coalesce(target_type,''), coalesce(target_id,''),
 		coalesce(credential_type,''), coalesce(assurance,''), outcome, detail FROM audit_events
 		WHERE tenant_id=$1 AND (target_id=$2 OR detail->>'principal_id'=$2 OR actor_id=$2) ORDER BY seq DESC LIMIT $3`, s.TenantID, principalID, n)
@@ -228,7 +224,9 @@ func (s *Server) recentAudit(ctx interface {
 		return []map[string]any{}
 	}
 	defer rows.Close()
-	return scanAudit(rows)
+	items := scanAudit(rows)
+	s.nameAudit(ctx, items)
+	return items
 }
 
 func scanAudit(rows pgx.Rows) []map[string]any {
@@ -245,6 +243,57 @@ func scanAudit(rows pgx.Rows) []map[string]any {
 			"target": map[string]string{"type": tt, "id": tid}, "credential_type": ct, "assurance": as, "outcome": outcome, "detail": detail})
 	}
 	return out
+}
+
+// nameAudit adds human names to audit rows: actor.name and target.name for
+// principals, groups and devices, plus detail.principal_name when the detail
+// carries a principal_id (verify events). IDs stay; names sit beside them
+// so the console can lead with the name and keep the ID secondary.
+func (s *Server) nameAudit(ctx context.Context, items []map[string]any) {
+	cache := map[string]string{}
+	lookup := func(kind, id string) string {
+		if id == "" {
+			return ""
+		}
+		key := kind + ":" + id
+		if v, ok := cache[key]; ok {
+			return v
+		}
+		var name string
+		switch kind {
+		case "principal", "user", "service", "device":
+			_ = s.DB.QueryRow(ctx, `SELECT coalesce(nullif(display_name->>'en',''), username, '') FROM principals WHERE tenant_id=$1 AND id=$2`, s.TenantID, id).Scan(&name)
+		case "group":
+			_ = s.DB.QueryRow(ctx, `SELECT name FROM groups WHERE tenant_id=$1 AND id=$2`, s.TenantID, id).Scan(&name)
+		}
+		cache[key] = name
+		return name
+	}
+	for _, it := range items {
+		if a, ok := it["actor"].(map[string]string); ok {
+			if n := lookup(a["kind"], a["id"]); n != "" {
+				a["name"] = n
+			}
+		}
+		if t, ok := it["target"].(map[string]string); ok {
+			if n := lookup(t["type"], t["id"]); n != "" {
+				t["name"] = n
+			}
+		}
+		if raw, ok := it["detail"].(json.RawMessage); ok && len(raw) > 0 {
+			var d map[string]any
+			if json.Unmarshal(raw, &d) == nil {
+				if pid, ok := d["principal_id"].(string); ok && pid != "" {
+					if n := lookup("principal", pid); n != "" {
+						d["principal_name"] = n
+						if b, err := json.Marshal(d); err == nil {
+							it["detail"] = json.RawMessage(b)
+						}
+					}
+				}
+			}
+		}
+	}
 }
 
 // ---- groups -----------------------------------------------------------------
@@ -417,6 +466,7 @@ func (s *Server) handleAuditList(w http.ResponseWriter, r *http.Request) {
 	}
 	items := scanAudit(rows)
 	rows.Close()
+	s.nameAudit(r.Context(), items)
 	var head int64
 	_ = s.DB.QueryRow(r.Context(), `SELECT seq FROM audit_heads WHERE tenant_id=$1`, s.TenantID).Scan(&head)
 	s.writeJSON(w, 200, map[string]any{"items": items, "head": map[string]int64{"seq": head}})
