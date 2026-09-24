@@ -639,3 +639,27 @@ func TestBuiltinsIdempotentOnExistingTenant(t *testing.T) {
 		t.Fatalf("second migrate: applied=%v err=%v", applied, err)
 	}
 }
+
+// The catalog must never be served from a stale cache across versions.
+func TestCatalogRevalidates(t *testing.T) {
+	h := newHarness(t)
+	req, _ := http.NewRequest("GET", h.ts.URL+"/v1/catalog?locale=en", nil)
+	resp, err := h.client(nil).Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	etag := resp.Header.Get("ETag")
+	if etag == "" || resp.Header.Get("Cache-Control") != "no-cache" {
+		t.Fatalf("catalog caching headers: etag=%q cc=%q", etag, resp.Header.Get("Cache-Control"))
+	}
+	req.Header.Set("If-None-Match", etag)
+	resp, err = h.client(nil).Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != 304 {
+		t.Fatalf("expected 304 with matching ETag, got %d", resp.StatusCode)
+	}
+}

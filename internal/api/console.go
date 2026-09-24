@@ -8,6 +8,8 @@ package api
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"net/http"
 	"strings"
 	"time"
@@ -24,11 +26,25 @@ const sessionCookie = "rostor_session"
 
 // ---- catalog & brand --------------------------------------------------------
 
+// handleCatalog serves the strings with a content ETag and no freshness
+// window, so a browser revalidates on every load and a new release never
+// shows stale strings (v0.3.2 showed raw codes for five minutes after an
+// update because the catalog was cached).
 func (s *Server) handleCatalog(w http.ResponseWriter, r *http.Request) {
 	loc := locale(r)
 	strs, resolved := s.Catalog.Strings(loc)
-	w.Header().Set("Cache-Control", "public, max-age=300")
-	s.writeJSON(w, 200, map[string]any{"locale": resolved, "strings": strs})
+	body, _ := json.Marshal(map[string]any{"locale": resolved, "strings": strs})
+	sum := sha256.Sum256(append([]byte(s.Version+"|"), body...))
+	etag := `"` + hex.EncodeToString(sum[:8]) + `"`
+	w.Header().Set("ETag", etag)
+	w.Header().Set("Cache-Control", "no-cache")
+	if r.Header.Get("If-None-Match") == etag {
+		w.WriteHeader(304)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, _ = w.Write(body)
 }
 
 func (s *Server) handleBrand(w http.ResponseWriter, r *http.Request) {
