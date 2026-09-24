@@ -47,6 +47,9 @@ public:
 private:
     virtual ~CRostorCredential();
     void ClearSecret();
+    void SetFieldValue(DWORD fieldID, PCWSTR value);
+    void EnterPinMode(PCWSTR badgeNumber, const std::wstring& prompt);
+    void ResetToInitial(bool clearIdentifier);
 
     LONG _cRef;
     CREDENTIAL_PROVIDER_USAGE_SCENARIO _cpus;
@@ -56,4 +59,10 @@ private:
     ICredentialProviderCredentialEvents* _pCredProvCredentialEvents;
     UiStrings _ui;
     std::wstring _lastMessage; // rendered text from the agent for ReportResult
+
+    // Badge + PIN (contract §2.3): after a tap the agent may answer
+    // auth.continue; the tile then hides the secret field, shows the PIN
+    // field and resends the same badge number with the PIN on the next submit.
+    bool _pinMode;
+    std::wstring _badgeNumber;
 };

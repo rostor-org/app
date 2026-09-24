@@ -46,6 +46,11 @@ func TestUI(t *testing.T) {
 	if !rep.OK || rep.Strings == nil || rep.Strings.TileLabel == "" || rep.Strings.SubmitLabel == "" {
 		t.Fatalf("bad ui reply: %+v", rep)
 	}
+	// The badge path has no literals in the credprov either: both of its
+	// strings must come from the catalog.
+	if rep.Strings.PinLabel == "" || rep.Strings.BadgeHint == "" {
+		t.Fatalf("badge strings missing: %+v", rep.Strings)
+	}
 }
 
 func TestUnknownOp(t *testing.T) {
@@ -150,6 +155,89 @@ func TestLocalAccountFailure(t *testing.T) {
 	rep := b.Handle(context.Background(), pipeproto.Request{Op: "logon", Identifier: "testuser"})
 	if rep.OK || rep.Code != "agent.local_account_failed" {
 		t.Fatalf("got %+v", rep)
+	}
+}
+
+// ---- badge (§2.3) ----------------------------------------------------------
+
+func TestBadgeMockAllow(t *testing.T) {
+	acc := &fakeAccounts{}
+	b := &Broker{Verifier: core.Mock{AllowIdentifier: "testuser"}, Accounts: acc}
+	rep := b.Handle(context.Background(), pipeproto.Request{Op: "logon", Badge: &pipeproto.Badge{Number: core.MockBadgePlain}})
+	if !rep.OK || rep.LocalUser != "testuser" || len(rep.LocalSecret) != 32 || rep.Need != "" {
+		t.Fatalf("got %+v", rep)
+	}
+	if len(acc.enabled) != 1 || acc.enabled[0] != "testuser" {
+		t.Fatalf("accounts touched: %+v", acc)
+	}
+}
+
+func TestBadgeMockContinueThenAllow(t *testing.T) {
+	acc := &fakeAccounts{}
+	b := &Broker{Verifier: core.Mock{AllowIdentifier: "testuser"}, Accounts: acc}
+	rep := b.Handle(context.Background(), pipeproto.Request{Op: "logon", Locale: "en-US", Badge: &pipeproto.Badge{Number: core.MockBadgePIN}})
+	if rep.OK || rep.Code != "auth.continue" || rep.Need != "pin" || rep.Message == "" || rep.LocalSecret != "" {
+		t.Fatalf("tap without PIN: got %+v", rep)
+	}
+	if len(acc.enabled)+len(acc.disabled) != 0 {
+		t.Fatal("continue must not touch accounts")
+	}
+	rep = b.Handle(context.Background(), pipeproto.Request{Op: "logon", Badge: &pipeproto.Badge{Number: core.MockBadgePIN, PIN: "0000"}})
+	if rep.OK || rep.Code != "auth.failed" || rep.Need != "" {
+		t.Fatalf("wrong PIN: got %+v", rep)
+	}
+	rep = b.Handle(context.Background(), pipeproto.Request{Op: "logon", Badge: &pipeproto.Badge{Number: core.MockBadgePIN, PIN: core.MockPIN}})
+	if !rep.OK || rep.LocalUser != "testuser" || len(rep.LocalSecret) != 32 {
+		t.Fatalf("right PIN: got %+v", rep)
+	}
+}
+
+func TestBadgeMockUnknownDenies(t *testing.T) {
+	b := &Broker{Verifier: core.Mock{AllowIdentifier: "testuser"}, Accounts: &fakeAccounts{}}
+	rep := b.Handle(context.Background(), pipeproto.Request{Op: "logon", Badge: &pipeproto.Badge{Number: "0000001"}})
+	if rep.OK || rep.Code != "auth.failed" || rep.Message == "" {
+		t.Fatalf("got %+v", rep)
+	}
+	rep = b.Handle(context.Background(), pipeproto.Request{Op: "logon", Badge: &pipeproto.Badge{}})
+	if rep.OK || rep.Code != "auth.failed" {
+		t.Fatalf("empty badge: got %+v", rep)
+	}
+}
+
+func TestBadgeRequestShape(t *testing.T) {
+	v := &fakeVerifier{resp: &core.VerifyResponse{Decision: core.DecisionContinue,
+		Reason:  []core.Reason{{Code: core.CodeContinue, Params: map[string]any{"need": "pin"}}},
+		Message: "Enter your PIN."}}
+	acc := &fakeAccounts{}
+	rep := (&Broker{Verifier: v, Accounts: acc, Resource: core.Resource{Type: "workstation", ID: "PC"}}).Handle(
+		context.Background(), pipeproto.Request{Op: "logon", Locale: "en-US", Badge: &pipeproto.Badge{Number: "4857726", PIN: "1234"}})
+	if v.got.Credential.Type != "badge" || v.got.Credential.Number != "4857726" || v.got.Credential.PIN != "1234" ||
+		v.got.Credential.Identifier != "" || v.got.Credential.Secret != "" || v.got.Action != "logon" || v.got.Resource.ID != "PC" {
+		t.Fatalf("request shape: %+v", v.got)
+	}
+	// Core-rendered text wins over the catalog; need comes from the params.
+	if rep.OK || rep.Code != "auth.continue" || rep.Need != "pin" || rep.Message != "Enter your PIN." {
+		t.Fatalf("got %+v", rep)
+	}
+	if len(acc.enabled)+len(acc.disabled) != 0 {
+		t.Fatal("continue must not touch accounts")
+	}
+}
+
+func TestBadgeContinueWithoutParamsDefaultsToPin(t *testing.T) {
+	v := &fakeVerifier{resp: &core.VerifyResponse{Decision: core.DecisionContinue, Reason: []core.Reason{{Code: core.CodeContinue}}}}
+	rep := (&Broker{Verifier: v, Accounts: &fakeAccounts{}}).Handle(context.Background(), pipeproto.Request{Op: "logon", Badge: &pipeproto.Badge{Number: "123456"}})
+	if rep.Code != "auth.continue" || rep.Need != "pin" || rep.Message == "" {
+		t.Fatalf("got %+v", rep)
+	}
+}
+
+func TestBadgeSuspendedDoesNotGuessAnAccount(t *testing.T) {
+	acc := &fakeAccounts{}
+	v := &fakeVerifier{resp: &core.VerifyResponse{Decision: "DENY", Reason: []core.Reason{{Code: "principal.suspended"}}, Message: "Suspended."}}
+	rep := (&Broker{Verifier: v, Accounts: acc}).Handle(context.Background(), pipeproto.Request{Op: "logon", Badge: &pipeproto.Badge{Number: "123456"}})
+	if rep.Code != "principal.suspended" || rep.Message != "Suspended." || len(acc.disabled) != 0 {
+		t.Fatalf("got %+v %+v", rep, acc)
 	}
 }
 

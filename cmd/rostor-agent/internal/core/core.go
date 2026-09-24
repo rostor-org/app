@@ -5,12 +5,15 @@ package core
 
 import "context"
 
-// Credential is the §1.2 credential presentation. Only "password" is used by
-// this slice; the shape is kept generic so a badge type slots in unchanged.
+// Credential is the §1.2 credential presentation: "password" carries
+// identifier+secret, "badge" carries the number as typed by a reader plus an
+// optional PIN. Core derives the other badge forms (uid, facility+card) itself.
 type Credential struct {
 	Type       string `json:"type"`
 	Identifier string `json:"identifier,omitempty"`
 	Secret     string `json:"secret,omitempty"`
+	Number     string `json:"number,omitempty"`
+	PIN        string `json:"pin,omitempty"`
 }
 
 // Resource identifies the workstation this agent enrolled as.
@@ -40,7 +43,19 @@ type Reason struct {
 	Params map[string]any `json:"params,omitempty"`
 }
 
-// VerifyResponse is the §1.2 response body for either decision.
+// Decisions core can answer. CONTINUE (reason auth.continue) means the
+// credential matched but the presenter must add something — for a badge, the
+// PIN — before a decision is made; nothing has been allowed or denied yet.
+const (
+	DecisionAllow    = "ALLOW"
+	DecisionDeny     = "DENY"
+	DecisionContinue = "CONTINUE"
+)
+
+// CodeContinue is the reason code that accompanies DecisionContinue.
+const CodeContinue = "auth.continue"
+
+// VerifyResponse is the §1.2 response body for any decision.
 type VerifyResponse struct {
 	Decision  string     `json:"decision"`
 	Principal *Principal `json:"principal,omitempty"`
@@ -60,4 +75,15 @@ func (r *VerifyResponse) FirstCode() string {
 		return ""
 	}
 	return r.Reason[0].Code
+}
+
+// Need returns what a CONTINUE asks for (reason params "need"), defaulting
+// to "pin", which is the only continuation this slice knows.
+func (r *VerifyResponse) Need() string {
+	if r != nil && len(r.Reason) > 0 {
+		if s, ok := r.Reason[0].Params["need"].(string); ok && s != "" {
+			return s
+		}
+	}
+	return "pin"
 }

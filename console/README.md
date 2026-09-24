@@ -18,8 +18,13 @@ Mock mode is `VITE_MOCK=1` at build/dev time or `?mock=1` on any URL
 data, a fake event stream that appends an audit row every few seconds, and
 the update check/install flow. Sign in as `dan` / `demo` (admin) or any
 other listed username with `demo` for a read-mostly session; `sam` is
-suspended. Writes (add person, set password, groups, members, grants,
-enrollment tokens) mutate the in-memory data and emit the matching events.
+suspended. Badge sign-in: `0004A211` (priya, no PIN), `0004A1F3` (dana, PIN
+`1234`, so the mock answers `auth.continue` first), `0004A1D9` (sam,
+suspended). "Use a passkey" signs in as `dan`; passkey ceremonies resolve at
+once without touching `navigator.credentials` (see `src/auth/webauthn.ts`).
+Writes (add person, set password, register badge, add passkey, groups,
+members, grants, enrollment tokens, sign-in settings, update check) mutate
+the in-memory data and emit the matching events.
 
 ## Build
 

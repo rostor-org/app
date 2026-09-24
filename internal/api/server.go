@@ -69,7 +69,7 @@ func (s *Server) Handler() http.Handler {
 	// (§3.3: admin rights are roles on directory resources).
 	mux.HandleFunc("POST /v1/admin/users", s.adminAuth("users.write", s.handleCreateUser))
 	mux.HandleFunc("POST /v1/admin/users/{id}/state", s.adminAuth("users.write", s.handleUserState))
-	mux.HandleFunc("POST /v1/admin/users/{id}/bindings", s.adminAuth("credentials.write", s.handleEnrollBinding))
+	mux.HandleFunc("POST /v1/admin/users/{id}/bindings", s.selfOrAdmin("credentials.write", s.handleEnrollBinding))
 	mux.HandleFunc("POST /v1/admin/groups", s.adminAuth("groups.write", s.handleCreateGroup))
 	mux.HandleFunc("POST /v1/admin/groups/{name}/members", s.adminAuth("groups.write", s.handleAddMember))
 	mux.HandleFunc("DELETE /v1/admin/groups/{name}/members", s.adminAuth("groups.write", s.handleRemoveMember))
@@ -83,8 +83,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/admin/audit/verify", s.adminAuth("audit.read", s.handleAuditVerify))
 	mux.HandleFunc("GET /v1/admin/summary", s.adminAuth("users.read", s.handleSummary))
 	mux.HandleFunc("GET /v1/admin/users", s.adminAuth("users.read", s.handleListUsers))
-	mux.HandleFunc("GET /v1/admin/users/{id}", s.adminAuth("users.read", s.handleGetUser))
-	mux.HandleFunc("DELETE /v1/admin/users/{id}/bindings/{bid}", s.adminAuth("credentials.write", s.handleRevokeBinding))
+	mux.HandleFunc("DELETE /v1/admin/users/{id}/bindings/{bid}", s.selfOrAdmin("credentials.write", s.handleRevokeBinding))
+	mux.HandleFunc("GET /v1/admin/users/{id}", s.selfOrAdmin("users.read", s.handleGetUser))
 	mux.HandleFunc("GET /v1/admin/groups", s.adminAuth("groups.read", s.handleListGroups))
 	mux.HandleFunc("GET /v1/admin/groups/{name}", s.adminAuth("groups.read", s.handleGetGroup))
 	mux.HandleFunc("GET /v1/admin/grants", s.adminAuth("grants.read", s.handleListGrants))
@@ -328,4 +328,31 @@ func (s *Server) emitSystemEvent(ctx context.Context, typ string, payload map[st
 	raw, _ := json.Marshal(payload)
 	_, _ = s.DB.Exec(ctx, `INSERT INTO events (tenant_id, type, actor_id, payload, correlation_id) VALUES ($1,$2,'core',$3,$4)`,
 		s.TenantID, typ, raw, ids.New("corr"))
+}
+
+// selfOrAdmin lets a signed-in person act on their own record (their own
+// sign-in methods, their own detail) without holding the admin action;
+// anyone else goes through adminAuth as usual. A person's own credentials
+// are theirs to manage (spec §7.2: bindings are enumerable and revocable on
+// the principal's record).
+func (s *Server) selfOrAdmin(action string, next http.HandlerFunc) http.HandlerFunc {
+	admin := s.adminAuth(action, next)
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") == "" {
+			if p, ses, err := s.sessionPrincipal(r.Context(), r); err == nil && p != nil {
+				id := r.PathValue("id")
+				if id == p.ID || strings.EqualFold(id, p.Username) {
+					if r.Method != "GET" && r.Method != "HEAD" && !isConsoleMutation(r) {
+						s.writeErr(w, r, 403, "request.forbidden", map[string]any{"reason": "csrf"})
+						return
+					}
+					actor := directory.Actor{Kind: p.Kind, ID: p.ID, CorrelationID: corrOf(r)}
+					_ = ses
+					next(w, r.WithContext(context.WithValue(r.Context(), ctxActor, actor)))
+					return
+				}
+			}
+		}
+		admin(w, r)
+	}
 }

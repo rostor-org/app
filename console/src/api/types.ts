@@ -26,18 +26,68 @@ export interface Principal {
   state?: string
 }
 
-export interface LoginRequest {
+export interface PasswordLogin {
   identifier: string
   method: 'password'
   fields: { password: string }
 }
+/** Credential-identified sign-in (no identifier): the card names the person. */
+export interface BadgeLogin {
+  method: 'badge'
+  fields: { number: string; pin?: string }
+}
+export type LoginRequest = PasswordLogin | BadgeLogin
 
 export interface LoginOK {
   principal: Principal
   assurance: string
   expires_at: string
 }
-export type LoginResponse = LoginOK | ApiErrorBody
+/** `{code:"auth.continue", params:{need:"pin"}}`: the ceremony needs one more field. */
+export interface LoginContinue extends ApiErrorBody {
+  code: 'auth.continue'
+  params?: { need?: string } & Record<string, unknown>
+}
+export type LoginResponse = LoginOK | LoginContinue | ApiErrorBody
+
+// ---- passkeys (WebAuthn) ---------------------------------------------------
+// `options` is what the server's WebAuthn library emits: go-webauthn wraps the
+// JSON options as {"publicKey": {...}}; a bare options object is accepted too.
+
+export type CreationOptionsJSON = PublicKeyCredentialCreationOptionsJSON
+export type RequestOptionsJSON = PublicKeyCredentialRequestOptionsJSON
+export type OptionsWrapper<O> = { publicKey: O } | O
+
+export interface PasskeyCeremony<O> {
+  ceremony_id: string
+  options: OptionsWrapper<O>
+}
+export interface PasskeyRegisterFinish {
+  ceremony_id: string
+  label: string
+  response: PublicKeyCredentialJSON
+}
+export interface PasskeyLoginBegin {
+  identifier?: string
+}
+export interface PasskeyLoginFinish {
+  ceremony_id: string
+  response: PublicKeyCredentialJSON
+}
+
+// ---- tenant sign-in settings (GET/PUT /v1/admin/settings/auth) --------------
+
+export interface WebAuthnSettings {
+  rp_id: string
+  display_name: string
+  origins: string[]
+}
+export interface AuthSettings {
+  webauthn: WebAuthnSettings & { enrolled_passkeys: number }
+}
+export interface AuthSettingsUpdate {
+  webauthn: WebAuthnSettings
+}
 
 export interface Session {
   principal: Principal
@@ -283,9 +333,9 @@ export interface CreateUser {
   state?: string
 }
 export interface EnrollBinding {
-  method: string // "password"
+  method: string // "password" | "badge"
   label?: string
-  fields: Record<string, string>
+  fields: Record<string, string> // password: {password}; badge: {number, pin?} (or uid / printed / facility+card)
 }
 export interface CreateGroup {
   name: string
@@ -338,6 +388,12 @@ export interface Api {
   login(req: LoginRequest): Promise<LoginResponse>
   session(): Promise<Session | null> // null on 401
   logout(): Promise<void>
+  /** Self-service passkey enrollment for the signed-in person. */
+  passkeyRegisterBegin(): Promise<PasskeyCeremony<CreationOptionsJSON>>
+  passkeyRegisterFinish(body: PasskeyRegisterFinish): Promise<Binding>
+  /** Passkey sign-in; `{}` is a discoverable request (pass mediation "conditional" for autofill). */
+  passkeyLoginBegin(body?: PasskeyLoginBegin): Promise<PasskeyCeremony<RequestOptionsJSON>>
+  passkeyLoginFinish(body: PasskeyLoginFinish): Promise<LoginResponse>
 
   summary(): Promise<Summary>
   users(q?: string): Promise<List<User>>
@@ -360,9 +416,13 @@ export interface Api {
   auditVerify(): Promise<AuditVerify>
   why(q: WhyQuery): Promise<Explanation>
   updates(): Promise<UpdateState>
+  /** Fetches the channel now (POST /v1/admin/updates/check) and returns the fresh state. */
+  checkUpdates(): Promise<UpdateState>
   applyUpdate(): Promise<UpdateState>
   system(): Promise<SystemInfo>
   plugins(): Promise<List<Plugin>>
+  authSettings(): Promise<AuthSettings>
+  setAuthSettings(body: AuthSettingsUpdate): Promise<AuthSettings>
 
   /** Open the live stream. Returns a function that closes it. */
   stream(h: LiveHandlers, lastEventId: string | null): () => void

@@ -4,7 +4,9 @@
     "username_label": "Username",
     "password_label": "Password",
     "submit_label": "Sign in",
-    "connecting": "Contacting Rostor…"
+    "connecting": "Contacting Rostor…",
+    "pin_label": "PIN",
+    "badge_hint": "Tap your badge or type your username"
   },
   "messages": {
     "agent.core_unreachable": "Rostor could not be reached. Try again, or sign in with a local account.",
@@ -12,6 +14,7 @@
     "agent.local_account_failed": "Rostor could not prepare your account on this computer.",
     "agent.timeout": "Rostor did not respond in time.",
     "agent.bad_request": "The sign-in request was not understood.",
-    "auth.failed": "Sign-in failed."
+    "auth.failed": "Sign-in failed.",
+    "auth.continue": "Enter your PIN."
   }
 }

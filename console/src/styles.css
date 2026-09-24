@@ -98,6 +98,9 @@ tr.row td .rowlink{all:unset;cursor:pointer;font-weight:600}
 .list{border:1px solid var(--line);border-radius:8px;overflow:hidden}
 .list > div{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid var(--line)}
 .list > div:last-child{border-bottom:0}
+.list .method{display:flex;align-items:center;gap:10px;min-width:0}
+.glyph{width:26px;height:26px;border-radius:6px;background:var(--chip);display:grid;place-items:center;flex:none;color:var(--muted)}
+.glyph svg{width:15px;height:15px}
 /* why */
 .why{border:1px solid var(--line);border-radius:8px;background:var(--bg-2);padding:12px 14px}
 .why .verdict{display:flex;align-items:center;gap:10px;font-weight:600;margin-bottom:10px;flex-wrap:wrap}
@@ -145,6 +148,9 @@ tr.row td .rowlink{all:unset;cursor:pointer;font-weight:600}
 .login .input{width:100%;max-width:none;font-size:15px;padding:10px 12px}
 .login .who{font-family:var(--font-mono);font-size:13px;margin-top:14px;display:flex;justify-content:space-between;align-items:center;gap:8px}
 .login .actions{margin-top:18px;justify-content:flex-end}
+.login .alt{display:flex;gap:4px;justify-content:center;flex-wrap:wrap;margin-top:10px;padding-top:12px;border-top:1px solid var(--line)}
+.login .alt .btn.quiet{font-size:13px;padding:6px 10px}
+.login .input.mono{font-family:var(--font-mono);letter-spacing:.06em}
 .boot{min-height:100%;display:grid;place-items:center;color:var(--muted)}
 .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 /* phone */
@@ -166,6 +172,8 @@ tr.row td .rowlink{all:unset;cursor:pointer;font-weight:600}
 .field .input{width:100%;max-width:none}
 .field small{display:block;margin-top:4px;font-size:12px}
 select.input{appearance:auto}
+textarea.input{resize:vertical;font-family:inherit}
+textarea.input.mono{font-family:var(--font-mono)}
 .inline{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .inline .input{flex:1;min-width:120px}
 .chip button{all:unset;cursor:pointer;margin-left:6px;color:var(--muted);font-size:12px;line-height:1}

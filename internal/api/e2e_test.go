@@ -471,11 +471,64 @@ func jsonReq(method, url string, body any) (*http.Request, error) {
 	return req, nil
 }
 
-
 // testLog sends server logs to stderr when ROSTOR_TEST_LOG=1.
 func testLog() io.Writer {
 	if os.Getenv("ROSTOR_TEST_LOG") == "1" {
 		return os.Stderr
 	}
 	return io.Discard
+}
+
+func TestSelfServiceCredentials(t *testing.T) {
+	h := newHarness(t)
+	h.adminCall("POST", "/v1/admin/users", map[string]any{"username": "dana"})
+	h.adminCall("POST", "/v1/admin/users/dana/bindings", map[string]any{"method": "password", "fields": map[string]string{"password": "hunter2hunter2"}})
+	h.adminCall("POST", "/v1/admin/users", map[string]any{"username": "sam"})
+	c := h.client(nil)
+	jar := map[string]string{}
+	do := func(method, path string, body any) (int, map[string]any) {
+		req, _ := jsonReq(method, h.ts.URL+path, body)
+		if v, ok := jar["rostor_session"]; ok {
+			req.AddCookie(&http.Cookie{Name: "rostor_session", Value: v})
+		}
+		req.Header.Set("X-Requested-With", "rostor-console")
+		resp, err := c.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		for _, ck := range resp.Cookies() {
+			jar[ck.Name] = ck.Value
+		}
+		out := map[string]any{}
+		_ = json.NewDecoder(resp.Body).Decode(&out)
+		return resp.StatusCode, out
+	}
+	do("POST", "/v1/auth/login", map[string]any{"identifier": "dana", "fields": map[string]string{"password": "hunter2hunter2"}})
+	// dana holds no admin role at all...
+	if st, _ := do("GET", "/v1/admin/users", nil); st != 403 {
+		t.Fatalf("non-admin list should be 403, got %d", st)
+	}
+	// ...but may read her own record and register her own badge.
+	if st, _ := do("GET", "/v1/admin/users/dana", nil); st != 200 {
+		t.Fatalf("own record: %d", st)
+	}
+	st, b := do("POST", "/v1/admin/users/dana/bindings", map[string]any{"method": "badge", "fields": map[string]string{"number": "4857726", "pin": "1357"}})
+	if st != 201 {
+		t.Fatalf("own badge: %d %v", st, b)
+	}
+	// Not someone else's.
+	if st, _ := do("POST", "/v1/admin/users/sam/bindings", map[string]any{"method": "badge", "fields": map[string]string{"number": "1111111"}}); st != 403 {
+		t.Fatalf("other's badge should be 403, got %d", st)
+	}
+	if st, _ := do("GET", "/v1/admin/users/sam", nil); st != 403 {
+		t.Fatalf("other's record should be 403, got %d", st)
+	}
+	// Revoking her own badge works; revoking through another person's path does not.
+	if st, _ := do("DELETE", "/v1/admin/users/sam/bindings/"+b["id"].(string), nil); st == 204 {
+		t.Fatal("revoke via another person's path succeeded")
+	}
+	if st, _ := do("DELETE", "/v1/admin/users/dana/bindings/"+b["id"].(string), nil); st != 204 {
+		t.Fatalf("own revoke: %d", st)
+	}
 }

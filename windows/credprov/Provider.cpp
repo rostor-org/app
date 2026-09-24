@@ -95,14 +95,7 @@ IFACEMETHODIMP CRostorProvider::GetFieldDescriptorCount(DWORD* pdwCount)
 IFACEMETHODIMP CRostorProvider::GetFieldDescriptorAt(DWORD dwIndex, CREDENTIAL_PROVIDER_FIELD_DESCRIPTOR** ppcpfd)
 {
     if (dwIndex >= SFI_NUM_FIELDS || !ppcpfd) return E_INVALIDARG;
-    PCWSTR label = L"";
-    switch (dwIndex)
-    {
-    case SFI_USERNAME: label = _ui.username_label.c_str(); break;
-    case SFI_PASSWORD: label = _ui.password_label.c_str(); break;
-    case SFI_SUBMIT:   label = _ui.submit_label.c_str(); break;
-    }
-    return FieldDescriptorCoAllocCopy(s_rgFieldDescriptors[dwIndex], label, ppcpfd);
+    return FieldDescriptorCoAllocCopy(s_rgFieldDescriptors[dwIndex], FieldLabel(_ui, dwIndex), ppcpfd);
 }
 
 IFACEMETHODIMP CRostorProvider::GetCredentialCount(DWORD* pdwCount, DWORD* pdwDefault, BOOL* pbAutoLogonWithDefault)

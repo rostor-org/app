@@ -42,7 +42,9 @@ Copy `rostor-agent.exe`, `RostorCredProv.dll`, `install.ps1` and
 
 ```powershell
 .\install.ps1                 # real core: enroll first (below), then install
-.\install.ps1 -MockCore       # development: identifier "testuser" is ALLOWed with any secret
+.\install.ps1 -MockCore       # development: identifier "testuser" is ALLOWed with any secret;
+                              # badge 1234567890 → ALLOW as testuser, 5555555555 → needs PIN 2468,
+                              # any other badge → auth.failed
 .\install.ps1 -SkipCredProv   # agent + service only
 ```
 
@@ -70,7 +72,8 @@ Uninstall:
 - Credprov log: `C:\ProgramData\Rostor\logs\credprov.log` (written by LogonUI as SYSTEM)
 - Talk to the pipe as an elevated admin:
   `rostor-agent pipe-test --op ui`,
-  `rostor-agent pipe-test --op logon --identifier dan --secret ...`
+  `rostor-agent pipe-test --op logon --identifier dan --secret ...`,
+  `rostor-agent pipe-test --op logon --badge 5555555555 [--pin 2468]`
 - Foreground agent: stop the service, then `rostor-agent run [--mock-core]`.
 
 ## Verified so far (2026-09-22, Windows 10 Pro N 19045 VM, agent in `--mock-core`)
@@ -100,5 +103,27 @@ Uninstall:
   ProgramData; a second `install.ps1` restores everything. Pre-existing accounts
   and the built-in password provider untouched throughout.
 
+## Verified 2026-09-24 (badge + PIN, same VM, agent in `--mock-core`)
+
+- `pipe-test --op ui` now also returns `pin_label` and `badge_hint`;
+  `--badge 1234567890` → ALLOW as `testuser`; `--badge 5555555555` →
+  `{"ok":false,"code":"auth.continue","message":"Enter your PIN.","need":"pin"}`;
+  with `--pin 2468` → ALLOW; with `--pin 0000` or an unknown number → `auth.failed`.
+- `cp_test.exe <dll> --badge <number> <pin|-> expect-ok|expect-deny|expect-pin`
+  drives the DLL through the tap: six fields (a hidden `PIN` password field
+  was added), identifier label is the badge hint; a tap on `5555555555`
+  yields `CPGSR_NO_CREDENTIAL_NOT_FINISHED` + the agent's prompt, the secret
+  field hidden, the PIN field shown and focused, the submit button moved next
+  to it (checked through `ICredentialProviderCredentialEvents`), the number
+  kept; typing the PIN and submitting packs `testuser` exactly as the password
+  path does; a wrong PIN or unknown badge returns the tile to its initial
+  form with the identifier cleared. Password paths unchanged.
+- `install.ps1` was rerun without `-MockCore` afterwards; the service is back
+  on the real core, enrollment files untouched.
+
 Not yet verified: the interactive lock-screen tile itself (needs a console
-session), enrollment and Verify against a real core, `CPUS_UNLOCK_WORKSTATION`.
+session — in particular that LogonUI honours the focus move to the PIN field
+and that a reader burst lands in the identifier field without a click),
+badge Verify against a real core (the core deployed at ChattLab answered HTTP
+400 to a badge presentation at the time of writing, which the agent reports as
+`agent.core_unreachable`), `CPUS_UNLOCK_WORKSTATION`.

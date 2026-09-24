@@ -31,8 +31,9 @@ The local account is a derived artifact (like a card on a door controller):
 created and rotated by the agent, never managed by a human. Its secret is
 re-randomised on every successful logon and is never persisted anywhere.
 
-Out of scope for the PoC (explicitly): cached/offline logon, badge+PIN (planned;
-it is another credential type in the same `Verify` call), Windows 11 validation.
+Out of scope for the PoC (explicitly): cached/offline logon, Windows 11
+validation. Badge and badge+PIN sign-in is in (§2.3); it is another credential
+type in the same `Verify` call.
 
 Two Windows 10 facts the implementation depends on, learned the hard way:
 (1) a provider whose credentials implement `ICredentialProviderCredential2`
@@ -110,8 +111,13 @@ Reason codes the agent must understand (others are passed through as text):
 | `grant.none` | authenticated but no `logon` grant on this workstation | return text |
 | `device.not_trusted` | the calling device is quarantined/retired | return text |
 
-The `password` credential type is the PoC path. A later `{"type":"badge","uid":"…","pin":"…"}`
-presentation uses this same endpoint unchanged.
+The `password` credential type is the PoC path. A badge presentation
+`{"type":"badge","number":"<digits as typed by a reader>","pin":"<optional>"}`
+uses this same endpoint (other forms: `uid`, `facility`+`card`; see
+`console-api.md`, "Passkeys and badges"). One more decision exists for it:
+`{"decision":"CONTINUE","reason":[{"code":"auth.continue","params":{"need":"pin"}}],"message":"Enter your PIN."}`
+— the card matched but is PIN-protected and no PIN was sent. Nothing has been
+allowed or denied; the caller collects the PIN and repeats the request with it.
 
 ### 1.3 Heartbeat / posture (agent, periodic)
 
@@ -140,8 +146,12 @@ Reply:
 {"ok": true,
  "strings": {"tile_label": "Rostor", "username_label": "Username",
              "password_label": "Password", "submit_label": "Sign in",
-             "connecting": "Contacting Rostor…"}}
+             "connecting": "Contacting Rostor…",
+             "pin_label": "PIN", "badge_hint": "Tap your badge or type your username"}}
 ```
+`badge_hint` is the cue text of the identifier field (LogonUI shows an edit
+field's label as its watermark); `pin_label` labels the PIN field that appears
+after a badge tap answered `auth.continue` (§2.3).
 The credprov has **no** English literals of its own; every visible word comes
 from this reply (spec §0.2, no hardcoded user-facing strings). If the agent is
 unreachable the credprov shows its tile with empty labels and reports
@@ -167,6 +177,44 @@ The credprov shows `message` verbatim via `ICredentialProviderCredential::Report
 
 Agent-local codes: `agent.core_unreachable`, `agent.not_enrolled`,
 `agent.local_account_failed`, `agent.timeout`.
+
+### 2.3 `logon` with a badge — tap, then PIN if asked
+
+A USB keyboard-wedge reader types the card number as digits and ends with
+Enter. The credprov has no reader driver: a submit whose identifier field is
+digits only (six or more) with an empty secret is treated as a tap and sent as
+a badge instead of a password.
+
+Request (tap):
+```json
+{"op":"logon","badge":{"number":"5555555555"},"locale":"en-US"}
+```
+Reply on ALLOW and on DENY: exactly as §2.2. One more reply exists:
+```json
+{"ok": false, "code": "auth.continue", "message": "Enter your PIN.", "need": "pin"}
+```
+It mirrors core's `CONTINUE` decision: the card is known but PIN-protected.
+The credprov keeps the number, switches the tile into PIN mode (secret field
+hidden, PIN field shown and focused, submit next to it, `message` in the
+large text) and on the next submit repeats the request with the PIN:
+```json
+{"op":"logon","badge":{"number":"5555555555","pin":"2468"},"locale":"en-US"}
+```
+On ALLOW the local credential is packed exactly as on the password path. On
+any failure the tile returns to its initial form with the identifier cleared.
+The agent calls core `Verify` with `{"type":"badge","number":…,"pin":…}` and
+never touches a local account on `CONTINUE`; a badge denial with
+`principal.suspended`/`principal.not_active` also leaves local accounts alone
+because the reply names no username.
+
+Tapping while the tile is not selected: Rostor is the default tile on the
+"Other user" form and its identifier field is `CPFIS_FOCUSED`, so on a machine
+with `dontdisplaylastusername` set the reader's keystrokes land in that field
+without a click. Limits: the lock-screen curtain must already be dismissed
+(the first keystroke of a burst only lifts it and the rest is lost — tap
+again); if the person has switched to another tile (e.g. the local password
+tile under Sign-in options) the burst goes there; and LogonUI ignores input
+while a serialization is in flight.
 
 ---
 

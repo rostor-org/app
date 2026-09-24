@@ -126,5 +126,7 @@ bool PipeFetchUi(UiStrings& out)
     out.password_label = Utf8ToWide(reply["strings.password_label"]);
     out.submit_label   = Utf8ToWide(reply["strings.submit_label"]);
     out.connecting     = Utf8ToWide(reply["strings.connecting"]);
+    out.pin_label      = Utf8ToWide(reply["strings.pin_label"]);
+    out.badge_hint     = Utf8ToWide(reply["strings.badge_hint"]);
     return true;
 }

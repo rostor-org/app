@@ -20,7 +20,14 @@ export function Drawer({ open, onClose, labelCode, title, subtitle, children }: 
     if (!open) return
     returnTo.current = document.activeElement
     ref.current?.focus({ preventScroll: true })
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); onClose() } }
+    // Only the topmost open drawer answers Escape, so a drawer stacked over
+    // another (register badge over the person panel) closes one at a time.
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      const open = document.querySelectorAll('.drawer.open')
+      if (open.length && open[open.length - 1] !== ref.current) return
+      e.stopPropagation(); onClose()
+    }
     document.addEventListener('keydown', onKey)
     return () => {
       document.removeEventListener('keydown', onKey)

@@ -32,3 +32,15 @@ export const IconPlugins = () => (
 export const IconSystem = () => (
   <svg {...P}><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" strokeWidth="1.8" /><circle cx="8" cy="8" r="2" fill="currentColor" /></svg>
 )
+/** Passkey (a key). */
+export const IconKey = () => (
+  <svg {...P}><circle cx="5.5" cy="8" r="3.2" fill="none" stroke="currentColor" strokeWidth="1.8" /><path d="M8.5 8h6M12 8v3M14.5 8v2" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" /></svg>
+)
+/** Badge (a card). */
+export const IconCard = () => (
+  <svg {...P}><rect x="1.5" y="3.5" width="13" height="9" rx="1.5" fill="none" stroke="currentColor" strokeWidth="1.6" /><rect x="3.5" y="6" width="3.5" height="2.6" rx=".5" fill="currentColor" /><path d="M9 7h3.5M9 9.5h3.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" /></svg>
+)
+/** Password (masked characters). */
+export const IconPassword = () => (
+  <svg {...P}><circle cx="4" cy="8" r="1.6" fill="currentColor" /><circle cx="8" cy="8" r="1.6" fill="currentColor" /><circle cx="12" cy="8" r="1.6" fill="currentColor" /></svg>
+)

@@ -1,7 +1,7 @@
 import type {
-  Api, ApiErrorBody, AuditPage, AuditQuery, AuditVerify, Binding, Brand, Catalog, Device,
+  Api, ApiErrorBody, AuditPage, AuditQuery, AuditVerify, AuthSettings, Binding, Brand, Catalog, CreationOptionsJSON, Device,
   EnrollmentToken, Explanation, Grant, Group, GroupDetail, List, LiveHandlers,
-  LoginRequest, LoginResponse, Plugin, Principal, Session, Summary, SystemInfo, UpdateState,
+  LoginRequest, LoginResponse, PasskeyCeremony, Plugin, Principal, RequestOptionsJSON, Session, Summary, SystemInfo, UpdateState,
   User, UserDetail, WhyQuery,
 } from './types'
 
@@ -61,6 +61,10 @@ export function createHttpApi(opts: ClientOptions = {}): Api {
     login: (req: LoginRequest) => call<LoginResponse>('POST', '/v1/auth/login', req),
     session: () => call<Session | null>('GET', '/v1/auth/session', undefined, true),
     logout: () => call<void>('POST', '/v1/auth/logout'),
+    passkeyRegisterBegin: () => call<PasskeyCeremony<CreationOptionsJSON>>('POST', '/v1/auth/passkeys/register/begin'),
+    passkeyRegisterFinish: (body) => call<Binding>('POST', '/v1/auth/passkeys/register/finish', body),
+    passkeyLoginBegin: (body = {}) => call<PasskeyCeremony<RequestOptionsJSON>>('POST', '/v1/auth/login/passkey/begin', body),
+    passkeyLoginFinish: (body) => call<LoginResponse>('POST', '/v1/auth/login/passkey/finish', body),
 
     summary: () => call<Summary>('GET', '/v1/admin/summary'),
     users: (q) => call<List<User>>('GET', `/v1/admin/users${qs({ q })}`),
@@ -84,9 +88,12 @@ export function createHttpApi(opts: ClientOptions = {}): Api {
     auditVerify: () => call<AuditVerify>('GET', '/v1/admin/audit/verify'),
     why: (q: WhyQuery) => call<Explanation>('GET', `/v1/admin/why${qs({ ...q })}`),
     updates: () => call<UpdateState>('GET', '/v1/admin/updates'),
+    checkUpdates: () => call<UpdateState>('POST', '/v1/admin/updates/check'),
     applyUpdate: () => call<UpdateState>('POST', '/v1/admin/updates/apply'),
     system: () => call<SystemInfo>('GET', '/v1/admin/system'),
     plugins: () => call<List<Plugin>>('GET', '/v1/admin/plugins'),
+    authSettings: () => call<AuthSettings>('GET', '/v1/admin/settings/auth'),
+    setAuthSettings: (body) => call<AuthSettings>('PUT', '/v1/admin/settings/auth', body),
 
     stream: (h, lastEventId) => openStream(base + '/v1/events/stream', h, lastEventId, opts.onUnauthorized),
   }

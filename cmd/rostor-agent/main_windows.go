@@ -37,14 +37,15 @@ const usage = `usage: rostor-agent <command> [flags]
 
 commands:
   run               run the agent (as a service when started by SCM, else in the foreground)
-                    flags: --mock-core   ALLOW identifier "testuser" with any secret, no core
+                    flags: --mock-core   no core: identifier "testuser" (any secret) and badge
+                                       1234567890 ALLOW; badge 5555555555 needs PIN 2468
   enroll            enroll this device with core
                     flags: --core-url URL --token TOKEN [--ca-file PATH] [--insecure]
   install-service   register and start the RostorAgent service
                     flags: [--mock-core]
   uninstall-service stop and remove the RostorAgent service
   pipe-test         send one request to the agent pipe and print the reply
-                    flags: --op ui|logon [--identifier ID] [--secret S] [--locale L]
+                    flags: --op ui|logon [--identifier ID --secret S | --badge N [--pin P]] [--locale L]
   version           print the agent version
 `
 
@@ -322,11 +323,16 @@ func cmdPipeTest(args []string) error {
 	op := fs.String("op", "ui", "ui or logon")
 	identifier := fs.String("identifier", "", "identifier for logon")
 	secret := fs.String("secret", "", "secret for logon")
+	badge := fs.String("badge", "", "badge number for a badge logon (instead of identifier/secret)")
+	pin := fs.String("pin", "", "PIN to send with --badge")
 	locale := fs.String("locale", "en-US", "locale")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	req := pipeproto.Request{Op: *op, Locale: *locale, Identifier: *identifier, Secret: *secret}
+	if *badge != "" {
+		req.Badge = &pipeproto.Badge{Number: *badge, PIN: *pin}
+	}
 	started := time.Now()
 	rep, err := pipe.Call(paths.PipeName, req, 10*time.Second)
 	if err != nil {

@@ -1,6 +1,6 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useId, useRef, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { api, type SystemInfo } from '../api'
+import { api, type AuthSettings, type SystemInfo } from '../api'
 import { useT } from '../i18n/catalog'
 import { useSession } from '../auth/session'
 import { useFormat } from '../lib/format'
@@ -17,9 +17,9 @@ export function System() {
   const upd = useQuery({ queryKey: ['updates'], queryFn: () => api.updates(), enabled: can('updates.read') })
   const u = upd.data
 
-  // "Check now" is a refetch of GET /v1/admin/updates; report what changed.
+  // "Check now" asks the server to fetch the channel (POST /v1/admin/updates/check); report what changed.
   const check = useMutation({
-    mutationFn: () => api.updates(),
+    mutationFn: () => api.checkUpdates(),
     onSuccess: (s) => {
       qc.setQueryData(['updates'], s)
       toast(s.available ? t('ui.updates.available_toast', { version: s.available }) : t('ui.updates.none_toast'))
@@ -98,8 +98,88 @@ export function System() {
           <h3>{t('ui.system.profile')}</h3>
           {sys.data && <p><b>{t(`ui.system.profile.${sys.data.profile}`)}</b></p>}
         </div>
+        {can('system.read') && <SignInSettings canWrite={can('policies.write')} />}
       </div>
     </section>
+  )
+}
+
+/**
+ * Tenant sign-in settings: the WebAuthn relying party. Changing the domain
+ * orphans every passkey registered under the old one, so with passkeys
+ * enrolled the new domain must be typed back to confirm.
+ */
+function SignInSettings({ canWrite }: { canWrite: boolean }) {
+  const t = useT()
+  const f = useFormat()
+  const qc = useQueryClient()
+  const toast = useToast()
+  const ids = { rp: useId(), name: useId(), origins: useId(), confirm: useId() }
+  const q = useQuery({ queryKey: ['auth-settings'], queryFn: () => api.authSettings() })
+  const [form, setForm] = useState<{ rp_id: string; display_name: string; origins: string } | null>(null)
+  const [confirm, setConfirm] = useState('')
+  const saved = q.data?.webauthn
+  // Edit a copy; the query stays the source of truth until save.
+  const cur = form ?? (saved ? { rp_id: saved.rp_id, display_name: saved.display_name, origins: saved.origins.join('\n') } : null)
+  const enrolled = saved?.enrolled_passkeys ?? 0
+  const rpChanged = !!saved && !!cur && cur.rp_id.trim().toLowerCase() !== saved.rp_id
+  const needConfirm = rpChanged && enrolled > 0
+  const dirty = !!saved && !!cur && (rpChanged || cur.display_name !== saved.display_name || cur.origins !== saved.origins.join('\n'))
+  // Type the new domain back; when the domain is being cleared, the old one.
+  const confirmWord = (cur?.rp_id.trim().toLowerCase() || saved?.rp_id) ?? ''
+  const confirmed = !needConfirm || confirm.trim().toLowerCase() === confirmWord
+
+  const save = useMutation({
+    mutationFn: (body: AuthSettings['webauthn']) => api.setAuthSettings({ webauthn: { rp_id: body.rp_id, display_name: body.display_name, origins: body.origins } }),
+    onSuccess: (s) => { qc.setQueryData(['auth-settings'], s); setForm(null); setConfirm(''); toast(t('ui.signin.saved_toast')) },
+  })
+  const submit = (e: FormEvent) => {
+    e.preventDefault()
+    if (!cur || !confirmed) return
+    save.mutate({ rp_id: cur.rp_id.trim().toLowerCase(), display_name: cur.display_name.trim(), origins: cur.origins.split(/\r?\n/).map((o) => o.trim()).filter(Boolean), enrolled_passkeys: enrolled })
+  }
+  const set = (k: 'rp_id' | 'display_name' | 'origins') => (e: { target: { value: string } }) => { if (cur) setForm({ ...cur, [k]: e.target.value }) }
+
+  return (
+    <div className="card">
+      <h3>{t('ui.signin.title')}</h3>
+      <p>{t('ui.signin.note')}</p>
+      <ErrorNote error={q.error ?? save.error} />
+      {cur && (
+        <form onSubmit={submit}>
+          <div className="field">
+            <label htmlFor={ids.rp}>{t('ui.signin.rp_id')}</label>
+            <input id={ids.rp} className="input mono" value={cur.rp_id} onChange={set('rp_id')} readOnly={!canWrite} autoComplete="off" autoCapitalize="none" spellCheck={false} />
+            <small className="muted">{t('ui.signin.rp_id_hint')}</small>
+          </div>
+          <div className="field">
+            <label htmlFor={ids.name}>{t('ui.signin.display_name')}</label>
+            <input id={ids.name} className="input" value={cur.display_name} onChange={set('display_name')} readOnly={!canWrite} autoComplete="off" />
+          </div>
+          <div className="field">
+            <label htmlFor={ids.origins}>{t('ui.signin.origins')}</label>
+            <textarea id={ids.origins} className="input mono" rows={3} value={cur.origins} onChange={set('origins')} readOnly={!canWrite} spellCheck={false} />
+            <small className="muted">{t('ui.signin.origins_hint')}</small>
+          </div>
+          {needConfirm && (
+            <div className="field">
+              <p className="form-error" role="alert">{t('ui.signin.rp_id_warning', { n: f.int(enrolled) })}</p>
+              <label htmlFor={ids.confirm} style={{ marginTop: 10 }}>{t('ui.signin.rp_id_confirm', { rp_id: confirmWord })}</label>
+              <input id={ids.confirm} className="input mono" value={confirm} onChange={(e) => setConfirm(e.target.value)} autoComplete="off" autoCapitalize="none" spellCheck={false} />
+            </div>
+          )}
+          <div className="row">
+            <span className="muted">{t('ui.signin.enrolled', { n: f.int(enrolled) })}</span>
+            {canWrite && (
+              <span className="actions">
+                {dirty && <button type="button" className="btn quiet" disabled={save.isPending} onClick={() => { setForm(null); setConfirm('') }}>{t('ui.common.cancel')}</button>}
+                <button type="submit" className="btn primary" disabled={!dirty || !confirmed || save.isPending}>{t(save.isPending ? 'ui.common.working' : 'ui.common.save')}</button>
+              </span>
+            )}
+          </div>
+        </form>
+      )}
+    </div>
   )
 }
 

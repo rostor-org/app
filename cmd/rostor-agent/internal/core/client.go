@@ -79,7 +79,7 @@ func (c *Client) Verify(ctx context.Context, req VerifyRequest) (*VerifyResponse
 		// infrastructure problem the person cannot fix from the lock screen.
 		return nil, fmt.Errorf("%w: verify returned HTTP %d", ErrUnreachable, status)
 	}
-	if out.Decision != "ALLOW" && out.Decision != "DENY" {
+	if out.Decision != DecisionAllow && out.Decision != DecisionDeny && out.Decision != DecisionContinue {
 		return nil, fmt.Errorf("%w: verify returned decision %q", ErrUnreachable, out.Decision)
 	}
 	return &out, nil

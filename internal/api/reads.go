@@ -447,6 +447,14 @@ func (s *Server) handlePlugins(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleRevokeBinding(w http.ResponseWriter, r *http.Request) {
 	err := s.tx(r, func(tx pgx.Tx) error {
+		p, err := s.resolveUser(r, tx, r.PathValue("id"))
+		if err != nil {
+			return err
+		}
+		var owner string
+		if err := tx.QueryRow(r.Context(), `SELECT principal_id FROM authenticator_bindings WHERE tenant_id=$1 AND id=$2`, s.TenantID, r.PathValue("bid")).Scan(&owner); err != nil || owner != p.ID {
+			return directory.Err("request.not_found", "type", "binding")
+		}
 		return s.Auth.RevokeBinding(r.Context(), tx, s.TenantID, actorOf(r), r.PathValue("bid"))
 	})
 	if err != nil {

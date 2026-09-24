@@ -1,7 +1,7 @@
 // In-memory implementation of the console API for development without the
 // backend (VITE_MOCK=1 or ?mock=1). Data mirrors the approved mockup.
 import type {
-  Api, AuditRow, Device, Explanation, Grant, Group, GroupDetail, LiveEvent, LiveHandlers,
+  Api, AuditRow, AuthSettings, Device, Explanation, Grant, Group, GroupDetail, LiveEvent, LiveHandlers, LoginOK, LoginResponse,
   LiveState, Member, Plugin, Session, Summary, SystemInfo, UpdateState, User, UserDetail, Binding, Reason,
 } from './types'
 import catalogEn from '../../catalog.en.json'
@@ -43,16 +43,34 @@ const users: User[] = [
 ]
 
 const bindings: Record<string, Binding[]> = {
-  usr_f40101ae: [{ id: 'bnd_01', method: 'password', properties: ['knowledge'], label: 'Password', created_at: today(9, 2), last_used_at: today(13, 59), state: 'active' }],
+  usr_f40101ae: [{ id: 'bnd_01', method: 'password', properties: ['knowledge'], label: 'Password', assurance: 'AL1', created_at: today(9, 2), last_used_at: today(13, 59), state: 'active' }],
   usr_9b2c11d0: [
-    { id: 'bnd_02', method: 'badge', properties: ['possession'], label: 'Badge 0004A1F3', created_at: daysAgo(40, 11, 0), last_used_at: daysAgo(1, 19, 12), state: 'active' },
-    { id: 'bnd_03', method: 'password', properties: ['knowledge'], label: 'Password', created_at: daysAgo(40, 11, 5), last_used_at: daysAgo(3, 8, 30), state: 'active' },
+    { id: 'bnd_02', method: 'badge', properties: ['possession', 'knowledge', 'multi_factor'], label: 'Badge 0004A1F3', assurance: 'AL2', created_at: daysAgo(40, 11, 0), last_used_at: daysAgo(1, 19, 12), state: 'active' },
+    { id: 'bnd_03', method: 'password', properties: ['knowledge'], label: 'Password', assurance: 'AL1', created_at: daysAgo(40, 11, 5), last_used_at: daysAgo(3, 8, 30), state: 'active' },
   ],
-  usr_41aa72ef: [{ id: 'bnd_04', method: 'badge', properties: ['possession'], label: 'Badge 0004A1D9', created_at: daysAgo(90, 12, 0), last_used_at: daysAgo(8, 10, 5), state: 'active' }],
-  usr_c0de5a19: [{ id: 'bnd_05', method: 'badge', properties: ['possession'], label: 'Badge 0004A211', created_at: daysAgo(12, 12, 0), last_used_at: daysAgo(2, 16, 40), state: 'active' }],
+  usr_41aa72ef: [{ id: 'bnd_04', method: 'badge', properties: ['possession'], label: 'Badge 0004A1D9', assurance: 'AL1', created_at: daysAgo(90, 12, 0), last_used_at: daysAgo(8, 10, 5), state: 'active' }],
+  usr_c0de5a19: [{ id: 'bnd_05', method: 'badge', properties: ['possession'], label: 'Badge 0004A211', assurance: 'AL1', created_at: daysAgo(12, 12, 0), last_used_at: daysAgo(2, 16, 40), state: 'active' }],
   usr_77f1b3c2: [],
-  svc_3e9a0c44: [{ id: 'bnd_06', method: 'api_token', properties: ['possession'], label: 'API token', created_at: daysAgo(5, 9, 0), last_used_at: today(14, 20), state: 'active' }],
+  svc_3e9a0c44: [{ id: 'bnd_06', method: 'api_token', properties: ['possession'], label: 'API token', assurance: 'AL1', created_at: daysAgo(5, 9, 0), last_used_at: today(14, 20), state: 'active' }],
 }
+
+// Card number (as a reader types it) → binding. Dana's card has a PIN, so
+// badge sign-in without one answers auth.continue, like the server.
+const badges: Record<string, { user: string; binding: string; pin?: string }> = {
+  '0004A1F3': { user: 'usr_9b2c11d0', binding: 'bnd_02', pin: '1234' },
+  '0004A1D9': { user: 'usr_41aa72ef', binding: 'bnd_04' },
+  '0004A211': { user: 'usr_c0de5a19', binding: 'bnd_05' },
+}
+
+// Tenant sign-in settings (the tenant-wide auth policy). enrolled_passkeys is
+// derived from the bindings.
+let webauthn = { rp_id: 'localhost', display_name: 'ChattLab', origins: ['https://localhost:5173'] }
+const enrolledPasskeys = () => Object.values(bindings).flat().filter((b) => b.method === 'webauthn' && b.state === 'active').length
+const authSettings = (): AuthSettings => ({ webauthn: { ...webauthn, origins: [...webauthn.origins], enrolled_passkeys: enrolledPasskeys() } })
+
+// Pending passkey ceremonies: id → the principal it was begun for ('' = discoverable).
+const ceremonies = new Map<string, string>()
+const b64url = (n: number) => { const a = crypto.getRandomValues(new Uint8Array(n)); let s = ''; for (const b of a) s += String.fromCharCode(b); return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '') }
 
 const groups: Group[] = [
   { id: 'grp_members', name: 'members', display_name: 'Current dues-paying members', kind: 'static', member_count: 124, grant_count: 3 },
@@ -108,6 +126,7 @@ function append(actor: string, action: string, target: string, credential_type: 
 
 let updateState: UpdateState = { channel: 'stable', current: 'v0.1.0', checked_at: today(14, 32), apply_requested: false, notes: 'First appliance release.' }
 let updateChecks = 0
+const UPDATE_NOTES = 'Console: passkeys, badges, sign-in settings; agent: badge+PIN.'
 
 const system: SystemInfo = {
   version: 'v0.1.0', tenant: { id: 'tnt_chattlab', name: 'ChattLab' },
@@ -201,19 +220,67 @@ export function createMockApi(_opts: { onUnauthorized?: () => void } = {}): Api 
     async brand() { await delay(20); return { tenant_name: 'ChattLab', tokens: { ink: '#14161a', paper: '#f4f2ee', signal: '#e07a24' } } },
     async login(req) {
       await delay(400)
-      const u = users.find((x) => x.username === req.identifier)
       if (failedAttempts >= 5) return { code: 'auth.locked', params: { minutes: 15 }, message: 'Too many failed attempts. Try again in 15 minutes.' }
+      if (req.method === 'badge') {
+        const card = badges[req.fields.number.trim().toUpperCase()]
+        const u = card && byId(card.user)
+        if (!u) { failedAttempts++; return { code: 'auth.failed', params: {}, message: 'Sign-in failed.' } }
+        if (card.pin && !req.fields.pin) return { code: 'auth.continue', params: { need: 'pin' }, message: serverCodes['auth.continue'] ?? '' }
+        if (card.pin && req.fields.pin !== card.pin) { failedAttempts++; return { code: 'auth.failed', params: {}, message: 'Sign-in failed.' } }
+        return signIn(u, 'badge', card.pin ? 'AL2' : 'AL1')
+      }
+      const u = users.find((x) => x.username === req.identifier)
       if (!u || req.fields.password !== 'demo') { failedAttempts++; return { code: 'auth.failed', params: {}, message: 'Sign-in failed.' } }
-      if (u.state !== 'active') return { code: 'principal.suspended', params: {}, message: 'This account is suspended.' }
-      failedAttempts = 0
-      session = { principal: { id: u.id, kind: u.kind, username: u.username, display_name: u.display_name, state: u.state }, assurance: 'AL1',
-        permissions: u.username === 'dan' ? ['*'] : ['users.read', 'audit.read', 'authz.read', 'updates.read'] }
-      saveSession(session)
-      append(`user:${u.id}`, 'session.create', `principal:${u.id}`, 'password', 'AL1', 'allow', { identifier: u.username, client: 'console' })
-      return { principal: session.principal, assurance: 'AL1', expires_at: iso(Date.now() + 8 * hour) }
+      return signIn(u, 'password', 'AL1')
     },
     async session() { await delay(60); return session ? clone(session) : null },
     async logout() { await delay(60); session = null; saveSession(null) },
+
+    async passkeyRegisterBegin() {
+      await delay(150)
+      if (!session) throw mockErr(401, 'request.unauthorized')
+      if (!webauthn.rp_id) throw mockErr(400, 'auth.passkeys_unconfigured', {})
+      const id = 'cer_' + Math.random().toString(16).slice(2, 10)
+      ceremonies.set(id, session.principal.id)
+      const exclude = (bindings[session.principal.id] ?? []).filter((b) => b.method === 'webauthn').map(() => ({ type: 'public-key' as const, id: b64url(16) }))
+      return { ceremony_id: id, options: { publicKey: {
+        rp: { id: webauthn.rp_id, name: webauthn.display_name }, user: { id: b64url(16), name: session.principal.username ?? '', displayName: String(session.principal.display_name ?? '') },
+        challenge: b64url(32), pubKeyCredParams: [{ type: 'public-key', alg: -7 }, { type: 'public-key', alg: -257 }], timeout: 60_000,
+        authenticatorSelection: { residentKey: 'preferred', userVerification: 'preferred' }, excludeCredentials: exclude, attestation: 'none',
+      } } }
+    },
+    async passkeyRegisterFinish(body) {
+      await delay(250)
+      const pid = ceremonies.get(body.ceremony_id)
+      ceremonies.delete(body.ceremony_id)
+      if (!session || pid !== session.principal.id) throw mockErr(400, 'auth.passkey_rejected', {})
+      const u = byId(pid)!
+      const b: Binding = { id: 'bnd_' + Math.random().toString(16).slice(2, 8), method: 'webauthn', properties: ['possession', 'phishing_resistant', 'multi_factor'],
+        label: body.label || 'Passkey', assurance: 'AL2', created_at: iso(Date.now()), last_used_at: null, state: 'active' }
+      bindings[u.id] = [...(bindings[u.id] ?? []), b]
+      u.methods = (bindings[u.id] ?? []).map((x) => ({ method: x.method, assurance: x.assurance ?? 'AL1' }))
+      append(`user:${u.id}`, 'binding.enroll', `principal:${u.id}`, 'session', 'AL1', 'ok', { method: 'webauthn', label: b.label, identifier: u.username })
+      emit('user.updated')
+      return clone(b)
+    },
+    async passkeyLoginBegin(body = {}) {
+      await delay(150)
+      if (!webauthn.rp_id) throw mockErr(400, 'auth.passkeys_unconfigured', {})
+      const id = 'cer_' + Math.random().toString(16).slice(2, 10)
+      const u = body.identifier ? users.find((x) => x.username === body.identifier) : undefined
+      ceremonies.set(id, u?.id ?? '')
+      const allow = u ? (bindings[u.id] ?? []).filter((b) => b.method === 'webauthn').map(() => ({ type: 'public-key' as const, id: b64url(16) })) : []
+      return { ceremony_id: id, options: { publicKey: { rpId: webauthn.rp_id, challenge: b64url(32), timeout: 60_000, userVerification: 'preferred', allowCredentials: allow } } }
+    },
+    async passkeyLoginFinish(body) {
+      await delay(300)
+      if (!ceremonies.has(body.ceremony_id)) return { code: 'auth.failed', params: {}, message: 'Sign-in failed.' }
+      const pid = ceremonies.get(body.ceremony_id) ?? ''
+      ceremonies.delete(body.ceremony_id)
+      // A discoverable assertion names the person through its user handle; the mock picks the admin.
+      const u = byId(pid) ?? byId('dan')!
+      return signIn(u, 'webauthn', 'AL2')
+    },
 
     async summary() { await delay(); return summary() },
     async users(q) { await delay(); const it = filter(users, q, (u) => `${u.display_name} ${u.username} ${u.groups.map((g) => g.name).join(' ')}`); return { items: clone(it), total: 130 } },
@@ -223,7 +290,8 @@ export function createMockApi(_opts: { onUnauthorized?: () => void } = {}): Api 
       if (!u) throw mockErr(404, 'request.not_found')
       const b = bindings[u.id] ?? []
       const recent = audit.filter((r) => r.actor.id === u.id || r.target.id === u.id || r.detail?.identifier === u.username).slice(0, 6)
-      const d: UserDetail = { ...clone(u), bindings: clone(b).map((x) => ({ ...x, assurance: 'AL1' })), effective_security: { assurance: b.length ? 'AL1' : 'AL0', bindings: b.length, recovery_paths: 0 }, recent: clone(recent) }
+      const top = b.some((x) => x.assurance === 'AL2') ? 'AL2' : b.length ? 'AL1' : 'AL0'
+      const d: UserDetail = { ...clone(u), bindings: clone(b).map((x) => ({ ...x, assurance: x.assurance ?? 'AL1' })), effective_security: { assurance: top, bindings: b.length, recovery_paths: 0 }, recent: clone(recent) }
       return d
     },
     async createUser(body) {
@@ -242,13 +310,26 @@ export function createMockApi(_opts: { onUnauthorized?: () => void } = {}): Api 
       const u = byId(id)
       if (!u) throw mockErr(404, 'request.not_found')
       if (body.method === 'password' && (body.fields['password'] ?? '').length < 8) throw mockErr(400, 'request.malformed', { field: 'password' })
-      const b: Binding = { id: 'bnd_' + Math.random().toString(16).slice(2, 8), method: body.method, properties: ['knowledge'], label: body.label || 'Password',
-        assurance: 'AL1', created_at: iso(Date.now()), last_used_at: null, state: 'active' }
-      bindings[u.id] = [...(bindings[u.id] ?? []).filter((x) => x.method !== body.method), b]
-      u.methods = (bindings[u.id] ?? []).map((x) => ({ method: x.method, assurance: 'AL1' }))
-      append(`user:${session?.principal.id ?? ''}`, 'binding.enroll', `principal:${u.id}`, 'session', 'AL1', 'ok', { method: body.method, identifier: u.username })
+      let b: Binding
+      if (body.method === 'badge') {
+        const number = (body.fields['number'] ?? body.fields['uid'] ?? body.fields['printed'] ?? '').trim().toUpperCase()
+        const pin = body.fields['pin']
+        if (!number) throw mockErr(400, 'request.malformed', { field: 'number' })
+        if (badges[number]) throw mockErr(409, 'request.conflict', { field: 'number' })
+        if (pin !== undefined && pin !== '' && !/^\d{4,}$/.test(pin)) throw mockErr(400, 'request.malformed', { field: 'pin' })
+        b = { id: 'bnd_' + Math.random().toString(16).slice(2, 8), method: 'badge', properties: pin ? ['possession', 'knowledge', 'multi_factor'] : ['possession'],
+          label: body.label || `Badge ${number}`, assurance: pin ? 'AL2' : 'AL1', created_at: iso(Date.now()), last_used_at: null, state: 'active' }
+        badges[number] = { user: u.id, binding: b.id, ...(pin ? { pin } : {}) }
+        bindings[u.id] = [...(bindings[u.id] ?? []), b]
+      } else {
+        b = { id: 'bnd_' + Math.random().toString(16).slice(2, 8), method: body.method, properties: ['knowledge'], label: body.label || 'Password',
+          assurance: 'AL1', created_at: iso(Date.now()), last_used_at: null, state: 'active' }
+        bindings[u.id] = [...(bindings[u.id] ?? []).filter((x) => x.method !== body.method), b]
+      }
+      u.methods = (bindings[u.id] ?? []).map((x) => ({ method: x.method, assurance: x.assurance ?? 'AL1' }))
+      append(`user:${session?.principal.id ?? ''}`, 'binding.enroll', `principal:${u.id}`, 'session', 'AL1', 'ok', { method: body.method, label: b.label, identifier: u.username })
       emit('user.updated')
-      return b
+      return clone(b)
     },
     async setUserState(id, state) {
       await delay(200)
@@ -264,7 +345,8 @@ export function createMockApi(_opts: { onUnauthorized?: () => void } = {}): Api 
       const u = byId(id)
       if (!u) throw mockErr(404, 'request.not_found')
       bindings[u.id] = (bindings[u.id] ?? []).filter((b) => b.id !== bid)
-      u.methods = (bindings[u.id] ?? []).map((b) => ({ method: b.method, assurance: 'AL1' }))
+      for (const [n, c] of Object.entries(badges)) if (c.binding === bid) delete badges[n]
+      u.methods = (bindings[u.id] ?? []).map((b) => ({ method: b.method, assurance: b.assurance ?? 'AL1' }))
       append(`user:${session?.principal.id ?? ''}`, 'binding.revoke', `principal:${u.id}`, 'session', 'AL1', 'ok', { binding: bid, identifier: u.username })
       emit('user.updated')
     },
@@ -356,14 +438,16 @@ export function createMockApi(_opts: { onUnauthorized?: () => void } = {}): Api 
       append(`user:${session?.principal.id ?? ''}`, 'why', `principal:${ex.principal}`, 'session', 'AL1', 'ok', { action: q.action, resource: ex.resource })
       return ex
     },
-    async updates() {
-      await delay(500)
+    async updates() { await delay(); return clone(updateState) },
+    async checkUpdates() {
+      await delay(700)
       updateChecks++
-      if (updateChecks > 1 && !updateState.available && updateState.current === 'v0.1.0') {
-        updateState = { ...updateState, available: 'v0.1.1', checked_at: iso(Date.now()), notes: 'Console: live audit, Why panel; agent: badge+PIN.' }
+      if (updateChecks === 1 && !updateState.available && updateState.current === 'v0.1.0') {
+        updateState = { ...updateState, available: 'v0.1.3', checked_at: iso(Date.now()), notes: UPDATE_NOTES }
       } else {
         updateState = { ...updateState, checked_at: iso(Date.now()) }
       }
+      emit('update.state')
       return clone(updateState)
     },
     async applyUpdate() {
@@ -374,7 +458,7 @@ export function createMockApi(_opts: { onUnauthorized?: () => void } = {}): Api 
       append(`user:${session?.principal.id ?? ''}`, 'update.apply_requested', `release:${target}`, 'session', 'AL1', 'ok', { from: updateState.current, to: target })
       setTimeout(() => { emit('update.state') }, 800)
       setTimeout(() => {
-        updateState = { channel: 'stable', current: target, applied_at: iso(Date.now()), checked_at: iso(Date.now()), apply_requested: false, notes: 'Console: live audit, Why panel; agent: badge+PIN.' }
+        updateState = { channel: 'stable', current: target, applied_at: iso(Date.now()), checked_at: iso(Date.now()), apply_requested: false, notes: UPDATE_NOTES }
         system.version = target
         append('system:updater', 'update.applied', `release:${target}`, '', '', 'ok', { channel: 'stable', signature: 'verified' })
         emit('update.state')
@@ -383,6 +467,17 @@ export function createMockApi(_opts: { onUnauthorized?: () => void } = {}): Api 
     },
     async system() { await delay(); return clone(system) },
     async plugins() { await delay(); return { items: clone(plugins), total: plugins.length } },
+    async authSettings() { await delay(); return authSettings() },
+    async setAuthSettings(body) {
+      await delay(300)
+      const rp_id = body.webauthn.rp_id.trim().toLowerCase()
+      if (rp_id.includes('/') || rp_id.includes(':')) throw mockErr(400, 'request.malformed', { field: 'webauthn.rp_id' })
+      const origins = body.webauthn.origins.map((o) => o.trim()).filter(Boolean)
+      if (origins.some((o) => !o.startsWith('https://'))) throw mockErr(400, 'request.malformed', { field: 'webauthn.origins' })
+      webauthn = { rp_id, display_name: body.webauthn.display_name.trim(), origins }
+      append(`user:${session?.principal.id ?? ''}`, 'policy.update', 'policy:tenant-auth', 'session', 'AL1', 'ok', { 'webauthn.rp_id': rp_id, 'webauthn.origins': origins })
+      return authSettings()
+    },
 
     stream(h, _lastEventId) {
       let state: LiveState = 'connecting'
@@ -393,10 +488,22 @@ export function createMockApi(_opts: { onUnauthorized?: () => void } = {}): Api 
   }
 }
 
+/** Mint the mock session for a person who just authenticated, or explain why not. */
+function signIn(u: User, method: string, assurance: string): LoginResponse {
+  if (u.state !== 'active') return { code: 'principal.suspended', params: {}, message: 'This account is suspended.' }
+  failedAttempts = 0
+  session = { principal: { id: u.id, kind: u.kind, username: u.username, display_name: u.display_name, state: u.state }, assurance,
+    permissions: u.username === 'dan' ? ['*'] : ['users.read', 'audit.read', 'authz.read', 'updates.read'] }
+  saveSession(session)
+  append(`user:${u.id}`, 'session.create', `principal:${u.id}`, method, assurance, 'allow', { identifier: u.username, client: 'console' })
+  const ok: LoginOK = { principal: session.principal, assurance, expires_at: iso(Date.now() + 8 * hour) }
+  return ok
+}
+
 function mockErr(status: number, code: string, params: Record<string, unknown> = {}) {
-  const e = new Error(code) as Error & { status: number; body: { code: string; params: Record<string, unknown> } }
+  const e = new Error(code) as Error & { status: number; body: { code: string; params: Record<string, unknown>; message?: string } }
   e.status = status
-  e.body = { code, params }
+  e.body = { code, params, message: serverCodes[code] }
   return e
 }
 
@@ -405,6 +512,12 @@ function mockErr(status: number, code: string, params: Record<string, unknown> =
 const serverCodes: Record<string, string> = {
   'auth.failed': 'Sign-in failed.',
   'auth.locked': 'Too many failed attempts. Try again in {minutes} minutes.',
+  'auth.continue': 'Enter your PIN to finish signing in.',
+  'auth.method_unavailable': 'That sign-in method is not available for this account.',
+  'auth.passkey_rejected': 'That passkey could not be registered.',
+  'auth.passkeys_unconfigured': 'Passkeys are not set up for this organisation yet.',
+  'request.malformed': 'The request could not be understood.',
+  'request.unauthorized': 'Authentication is required.',
   'principal.suspended': 'This account is suspended.',
   'principal.not_active': 'This account is not active.',
   'principal.not_found': 'No account matches that identifier.',
@@ -413,6 +526,6 @@ const serverCodes: Record<string, string> = {
   'grant.condition_failed': 'A condition on your access was not met.',
   'request.forbidden': 'You are not allowed to do that.',
   'request.not_found': 'Not found.',
-  'request.conflict': 'That already exists.',
+  'request.conflict': 'That is already registered.',
   'internal.error': 'Something went wrong on the server.',
 }

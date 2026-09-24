@@ -17,11 +17,20 @@ import (
 const MaxLine = 64 * 1024
 
 // Request is the client→agent message. Fields not relevant to an op are empty.
+// A logon carries either identifier+secret (password path) or badge (§2.3).
 type Request struct {
 	Op         string `json:"op"`
 	Locale     string `json:"locale,omitempty"`
 	Identifier string `json:"identifier,omitempty"`
 	Secret     string `json:"secret,omitempty"`
+	Badge      *Badge `json:"badge,omitempty"`
+}
+
+// Badge is a keyboard-wedge reader burst (the digits as typed) plus the PIN
+// the person adds when the agent answered auth.continue.
+type Badge struct {
+	Number string `json:"number"`
+	PIN    string `json:"pin,omitempty"`
 }
 
 // UIStrings are the display strings the credential provider renders (§2.1).
@@ -31,11 +40,14 @@ type UIStrings struct {
 	PasswordLabel string `json:"password_label"`
 	SubmitLabel   string `json:"submit_label"`
 	Connecting    string `json:"connecting"`
+	PinLabel      string `json:"pin_label"`
+	BadgeHint     string `json:"badge_hint"`
 }
 
-// Reply is the agent→client message. Exactly one of the three shapes in the
+// Reply is the agent→client message. Exactly one of the shapes in the
 // contract is populated; the omitempty tags keep the wire shape identical to
-// the contract examples.
+// the contract examples. Need is set only with code auth.continue and names
+// what the credential provider must collect next ("pin").
 type Reply struct {
 	OK          bool       `json:"ok"`
 	Strings     *UIStrings `json:"strings,omitempty"`
@@ -43,6 +55,7 @@ type Reply struct {
 	LocalSecret string     `json:"local_secret,omitempty"`
 	Code        string     `json:"code,omitempty"`
 	Message     string     `json:"message,omitempty"`
+	Need        string     `json:"need,omitempty"`
 }
 
 // ErrLineTooLong is returned when a frame exceeds MaxLine.
