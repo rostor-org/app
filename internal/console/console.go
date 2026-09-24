@@ -15,6 +15,12 @@ import (
 //go:embed all:dist
 var dist embed.FS
 
+// placeholder is served when no console build has been staged into dist/
+// (a `go build` straight from the repo). It says so plainly.
+//
+//go:embed placeholder.html
+var placeholder []byte
+
 // Handler returns the SPA handler: static assets by path, index.html for
 // anything else (client-side routing), never for /v1/.
 func Handler() http.Handler {
@@ -38,7 +44,13 @@ func Handler() http.Handler {
 			}
 		}
 		w.Header().Set("Cache-Control", "no-cache")
-		r.URL.Path = "/"
-		http.FileServer(files).ServeHTTP(w, r)
+		if f, err := sub.Open("index.html"); err == nil {
+			f.Close()
+			r.URL.Path = "/"
+			http.FileServer(files).ServeHTTP(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Write(placeholder)
 	})
 }

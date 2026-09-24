@@ -9,7 +9,7 @@ bin/
 windows/credprov/build/
 windows/credprov/x64/
 .DS_Store
-dist/
+/dist/
 console/node_modules/
 internal/console/dist/*
-!internal/console/dist/index.html
+!internal/console/dist/.gitkeep
