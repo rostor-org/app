@@ -1,24 +1,24 @@
 {
   "channel": "stable",
-  "version": "v0.5.0",
-  "published": "2026-09-24T18:50:11.070558Z",
-  "notes": "Certificate renewal and CA rotation (devices renew themselves; rotate and retire from System); Windows installer download from Devices, version-matched; console reloads itself after an update; upgrades verified from the oldest release.",
+  "version": "v0.5.1",
+  "published": "2026-09-24T19:00:33.636474Z",
+  "notes": "Access screen lists grants again (the list query was broken on every install); list failures now surface as errors instead of an empty page.",
   "files": {
     "agent-windows-amd64": {
-      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/586594289",
-      "sha256": "91c22e35e22163afd512a65d35a93c5962b7830444ffb04c95a1d97621ecc87b",
+      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/586612979",
+      "sha256": "b6df2e6efeef06fb0864f9af563415abaa851f4de551a196b3c63149287b805c",
       "size": 7870464
     },
     "linux-amd64": {
-      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/586594292",
-      "sha256": "a3022ff669323779d8f88761469fb7a55ef4962589c0c129c86ed4e0a588ccbc",
+      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/586612978",
+      "sha256": "dfdeeb18a531634a38bbf80fe9f996667b785e7742b3a7d86dbd3878497426a4",
       "size": 23920800
     },
     "linux-arm64": {
-      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/586594291",
-      "sha256": "a945704156991646e1985bdbcf51793d3bcb8fca8d3a787e9b829473bae91c86",
+      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/586612980",
+      "sha256": "dcb9b7806b813f390f2e28293ad5ca6ec065f4d1f2b3aca67b238fa7067a9c63",
       "size": 22544544
     }
   },
-  "signature": "Ca4+Q+ug3skRkCrSW60LnJ8/A5UQQ5HtNRHIdRotqpQhxnhKT60CTp7CK78BveWfwa5koWlEWPOm7jB5oZL7DQ=="
+  "signature": "soFGf4XIzRX9VBj510kelKFUqrh1PuuqXu4+/gkb8QLAioaetput4lYL9loAJyRUX8b1Omxgiq+CxJWrUFT0Ag=="
 }
