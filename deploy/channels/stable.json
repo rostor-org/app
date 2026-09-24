@@ -1,24 +1,24 @@
 {
   "channel": "stable",
-  "version": "v0.4.1",
-  "published": "2026-09-24T17:06:03.312463Z",
-  "notes": "Passkey sign-in failures are now explained in the server log; more sign-in tests.",
+  "version": "v0.4.2",
+  "published": "2026-09-24T17:16:27.281386Z",
+  "notes": "Badge sign-in is now Tap to access: no field to click, manual entry behind a link.",
   "files": {
     "agent-windows-amd64": {
-      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/586416282",
-      "sha256": "0dca6539d70a88c194dfe71ca080ea788429c84c9ab38fe6e387f5de74cdd96c",
+      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/586433613",
+      "sha256": "bd6db8e5b734416afeb9c4d4c0ba295dc74f042da992108fb63608a452c96dd1",
       "size": 7793152
     },
     "linux-amd64": {
-      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/586416287",
-      "sha256": "be815604bd873b6e315e3443db1d02f8a93e583e2d80bef9925fcb1507f5b04b",
+      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/586433614",
+      "sha256": "1a9f4bb824176f6fada4a48893a10b27067000b570fac7bf8c23395e53a704c1",
       "size": 23838880
     },
     "linux-arm64": {
-      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/586416286",
-      "sha256": "e651e4694ca6972f55f096167190e1907ff72c7046cd1a04e9f32887a619d8c8",
+      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/586433612",
+      "sha256": "bc2363089be72535bc98f51794eaba5dee01471d1bd5fbf88421a2113df9745e",
       "size": 22413472
     }
   },
-  "signature": "bh2HcN37G8Zogh1VhSI4iGwmLzs/lzn6ozbPYUr+Ui1bXXZOBHHdx3Q+wjklFeDjQlkJxZvItkL/+r19O0Y6AA=="
+  "signature": "rg600CrRAiv/wphR8F4sk+tNgv26ZSl7byRsp0QYKWj+ApU7GsZstZF0wgtFsjSVUcsFTO8M79x0ksUSjBC3CA=="
 }
