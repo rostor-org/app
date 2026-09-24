@@ -1,24 +1,24 @@
 {
   "channel": "stable",
-  "version": "v0.4.5",
-  "published": "2026-09-24T17:36:46.751345Z",
-  "notes": "Use passkey is offered on the Tap to access page as well.",
+  "version": "v0.4.6",
+  "published": "2026-09-24T18:24:28.925034Z",
+  "notes": "A person can no longer remove their only sign-in method; admins still can.",
   "files": {
     "agent-windows-amd64": {
-      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/586468653",
-      "sha256": "ff08d78f127b91229c4f49c4c7903479df637d7bfaea3010dcfdf6e6e311c215",
+      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/586551288",
+      "sha256": "65278d4db590ab0ff7a595a94be477e7dccad7abaec48e12e3dc349f66a93931",
       "size": 7793152
     },
     "linux-amd64": {
-      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/586468657",
-      "sha256": "41dcb5910771d5c68df6d5cc7a047371c085a3ac754bf5d2aaf59df14099a22f",
+      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/586551286",
+      "sha256": "a14ede3753511e99644741ff41fc94383460023245d14c37360b63b581526285",
       "size": 23838880
     },
     "linux-arm64": {
-      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/586468652",
-      "sha256": "9372a08b1f17b62bfd472e7ab46b58efd72a998cdfdfcb26721e2b6ba8795170",
+      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/586551285",
+      "sha256": "e76256506a851f59346d37dc633b64faa3c71d8f9bd6acfef76a253482da6127",
       "size": 22413472
     }
   },
-  "signature": "p+qZDAaKXpICeNoU8aGM/Il20YmHW5ii4FvD3xVvz4onbMPHW6/o7zGH1mfW/zwRS1lvTd6yni/n/PWyLJnqBw=="
+  "signature": "Fav6X4My4/5PwUaOuir6KNSMa3uLdgQRqQ5z/xlns1f/WforgNEiVs7YaWgp4fWrZczViXMiJDI4VWJc0bkzCw=="
 }
