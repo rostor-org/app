@@ -142,6 +142,28 @@ plugin registry, key rotation, policy counts on groups.
   type, whatever existing roles already use. `POST /v1/admin/roles`
   `{resource_type,name,permissions}` defines a role (roles.write) and is what
   the form's "New role…" calls before creating the grant.
+- Scripts (v0.9.0, SPEC-scripts). Permissions `scripts.read` and
+  `scripts.write`; every write additionally needs an AL2 session
+  (403 `request.assurance_required` `{required:"AL2"}` otherwise).
+  `GET /v1/admin/scripts` → `{items:[script], total}`, sorted by
+  `position`; script = `{id, name, description, language, position,
+  version, updated_at, updated_by:{id,name}, assignments:[{id,
+  target:{kind:"all"|"group", id, name}, mode:"immediate"|"signin"}],
+  last_run:{at, exit_code, status, device:{id,name}}|null}` (no body in
+  the list). `POST /v1/admin/scripts {name, description?, language?,
+  body}` → 201 script with `body`; `GET /v1/admin/scripts/{id}` → script
+  with `body` and `runs` (last 50, see below); `PUT /v1/admin/scripts/{id}
+  {name?, description?, body?}` → script (version increments when the body
+  changes); `DELETE /v1/admin/scripts/{id}` → 204; `PUT
+  /v1/admin/scripts/order {ids:[…]}` → 204 (positions follow the list).
+  `POST /v1/admin/scripts/{id}/assignments {target_kind:"all"|"group",
+  target:"workstation"|<group name>, mode}` → 201 assignment; `DELETE
+  /v1/admin/scripts/{id}/assignments/{aid}` → 204. `GET
+  /v1/admin/scripts/{id}/runs?limit=` → `{items:[{id, device:{id,name},
+  principal:{id,name}|null, version, mode, started_at, finished_at,
+  exit_code, status, output_tail}]}` newest first. Language is
+  `powershell` only. Audit: `script.create|update|delete|order|assign|
+  unassign` by the admin, `script.run` by the device.
 - Badge number format (v0.8.0): `GET/PUT /v1/admin/settings/auth` carry
   `badge.format`: `none` (default; every form a card is seen in is kept and
   matched) or `wiegand26` (every reading, whether full UID hex/decimal,

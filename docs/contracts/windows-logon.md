@@ -127,6 +127,44 @@ workstation as alive.
 
 ---
 
+### 1.4 Scripts (agent, on the heartbeat and at sign-in) — SPEC-scripts, v0.9.0
+
+`GET /v1/devices/self/scripts` (mTLS) →
+
+```json
+{"scripts":[{"id":"scr_…","name":"Map printers","language":"powershell","version":3,"position":10,
+             "mode":"immediate","body":"…","signature":"<base64 ASN.1 DER ECDSA>","signer":"cak_…"}]}
+```
+
+Sorted by `position` ascending; the agent runs them **one at a time in
+that order**. `mode` is `immediate` (run once per `version`, as soon as
+seen) or `signin` (run at every sign-in, after the logon reply). A script
+assigned both ways appears twice with different modes. `signature` is
+ECDSA P-256 over SHA-256 of the UTF-8 bytes of `id + "\n" + version +
+"\n" + body` (version in decimal), made with the CA key named by
+`signer` (a `ca_key_id` from the trust bundle). The agent verifies against
+the CA certificates in its `ca.crt` and **must not run** a script whose
+signature does not verify.
+
+`POST /v1/devices/self/scripts/{id}/runs` (mTLS) →
+
+```json
+{"version":3,"mode":"immediate","principal_id":"usr_… or empty","started_at":"RFC3339","finished_at":"RFC3339",
+ "exit_code":0,"status":"ok|failed|timeout|error","output_tail":"last 4 KB of stdout+stderr"}
+```
+
+→ 201. `status` is `ok` for exit 0, `failed` for any other exit code,
+`timeout` after 10 minutes, `error` when PowerShell could not be started
+(`exit_code` -1). The core records the run and audits it as `script.run`.
+
+Agent behaviour: keep `scripts.json` beside `agent.json` with, per script
+id, the last version run for `immediate` and the last sign-in run time.
+Run with `powershell.exe -NoProfile -NonInteractive -ExecutionPolicy
+Bypass -File <staged .ps1>` as the service (SYSTEM), 10-minute timeout,
+staged file removed afterwards. Sign-in runs receive `ROSTOR_USER`
+(identifier), `ROSTOR_PRINCIPAL` (principal id) and
+`ROSTOR_LOCAL_ACCOUNT` (the derived local account) in the environment.
+
 ## 2. agent ⇄ credprov named-pipe protocol
 
 Pipe: `\\.\pipe\rostor-agent`. Security: DACL grants full access to
