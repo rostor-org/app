@@ -167,7 +167,7 @@ const tiles: Tile[] = [
   tileOf('groups', '/groups', 'admin', 'groups', 'groups.read', 20, 'Groups', 'Who belongs together.'),
   tileOf('access', '/access', 'admin', 'access', 'grants.read', 30, 'Access', 'Who may do what, on which resource.'),
   tileOf('devices', '/devices', 'admin', 'devices', 'devices.read', 40, 'Devices', 'Workstations and doors with their certificates.'),
-  tileOf('scripts', '/scripts', 'admin', 'scripts', 'scripts.read', 50, 'Scripts', 'PowerShell pushed to workstations.'),
+  tileOf('scripts', '/scripts', 'admin', 'scripts', 'scripts.read', 50, 'Scripts', 'Scripts pushed to devices.'),
   tileOf('audit', '/audit', 'admin', 'audit', 'audit.read', 60, 'Audit', 'Every act, hash-chained.'),
   tileOf('plugins', '/plugins', 'admin', 'plugins', 'plugins.read', 70, 'Plugins', 'Doors, equipment, inventory and more.'),
   tileOf('system', '/system', 'admin', 'system', 'system.read', 80, 'System', 'Version, updates, sign-in settings, certificates.'),
