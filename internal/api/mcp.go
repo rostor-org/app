@@ -188,7 +188,9 @@ func (s *Server) mcpTools() []mcpTool {
 				return "/v1/admin/scripts/" + esc(str(a, "id")) + "/assignments/" + esc(str(a, "assignment_id"))
 			}},
 		{Name: "script_runs", Schema: schema(map[string]any{"id": sProp("script id"), "limit": map[string]any{"type": "integer"}}, "id"), Method: "GET",
-			Path: func(a map[string]any) string { return "/v1/admin/scripts/" + esc(str(a, "id")) + "/runs" + q(a, "limit") }},
+			Path: func(a map[string]any) string {
+				return "/v1/admin/scripts/" + esc(str(a, "id")) + "/runs" + q(a, "limit")
+			}},
 		{Name: "system_info", Schema: schema(map[string]any{}), Method: "GET", Path: func(a map[string]any) string { return "/v1/admin/system" }},
 		{Name: "updates_status", Schema: schema(map[string]any{}), Method: "GET", Path: func(a map[string]any) string { return "/v1/admin/updates" }},
 		{Name: "updates_check", Schema: schema(map[string]any{}), Method: "POST", Path: func(a map[string]any) string { return "/v1/admin/updates/check" }},
