@@ -186,6 +186,49 @@ it for the `ui` reply below; before the first answer it behaves as
 `GET /v1/devices/self/policy` also returns `"tenant_name"` (e.g.
 `"ChattLab"`), so the tile can name the organisation.
 
+### 1.6 Self-update (deputy, on the heartbeat) — v0.14.0
+
+`GET /v1/devices/self/update` (mTLS) → `{"update":null}` when this device
+should stay as it is, otherwise
+
+```json
+{"update":{"version":"v0.14.0","sha256":"<hex of the bundle>","signature":"<base64 ASN.1 DER ECDSA>","signer":"cak_…","size":3350420}}
+```
+
+The wanted version is always the core's own version: with the tenant
+policy `deputy.update` = `auto` every device whose reported
+`deputy_version` differs is told to update; with `manual` (the default)
+only devices an admin marked (Devices → Update) are. The signature is
+ECDSA P-256 over SHA-256 of `bundle\n<version>\n<sha256>` with the CA key
+named by `signer`, verified against `ca.crt` like a script. The bundle
+itself is `GET /v1/devices/self/update/bundle` (mTLS, `application/zip`,
+the same `rostor-windows-amd64.zip` the console offers, cached by the
+core).
+
+Deputy behaviour: never start an update while a logon is in flight, and
+at most one update attempt per version. Download to
+`C:\ProgramData\Rostor\updates\<version>\rostor-windows-amd64.zip`,
+check the size and sha256, verify the signature, extract beside it, write
+`updates\pending.json` (`{version, started_at}`), then start
+`powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File
+<extracted>\install.ps1` detached (the installer stops this service,
+replaces the binary and the DLL, and starts the new service; a re-run
+keeps the enrollment) with its output to `updates\<version>\install.log`.
+On start, a deputy that finds `pending.json` reports the outcome and
+removes it:
+
+`POST /v1/devices/self/update/runs` (mTLS) → 201:
+
+```json
+{"version":"v0.14.0","status":"ok|failed","from_version":"v0.13.0","output_tail":"last 4 KB of install.log"}
+```
+
+`ok` when the running deputy's version equals `pending.version`;
+`failed` otherwise (an older deputy came back up, or the installer
+logged an error). The core audits it as `deputy.update`, stores the
+result on the device, and clears the admin's mark on success. A failed
+attempt is not retried until an admin marks the device again.
+
 ## 2. deputy ⇄ credprov named-pipe protocol
 
 Pipe: `\\.\pipe\rostor-deputy`. Security: DACL grants full access to

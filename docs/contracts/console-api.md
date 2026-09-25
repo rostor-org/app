@@ -142,6 +142,20 @@ plugin registry, key rotation, policy counts on groups.
   type, whatever existing roles already use. `POST /v1/admin/roles`
   `{resource_type,name,permissions}` defines a role (roles.write) and is what
   the form's "New role…" calls before creating the grant.
+- Deputy updates (v0.14.0). Tenant policy `deputy.update`: `GET/PUT
+  /v1/admin/settings/devices` (system.read / policies.write) →
+  `{deputy:{update:"auto"|"manual"}}`; `auto` tells every device whose
+  reported `deputy_version` differs from the core's version to update on
+  its next heartbeat, `manual` (default) only devices marked. Marking:
+  `POST /v1/admin/devices/{id}/update` (devices.write) → 202, and `POST
+  /v1/admin/devices/update-all` → `{marked:n}` for every trusted device
+  on an older version. Device rows carry `deputy_version` (from posture),
+  `update:{wanted:bool, status:"ok"|"failed"|null, at, from_version,
+  output_tail}` (the last reported attempt). Devices fetch
+  `GET /v1/devices/self/update` and the bundle, and report with `POST
+  /v1/devices/self/update/runs`; audit `deputy.update` (by the device) and
+  `device.update_marked` (by the admin). The wanted version is always the
+  core's own.
 - Lock-screen default (v0.13.0): `PUT /v1/admin/settings/auth` accepts
   `logon:{default_provider:"rostor"|"windows"}` (echoed by GET under
   `logon`), and an override may set the same key; `windows` leaves the
