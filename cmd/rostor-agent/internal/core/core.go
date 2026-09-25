@@ -110,3 +110,47 @@ type RenewResponse struct {
 	CAPEMs         []string  `json:"ca_pems"`
 	TrustVersion   string    `json:"trust_version"`
 }
+
+// Script is one entry of GET /v1/devices/self/scripts (§1.4). Version
+// increments whenever the body changes; Position orders scripts across the
+// tenant; Mode is "immediate" (run once per version) or "signin" (run at
+// every sign-in). Signature is base64 ASN.1 DER ECDSA P-256 over SHA-256 of
+// id + "\n" + version + "\n" + body, made with the CA key named by Signer.
+type Script struct {
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Language  string `json:"language"`
+	Version   int    `json:"version"`
+	Position  int    `json:"position"`
+	Mode      string `json:"mode"`
+	Body      string `json:"body"`
+	Signature string `json:"signature"`
+	Signer    string `json:"signer"`
+}
+
+// Script modes (§1.4).
+const (
+	ScriptModeImmediate = "immediate"
+	ScriptModeSignin    = "signin"
+)
+
+// ScriptRun is the body of POST /v1/devices/self/scripts/{id}/runs (§1.4).
+type ScriptRun struct {
+	Version     int       `json:"version"`
+	Mode        string    `json:"mode"`
+	PrincipalID string    `json:"principal_id"`
+	StartedAt   time.Time `json:"started_at"`
+	FinishedAt  time.Time `json:"finished_at"`
+	ExitCode    int       `json:"exit_code"`
+	Status      string    `json:"status"`
+	OutputTail  string    `json:"output_tail"`
+}
+
+// Run statuses (§1.4): ok for exit 0, failed for any other exit code,
+// timeout after the run limit, error when PowerShell could not be started.
+const (
+	RunOK      = "ok"
+	RunFailed  = "failed"
+	RunTimeout = "timeout"
+	RunError   = "error"
+)

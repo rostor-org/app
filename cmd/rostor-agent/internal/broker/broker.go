@@ -24,6 +24,12 @@ type Broker struct {
 	Accounts localuser.Manager
 	Resource core.Resource
 	Logger   *log.Logger
+	// OnLogon, when set, is called in its own goroutine after an ALLOW
+	// reply has been built, with the identifier the person presented (the
+	// principal's username for a badge, which carries none), the principal
+	// id and the local account. It never delays the reply: sign-in scripts
+	// (SPEC-scripts) run behind the lock screen, not in front of it.
+	OnLogon func(identifier, principalID, localAccount string)
 }
 
 // Handle dispatches one request. It never returns an error to the transport:
@@ -98,7 +104,7 @@ func (b *Broker) logon(ctx context.Context, locale string, req pipeproto.Request
 
 	switch resp.Decision {
 	case core.DecisionAllow:
-		return b.allow(locale, who, resp)
+		return b.allow(locale, who, req.Identifier, resp)
 	case core.DecisionContinue:
 		// The card matched but core needs a PIN before it decides. Nothing
 		// is allowed or denied yet, so no local account is touched; the
@@ -137,22 +143,31 @@ func tail(s string, n int) string {
 	return s[len(s)-n:]
 }
 
-func (b *Broker) allow(locale, identifier string, resp *core.VerifyResponse) pipeproto.Reply {
+// allow builds the ALLOW reply. who is the log label; presented is the
+// identifier as typed, empty for a badge.
+func (b *Broker) allow(locale, who, presented string, resp *core.VerifyResponse) pipeproto.Reply {
 	if resp.Principal == nil || resp.Principal.Username == "" {
-		b.logf("logon %q: ALLOW without principal", identifier)
+		b.logf("logon %q: ALLOW without principal", who)
 		return b.fail(locale, "agent.local_account_failed", "")
 	}
 	username, ok := localuser.NormalizeUsername(resp.Principal.Username)
 	if !ok {
-		b.logf("logon %q: principal username %q not usable locally", identifier, resp.Principal.Username)
+		b.logf("logon %q: principal username %q not usable locally", who, resp.Principal.Username)
 		return b.fail(locale, "agent.local_account_failed", "")
 	}
 	secret, err := b.Accounts.EnsureEnabled(username, resp.Principal.DisplayName)
 	if err != nil {
-		b.logf("logon %q: local account %q: %v", identifier, username, err)
+		b.logf("logon %q: local account %q: %v", who, username, err)
 		return b.fail(locale, "agent.local_account_failed", "")
 	}
-	b.logf("logon %q: ALLOW as local %q (assurance %s)", identifier, username, resp.Assurance)
+	b.logf("logon %q: ALLOW as local %q (assurance %s)", who, username, resp.Assurance)
+	if hook := b.OnLogon; hook != nil {
+		identifier := presented
+		if identifier == "" {
+			identifier = resp.Principal.Username
+		}
+		go hook(identifier, resp.Principal.ID, username)
+	}
 	return pipeproto.Reply{OK: true, LocalUser: username, LocalSecret: secret}
 }
 

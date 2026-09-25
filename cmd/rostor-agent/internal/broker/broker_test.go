@@ -3,7 +3,9 @@ package broker
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
+	"time"
 
 	"rostor.org/app/cmd/rostor-agent/internal/core"
 	"rostor.org/app/cmd/rostor-agent/internal/localuser"
@@ -242,3 +244,72 @@ func TestBadgeSuspendedDoesNotGuessAnAccount(t *testing.T) {
 }
 
 var _ localuser.Manager = (*fakeAccounts)(nil)
+
+// ---- sign-in hook (SPEC-scripts) --------------------------------------------
+
+type hookCalls struct {
+	mu    sync.Mutex
+	calls [][3]string
+	done  chan struct{}
+}
+
+func (h *hookCalls) fn(identifier, principalID, localAccount string) {
+	h.mu.Lock()
+	h.calls = append(h.calls, [3]string{identifier, principalID, localAccount})
+	h.mu.Unlock()
+	h.done <- struct{}{}
+}
+
+func (h *hookCalls) wait(t *testing.T) [3]string {
+	t.Helper()
+	select {
+	case <-h.done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("hook not called")
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.calls[len(h.calls)-1]
+}
+
+func TestOnLogonHookAfterAllow(t *testing.T) {
+	h := &hookCalls{done: make(chan struct{}, 1)}
+	v := &fakeVerifier{resp: &core.VerifyResponse{Decision: "ALLOW", Principal: &core.Principal{ID: "usr_9", Username: "Dan.Evans"}}}
+	b := &Broker{Verifier: v, Accounts: &fakeAccounts{}, OnLogon: h.fn}
+	rep := b.Handle(context.Background(), pipeproto.Request{Op: "logon", Identifier: "dan@rostor.org", Secret: "p"})
+	if !rep.OK || rep.LocalUser != "dan.evans" {
+		t.Fatalf("got %+v", rep)
+	}
+	if got := h.wait(t); got != [3]string{"dan@rostor.org", "usr_9", "dan.evans"} {
+		t.Fatalf("hook args: %v", got)
+	}
+	// A badge presents no identifier: the principal's username stands in.
+	rep = b.Handle(context.Background(), pipeproto.Request{Op: "logon", Badge: &pipeproto.Badge{Number: "123456"}})
+	if !rep.OK {
+		t.Fatalf("got %+v", rep)
+	}
+	if got := h.wait(t); got != [3]string{"Dan.Evans", "usr_9", "dan.evans"} {
+		t.Fatalf("badge hook args: %v", got)
+	}
+}
+
+func TestOnLogonHookNotCalledOnDenyOrFailure(t *testing.T) {
+	h := &hookCalls{done: make(chan struct{}, 8)}
+	deny := &fakeVerifier{resp: &core.VerifyResponse{Decision: "DENY", Reason: []core.Reason{{Code: "auth.failed"}}}}
+	(&Broker{Verifier: deny, Accounts: &fakeAccounts{}, OnLogon: h.fn}).Handle(context.Background(), pipeproto.Request{Op: "logon", Identifier: "dan"})
+	cont := &fakeVerifier{resp: &core.VerifyResponse{Decision: core.DecisionContinue, Reason: []core.Reason{{Code: core.CodeContinue}}}}
+	(&Broker{Verifier: cont, Accounts: &fakeAccounts{}, OnLogon: h.fn}).Handle(context.Background(), pipeproto.Request{Op: "logon", Badge: &pipeproto.Badge{Number: "123456"}})
+	allow := &fakeVerifier{resp: &core.VerifyResponse{Decision: "ALLOW", Principal: &core.Principal{ID: "u", Username: "dan"}}}
+	(&Broker{Verifier: allow, Accounts: &fakeAccounts{failWith: errors.New("boom")}, OnLogon: h.fn}).Handle(context.Background(), pipeproto.Request{Op: "logon", Identifier: "dan"})
+	// The hook is asynchronous; give a wrongly scheduled call time to land.
+	select {
+	case <-h.done:
+		t.Fatalf("hook called: %v", h.calls)
+	case <-time.After(50 * time.Millisecond):
+	}
+	// No hook set: ALLOW still works.
+	rep := (&Broker{Verifier: allow, Accounts: &fakeAccounts{}}).Handle(context.Background(), pipeproto.Request{Op: "logon", Identifier: "dan"})
+	if !rep.OK {
+		t.Fatalf("nil hook: %+v", rep)
+	}
+}

@@ -29,6 +29,7 @@ import (
 	"rostor.org/app/cmd/rostor-agent/internal/paths"
 	"rostor.org/app/cmd/rostor-agent/internal/pipe"
 	"rostor.org/app/cmd/rostor-agent/internal/pipeproto"
+	"rostor.org/app/cmd/rostor-agent/internal/scripts"
 	"rostor.org/app/cmd/rostor-agent/internal/trust"
 )
 
@@ -157,8 +158,35 @@ func buildBroker(logger *log.Logger, mock bool) (*broker.Broker, error) {
 		return nil, err
 	}
 	b.Verifier = mgr
-	go heartbeat(mgr, logger)
+	coord := newScripts(mgr.Client, logger)
+	if coord != nil {
+		b.OnLogon = func(identifier, principalID, localAccount string) {
+			if err := coord.RunSignin(context.Background(), identifier, principalID, localAccount); err != nil {
+				logger.Printf("sign-in scripts for %q: %v", identifier, err)
+			}
+		}
+	}
+	go heartbeat(mgr, coord, logger)
 	return b, nil
+}
+
+// newScripts builds the SPEC-scripts coordinator. A scripts.json that does
+// not load disables scripts for this run rather than starting from an empty
+// state, which would rerun every immediate script on the machine; logon is
+// unaffected either way.
+func newScripts(client *core.Client, logger *log.Logger) *scripts.Coordinator {
+	st, err := scripts.LoadState(paths.Scripts)
+	if err != nil {
+		logger.Printf("scripts disabled: %s: %v", paths.Scripts, err)
+		return nil
+	}
+	return &scripts.Coordinator{
+		Client: client,
+		CAFile: paths.CACert,
+		State:  st,
+		Runner: &scripts.Runner{Dir: paths.ScriptsDir},
+		Logger: logger,
+	}
 }
 
 func agentFiles() trust.Files {
@@ -186,9 +214,11 @@ func newTrustManager(cfg *enroll.Config, res core.Resource, logger *log.Logger) 
 	}, nil
 }
 
-// heartbeat runs the trust check (bundle update, renewal) and posts posture
-// (§1.3) at start and every ten minutes; failures are only logged.
-func heartbeat(mgr *trust.Manager, logger *log.Logger) {
+// heartbeat runs the trust check (bundle update, renewal), posts posture
+// (§1.3) and runs the due immediate scripts (§1.4) at start and every ten
+// minutes; failures are only logged. Scripts come last so a bundle rotation
+// applied in the same tick is what their signatures are checked against.
+func heartbeat(mgr *trust.Manager, coord *scripts.Coordinator, logger *log.Logger) {
 	osVersion := windowsVersion()
 	first := true
 	for {
@@ -209,6 +239,13 @@ func heartbeat(mgr *trust.Manager, logger *log.Logger) {
 			logger.Printf("posture: %v", err)
 		}
 		cancel()
+		if coord != nil {
+			// No deadline: the runner bounds each script itself and the
+			// heartbeat has nothing else to do until they are done.
+			if err := coord.RunDue(context.Background()); err != nil {
+				logger.Printf("scripts: %v", err)
+			}
+		}
 		time.Sleep(10 * time.Minute)
 	}
 }

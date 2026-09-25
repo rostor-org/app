@@ -49,3 +49,9 @@ func (m Mock) allow(assurance string) *VerifyResponse {
 		Reason:    []Reason{{Code: "grant.matched", Params: map[string]any{"grant_id": "mock"}}},
 	}
 }
+
+// Scripts implements the §1.4 fetch for the mock: there is nothing to run.
+func (m Mock) Scripts(_ context.Context) ([]Script, error) { return nil, nil }
+
+// ReportRun accepts and discards a run report.
+func (m Mock) ReportRun(_ context.Context, _ string, _ ScriptRun) error { return nil }

@@ -197,3 +197,22 @@ and that a reader burst lands in the identifier field without a click),
 badge Verify against a real core (the core deployed at ChattLab answered HTTP
 400 to a badge presentation at the time of writing, which the agent reports as
 `agent.core_unreachable`), `CPUS_UNLOCK_WORKSTATION`.
+
+## Scripts (SPEC-scripts, contract §1.4)
+
+On every heartbeat (start, then every 10 minutes, after the trust check and
+posture) the service fetches `GET /v1/devices/self/scripts`, verifies each
+signature against the pinned `ca.crt` (any active CA), and runs the
+immediate scripts whose version has not run yet, one at a time in position
+order, then reports each run with `POST …/scripts/{id}/runs`. After every
+ALLOW the same list is fetched again and the `signin` scripts run in order
+with `ROSTOR_USER`, `ROSTOR_PRINCIPAL` and `ROSTOR_LOCAL_ACCOUNT` set, in a
+goroutine after the pipe reply, so the lock screen never waits. State lives
+in `C:\ProgramData\Rostor\scripts.json` (last immediate version run and
+last sign-in time per script id); bodies are staged as UTF-8+BOM files
+under `C:\ProgramData\Rostor\scripts\` for the duration of the run and
+removed afterwards. A script whose signature does not verify is logged
+(`refused`) and never run; a corrupt `scripts.json` disables scripts until
+fixed (logged as `scripts disabled`). Runs are one at a time across
+heartbeat and sign-ins, 10-minute limit each, last 4 KB of output
+reported; a timed-out run reports exit code -1.

@@ -11,6 +11,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"sync"
@@ -186,6 +187,35 @@ func (c *Client) Renew(ctx context.Context, csrPEM string) (*RenewResponse, erro
 		return nil, errors.New("renew response missing certificate_pem")
 	}
 	return &out, nil
+}
+
+// Scripts implements GET /v1/devices/self/scripts (§1.4). The list comes
+// back in core's position order; callers still sort, since order is what
+// the contract promises and a re-sort is cheaper than trusting it.
+func (c *Client) Scripts(ctx context.Context) ([]Script, error) {
+	var out struct {
+		Scripts []Script `json:"scripts"`
+	}
+	status, err := c.doJSON(ctx, http.MethodGet, "/v1/devices/self/scripts", nil, &out)
+	if err != nil {
+		return nil, err
+	}
+	if status != http.StatusOK {
+		return nil, fmt.Errorf("%w: scripts returned HTTP %d", ErrUnreachable, status)
+	}
+	return out.Scripts, nil
+}
+
+// ReportRun implements POST /v1/devices/self/scripts/{id}/runs (§1.4).
+func (c *Client) ReportRun(ctx context.Context, id string, run ScriptRun) error {
+	status, err := c.doJSON(ctx, http.MethodPost, "/v1/devices/self/scripts/"+url.PathEscape(id)+"/runs", run, nil)
+	if err != nil {
+		return err
+	}
+	if status != http.StatusCreated {
+		return fmt.Errorf("report run returned HTTP %d", status)
+	}
+	return nil
 }
 
 func (c *Client) doJSON(ctx context.Context, method, path string, in, out any) (int, error) {
