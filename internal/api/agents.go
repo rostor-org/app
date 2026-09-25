@@ -122,6 +122,7 @@ func (s *Server) ownerOrAdmin(action string, next http.HandlerFunc) http.Handler
 		actor := directory.Actor{Kind: p.Kind, ID: p.ID, CorrelationID: corrOf(r)}
 		ctx := context.WithValue(r.Context(), ctxActor, actor)
 		ctx = context.WithValue(ctx, ctxCaller, p)
+		ctx = context.WithValue(ctx, ctxPresented, pres)
 		d, err := s.Authz.Check(r.Context(), s.DB, s.TenantID, p, action, "directory", "root", pres)
 		if err != nil {
 			s.fail(w, r, err)
@@ -147,6 +148,28 @@ func (s *Server) ownerOrAdmin(action string, next http.HandlerFunc) http.Handler
 }
 
 func isAgentAdmin(r *http.Request) bool { v, _ := r.Context().Value(ctxAgentAdmin).(bool); return v }
+
+// mayOwnAgents is the gate for creating an agent, issuing it a token or
+// handing it a right: admins always; anyone else needs agents.own on the
+// directory (the built-in agent-owner role). Reading, revoking and
+// suspending stay open to the owner so a person who lost the permission
+// can still wind their agents down.
+func (s *Server) mayOwnAgents(w http.ResponseWriter, r *http.Request) bool {
+	if isAgentAdmin(r) {
+		return true
+	}
+	pres, _ := r.Context().Value(ctxPresented).(authz.Presented)
+	d, err := s.Authz.Check(r.Context(), s.DB, s.TenantID, callerOf(r), "agents.own", "directory", "root", pres)
+	if err != nil {
+		s.fail(w, r, err)
+		return false
+	}
+	if !d.Allow {
+		s.writeErr(w, r, 403, "agent.not_allowed", map[string]any{"reason": d.Reasons[0].Code})
+		return false
+	}
+	return true
+}
 func callerOf(r *http.Request) *directory.Principal {
 	p, _ := r.Context().Value(ctxCaller).(*directory.Principal)
 	return p
@@ -211,6 +234,9 @@ func (s *Server) handleCreateAgent(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := decode(r, &req); err != nil {
 		s.fail(w, r, err)
+		return
+	}
+	if !s.mayOwnAgents(w, r) {
 		return
 	}
 	c := callerOf(r)
@@ -341,7 +367,8 @@ func (s *Server) heldRights(ctx context.Context, principalID string) ([]heldRigh
 			return nil, err
 		}
 		key := h.ResourceType + ":" + h.ResourceID + ":" + h.Role
-		if seen[key] {
+		// The right to own agents is never handed to an agent: agents cannot own agents.
+		if seen[key] || (h.ResourceType == "directory" && h.Role == "agent-owner") {
 			continue
 		}
 		seen[key] = true
@@ -357,6 +384,9 @@ func (s *Server) heldRights(ctx context.Context, principalID string) ([]heldRigh
 // POST /v1/admin/agents/{id}/token: issue a fresh bearer token, shown once;
 // any earlier token stops working.
 func (s *Server) handleAgentToken(w http.ResponseWriter, r *http.Request) {
+	if !s.mayOwnAgents(w, r) {
+		return
+	}
 	p, err := s.loadAgent(r, s.DB)
 	if err != nil {
 		s.fail(w, r, err)
@@ -442,6 +472,9 @@ func (s *Server) handleAgentGrant(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := decode(r, &req); err != nil {
 		s.fail(w, r, err)
+		return
+	}
+	if !s.mayOwnAgents(w, r) {
 		return
 	}
 	p, err := s.loadAgent(r, s.DB)

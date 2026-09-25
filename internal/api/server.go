@@ -135,6 +135,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/admin/updates/check", s.adminAuth("updates.read", s.handleUpdateCheck))
 	// SPEC-agents: MCP on the same listener, tools dispatched through this mux.
 	mux.HandleFunc("/mcp", s.handleMCP)
+	s.noteAction("agents.own") // checked in handlers, not a route; the role editor must still offer it
 	if s.Static != nil {
 		mux.Handle("/", s.Static)
 	}
@@ -153,6 +154,7 @@ const (
 	ctxFullStream
 	ctxAgentAdmin // ownerOrAdmin: the caller passed the admin check (vs. owns the agent)
 	ctxCaller     // ownerOrAdmin: the signed-in principal
+	ctxPresented  // ownerOrAdmin: how the caller proved identity
 )
 
 func (s *Server) logging(next http.Handler) http.Handler {

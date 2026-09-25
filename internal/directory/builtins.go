@@ -37,6 +37,8 @@ func EnsureBuiltins(ctx context.Context, tx pgx.Tx, tenantID string, cv Conditio
 	}
 	for _, r := range []Role{
 		{ResourceType: "directory", Name: "admin", Permissions: []string{"*"}},
+		// SPEC-agents: who may have agents is a grant of this role; closed by default.
+		{ResourceType: "directory", Name: "agent-owner", Permissions: []string{"agents.own"}},
 		{ResourceType: "workstation", Name: "user", Permissions: []string{"logon"}},
 		{ResourceType: "workstations", Name: "user", Permissions: []string{"logon"}},
 	} {
@@ -63,11 +65,32 @@ func EnsureBuiltins(ctx context.Context, tx pgx.Tx, tenantID string, cv Conditio
 			return err
 		}
 	}
+	// agent-owners (SPEC-agents): the group whose members may have agents.
+	// Created empty; an admin adds people or nests a group such as members.
+	ao, err := GetGroupByName(ctx, tx, tenantID, AgentOwnersGroup)
+	if code, _ := CodeOf(err); code == "request.not_found" {
+		ao, err = CreateGroup(ctx, tx, tenantID, sys, AgentOwnersGroup, map[string]string{"en": "May own agents"})
+	}
+	if err != nil {
+		return err
+	}
+	if err := tx.QueryRow(ctx, `SELECT count(*) FROM grants WHERE tenant_id=$1 AND subject_kind='group' AND subject_id=$2 AND role='agent-owner'
+		AND resource_type='directory' AND resource_id='root' AND revoked_at IS NULL`, tenantID, ao.ID).Scan(&n); err != nil {
+		return err
+	}
+	if n == 0 {
+		if _, err := CreateGrant(ctx, tx, tenantID, sys, Grant{SubjectKind: "group", SubjectID: ao.ID, Role: "agent-owner", ResourceType: "directory", ResourceID: "root"}, cv); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
 // AdminsGroup is the built-in administrators group name.
 const AdminsGroup = "directory-admins"
+
+// AgentOwnersGroup is the built-in group whose members may have agents.
+const AgentOwnersGroup = "agent-owners"
 
 // HumanAdminExists reports whether any active *user* is in directory-admins
 // (directly or through nesting). Service accounts do not count: the first

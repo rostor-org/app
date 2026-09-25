@@ -15,7 +15,7 @@ const invalidate = ['agents', 'agent', 'users', 'user', 'grants', 'summary', 'wh
  * rights the owner holds, suspend it. With `owner` unset an admin sees every
  * agent; a member always sees their own.
  */
-export function AgentsPanel({ owner, canCreate = true }: { owner?: string; canCreate?: boolean }) {
+export function AgentsPanel({ owner, canCreate = true, framed = false }: { owner?: string; canCreate?: boolean; framed?: boolean }) {
   const t = useT()
   const f = useFormat()
   const qc = useQueryClient()
@@ -33,7 +33,9 @@ export function AgentsPanel({ owner, canCreate = true }: { owner?: string; canCr
     },
   })
   const submit = (e: FormEvent) => { e.preventDefault(); create.mutate() }
-  return (
+  // Without the permission the panel only appears when there is something to wind down.
+  if (!canCreate && (list.data?.items.length ?? 0) === 0) return null
+  const body = (
     <div className="section">
       <div className="row-head">
         <h3>{t('ui.agents.title')}</h3>
@@ -69,12 +71,13 @@ export function AgentsPanel({ owner, canCreate = true }: { owner?: string; canCr
           </tbody>
         </table>
       )}
-      <AgentDrawer id={open} onClose={() => setOpen(null)} />
+      <AgentDrawer id={open} onClose={() => setOpen(null)} canCreate={canCreate} />
     </div>
   )
+  return framed ? <div className="panel" style={{ marginTop: 16 }}>{body}</div> : body
 }
 
-function AgentDrawer({ id, onClose }: { id: string | null; onClose: () => void }) {
+function AgentDrawer({ id, onClose, canCreate }: { id: string | null; onClose: () => void; canCreate: boolean }) {
   const t = useT()
   const f = useFormat()
   const qc = useQueryClient()
@@ -123,7 +126,7 @@ function AgentDrawer({ id, onClose }: { id: string | null; onClose: () => void }
             </>
           ) : (
             <div className="actions">
-              <button type="button" className="btn primary" disabled={issue.isPending} onClick={() => issue.mutate()}>{t(a.token.active ? 'ui.agents.rotate_token' : 'ui.agents.issue_token')}</button>
+              {canCreate && <button type="button" className="btn primary" disabled={issue.isPending} onClick={() => issue.mutate()}>{t(a.token.active ? 'ui.agents.rotate_token' : 'ui.agents.issue_token')}</button>}
               {a.token.active && <button type="button" className="btn quiet danger" disabled={revokeToken.isPending} onClick={() => revokeToken.mutate()}>{t('ui.agents.revoke_token')}</button>}
             </div>
           )}
@@ -142,7 +145,7 @@ function AgentDrawer({ id, onClose }: { id: string | null; onClose: () => void }
               ))}
             </ul>
           )}
-          {notYet.length > 0 ? (
+          {!canCreate ? <p className="note">{t('agent.not_allowed')}</p> : notYet.length > 0 ? (
             <div className="inline" style={{ marginTop: 8 }}>
               <select className="input" value={right} onChange={(e) => setRight(e.target.value)} aria-label={t('ui.agents.add_right')}>
                 <option value="">{t('ui.agents.add_right')}</option>

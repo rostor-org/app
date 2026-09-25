@@ -1,5 +1,6 @@
 {
   "agent.grant_not_held": "You can only hand an agent rights you hold yourself: {role} on {resource}.",
+  "agent.not_allowed": "You are not allowed to have agents. An administrator can grant the agent-owner role.",
   "agent.not_owned": "You do not own this agent.",
   "agent.owner_invalid": "An agent's owner must be a person in this directory.",
   "auth.continue": "Enter your PIN to finish signing in.",

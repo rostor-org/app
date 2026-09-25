@@ -21,6 +21,7 @@ const iso = (t: number) => new Date(t).toISOString()
 
 const groupRefs = {
   admins: { id: 'grp_admins', name: 'directory-admins' },
+  agentOwners: { id: 'grp_agent_owners', name: 'agent-owners' },
   members: { id: 'grp_members', name: 'members' },
   board: { id: 'grp_board', name: 'board' },
   laser: { id: 'grp_laser', name: 'laser-certified' },
@@ -110,6 +111,7 @@ const b64url = (n: number) => { const a = crypto.getRandomValues(new Uint8Array(
 
 const groups: Group[] = [
   { id: 'grp_admins', name: 'directory-admins', display_name: 'Administrators of this directory (built-in)', kind: 'static', member_count: 1, grant_count: 1 },
+  { id: 'grp_agent_owners', name: 'agent-owners', display_name: 'May own agents (built-in)', kind: 'static', member_count: 0, grant_count: 1 },
   { id: 'grp_members', name: 'members', display_name: 'Current dues-paying members', kind: 'static', member_count: 124, grant_count: 3 },
   { id: 'grp_board', name: 'board', display_name: 'Elected board, electorate for admissions', kind: 'static', member_count: 5, grant_count: 1 },
   { id: 'grp_laser', name: 'laser-certified', display_name: 'Completed laser training', kind: 'dynamic', member_count: 41, grant_count: 1 },
@@ -125,6 +127,7 @@ const grants: Grant[] = [
   { id: 'grt_0c2d9e71', subject: { kind: 'group', id: 'grp_members', name: 'members' }, role: 'operate', resource: { type: 'equipment', id: 'cnc-mill' }, condition: 'assurance >= 2', condition_class: 'offline', not_before: null, expires_at: null },
   { id: 'grt_77aa1b02', subject: { kind: 'user', id: 'usr_9b2c11d0', name: 'dana' }, role: 'steward', resource: { type: 'equipment', id: 'laser-cutter-2' }, condition: '', condition_class: 'online', not_before: null, expires_at: '2026-12-31T00:00:00Z' },
   { id: 'grt_c4d5e6f7', subject: { kind: 'group', id: 'grp_admins', name: 'directory-admins' }, role: 'admin', resource: { type: 'directory', id: 'root' }, condition: '', condition_class: 'offline', not_before: null, expires_at: null },
+  { id: 'grt_a0b1c2d3', subject: { kind: 'group', id: 'grp_agent_owners', name: 'agent-owners' }, role: 'agent-owner', resource: { type: 'directory', id: 'root' }, condition: '', condition_class: 'offline', not_before: null, expires_at: null },
   { id: 'grt_1a2b3c4d', subject: { kind: 'group', id: 'grp_board', name: 'board' }, role: 'auditor', resource: { type: 'directory', id: 'root' }, condition: '', condition_class: 'offline', not_before: null, expires_at: null },
 ]
 
@@ -150,6 +153,7 @@ function heldBy(ownerId: string): HeldRight[] {
 
 const roles: Role[] = [
   { resource_type: 'directory', name: 'admin', permissions: ['*'] },
+  { resource_type: 'directory', name: 'agent-owner', permissions: ['agents.own'] },
   { resource_type: 'directory', name: 'auditor', permissions: ['users.read', 'groups.read', 'grants.read', 'audit.read', 'authz.read', 'updates.read'] },
   { resource_type: 'door', name: 'enter', permissions: ['enter'] },
   { resource_type: 'workstations', name: 'user', permissions: ['logon'] },
@@ -828,7 +832,8 @@ function signIn(u: User, method: string, assurance: string): LoginResponse {
   // Admin rights come from directory-admins (role admin on directory:root);
   // board holds the read-only auditor role; everyone else is a plain member.
   const permissions = inGroup(u, 'directory-admins') ? ['*']
-    : inGroup(u, 'board') ? (roles.find((r) => r.resource_type === 'directory' && r.name === 'auditor')?.permissions ?? [])
+    : inGroup(u, 'board') ? [...(roles.find((r) => r.resource_type === 'directory' && r.name === 'auditor')?.permissions ?? []), 'agents.own']
+    : inGroup(u, 'agent-owners') ? ['agents.own']
     : []
   session = { principal: { id: u.id, kind: u.kind, username: u.username, display_name: u.display_name, state: u.state }, assurance, permissions }
   saveSession(session)

@@ -162,6 +162,23 @@ func (e *Engine) decide(ctx context.Context, q directory.Querier, tenantID strin
 	if err != nil {
 		return nil, err
 	}
+	// Owning agents is itself a permission (agents.own on the directory);
+	// an owner who loses it stops every agent they own at once.
+	if action != "agents.own" || resourceType != "directory" || resourceID != "root" {
+		allowed, err := e.decideOne(ctx, q, tenantID, owner, "agents.own", "directory", "root", pres, false)
+		if err != nil {
+			return nil, err
+		}
+		if !allowed.Allow {
+			// A suspended owner is reported as such; a missing grant as "not allowed to have agents".
+			reason := allowed.Reasons[0].Code
+			if strings.HasPrefix(reason, "grant.") {
+				reason = "agent.not_allowed"
+			}
+			deny(reason, map[string]any{"reason": reason})
+			return res, nil
+		}
+	}
 	ownerRes, err := e.decideOne(ctx, q, tenantID, owner, action, resourceType, resourceID, pres, explain)
 	if err != nil {
 		return nil, err

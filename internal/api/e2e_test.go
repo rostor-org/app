@@ -912,6 +912,13 @@ func TestAgents(t *testing.T) {
 	h.adminCall("POST", "/v1/admin/groups/members/members", map[string]any{"member_kind": "principal", "member": "dana"})
 	h.adminCall("POST", "/v1/admin/grants", map[string]any{"subject_kind": "group", "subject": "members", "role": "user", "resource_type": "workstations", "resource_id": "all"})
 	h.adminCall("POST", "/v1/admin/resources", map[string]any{"type": "workstation", "id": "WS-1", "parent_type": "workstations", "parent_id": "all"})
+	// Owning agents is a grant: the built-in agent-owners group holds the
+	// agent-owner role and starts empty; putting dana in it is the switch.
+	ao := h.adminCall("GET", "/v1/admin/groups/agent-owners", nil)
+	if len(ao["members"].([]any)) != 0 || len(ao["grants"].([]any)) != 1 {
+		t.Fatalf("agent-owners should exist, empty, with its grant: %v", ao)
+	}
+	h.adminCall("POST", "/v1/admin/groups/agent-owners/members", map[string]any{"member_kind": "principal", "member": "dana"})
 
 	// An admin creates an agent owned by dana.
 	ag := h.adminCall("POST", "/v1/admin/agents", map[string]any{"username": "helper", "display_name": map[string]string{"en": "Helper"}, "owner": "dana"})
@@ -1045,8 +1052,12 @@ func TestAgents(t *testing.T) {
 	if st, out := do("POST", "/v1/admin/agents/"+dbot+"/grants", map[string]any{"role": "admin", "resource_type": "directory", "resource_id": "root"}); st != 403 || out["code"] != "agent.grant_not_held" {
 		t.Fatalf("unheld right should be refused: %d %v", st, out)
 	}
+	// grantable is what dana holds minus the right to own agents itself (agents cannot own agents).
 	if st, out := do("GET", "/v1/admin/agents/"+dbot, nil); st != 200 || len(out["grantable"].([]any)) != 1 || len(out["grants"].([]any)) != 1 {
 		t.Fatalf("agent detail: %v", out)
+	}
+	if st, out := do("POST", "/v1/admin/agents/"+dbot+"/grants", map[string]any{"role": "agent-owner", "resource_type": "directory", "resource_id": "root"}); st != 403 || out["code"] != "agent.grant_not_held" {
+		t.Fatalf("agent-owner must not be handed to an agent: %d %v", st, out)
 	}
 	gid := do2(t, do, "GET", "/v1/admin/agents/"+dbot)["grants"].([]any)[0].(map[string]any)["id"].(string)
 	if st, _ := do("DELETE", "/v1/admin/agents/"+dbot+"/grants/"+gid, nil); st != 204 {
@@ -1060,6 +1071,26 @@ func TestAgents(t *testing.T) {
 	if len(people) != 1 || people[0].(map[string]any)["owner"].(map[string]any)["name"] != "Dana" {
 		t.Fatalf("people list should carry the owner: %v", people)
 	}
+
+	// Take the permission away: dana can no longer create or arm agents, and
+	// every agent she owns stops at once, whatever else it holds.
+	h.adminCall("DELETE", "/v1/admin/groups/agent-owners/members", map[string]any{"member_kind": "principal", "member": "dana"})
+	if st, out := do("POST", "/v1/admin/agents", map[string]any{"username": "another"}); st != 403 || out["code"] != "agent.not_allowed" {
+		t.Fatalf("create without agents.own: %d %v", st, out)
+	}
+	if st, out := do("POST", "/v1/admin/agents/"+agentID+"/token", nil); st != 403 || out["code"] != "agent.not_allowed" {
+		t.Fatalf("token without agents.own: %d %v", st, out)
+	}
+	if st, _ := do("GET", "/v1/admin/agents", nil); st != 200 {
+		t.Fatalf("listing to wind down should still work: %d", st)
+	}
+	if ex := why(); ex["decision"] != "DENY" {
+		t.Fatalf("agent should stop when the owner may no longer have agents: %v", ex)
+	} else if code, inner := reason(ex); code != "owner.denied" || inner != "agent.not_allowed" {
+		t.Fatalf("reason: %s/%s", code, inner)
+	}
+	// Admins are unaffected: role admin covers agents.own.
+	h.adminCall("POST", "/v1/admin/agents", map[string]any{"username": "adminbot", "owner": "dana"})
 }
 
 func do2(t *testing.T, do func(string, string, any) (int, map[string]any), method, path string) map[string]any {
@@ -1120,6 +1151,7 @@ func TestMCP(t *testing.T) {
 	}
 
 	// An agent with no rights: reads its own resource, is refused a grant, and both are audited under it with its owner.
+	h.adminCall("POST", "/v1/admin/groups/agent-owners/members", map[string]any{"member_kind": "principal", "member": "mia"})
 	h.adminCall("POST", "/v1/admin/agents", map[string]any{"username": "helper", "display_name": map[string]string{"en": "Helper"}, "owner": "mia"})
 	tok := h.adminCall("POST", "/v1/admin/agents/helper/token", nil)["token"].(string)
 	_, out = rpc(tok, map[string]any{"jsonrpc": "2.0", "id": 7, "method": "resources/read", "params": map[string]any{"uri": "rostor://me"}})

@@ -159,6 +159,15 @@ plugin registry, key rotation, policy counts on groups.
   People rows of kind `agent` carry `owner {id,name}`; audit rows by an
   agent carry `actor.owner_id` and `actor.owner_name`. A bearer principal
   may read its own `/v1/admin/users/{id}`.
+  Who may have agents (v0.7.1): the permission `agents.own` on
+  `directory:root`, bundled in the built-in role `agent-owner`, granted to
+  the built-in group `agent-owners`, which starts empty. Creating an agent,
+  issuing its token and handing it a right need it (`agent.not_allowed`
+  otherwise); listing, revoking and suspending stay open to the owner. An
+  owner without it stops every agent they own: Check denies with
+  `owner.denied` / `params.reason = agent.not_allowed`. Admins (role
+  `admin`, `*`) always have it. The session's `permissions` include
+  `agents.own`, which is what shows the Agents panel.
 - MCP (v0.7.0, SPEC-agents): `POST /mcp` speaks MCP over streamable HTTP
   with JSON responses (no server stream yet; `GET /mcp` is 405). The bearer
   token is the caller's identity, an agent's typically. `initialize`,

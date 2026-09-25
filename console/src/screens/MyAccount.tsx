@@ -9,7 +9,7 @@ import { AgentsPanel } from '../components/AgentsPanel'
  * their own sign-in methods without admin permissions.
  */
 export function MyAccount() {
-  const { session } = useSession()
+  const { session, can } = useSession()
   if (!session) return null
   return (
     <section>
@@ -18,9 +18,7 @@ export function MyAccount() {
         <PersonPanel id={session.principal.id} page />
       </div>
       {session.principal.kind !== 'agent' && (
-        <div className="panel" style={{ marginTop: 16 }}>
-          <AgentsPanel owner={session.principal.id} />
-        </div>
+        <AgentsPanel owner={session.principal.id} canCreate={can('agents.own')} framed />
       )}
     </section>
   )
