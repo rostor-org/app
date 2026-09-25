@@ -1,24 +1,24 @@
 {
   "channel": "stable",
-  "version": "v0.13.0",
-  "published": "2026-09-25T17:03:04.458082Z",
-  "notes": "Windows lock screen: the badge number is masked as it is tapped, the tile says the organisation name, a Use username link switches to the plain form. Choose whether the lock screen opens on Rostor or on Windows sign-in, tenant-wide or per group. A workstation group can run every session as one shared local account for licensed software. Install the v0.13.0 bundle on workstations; it upgrades any earlier install in place.",
+  "version": "v0.14.0",
+  "published": "2026-09-25T17:19:25.800938Z",
+  "notes": "Deputies update themselves from the console: queue an update per workstation or for all outdated ones under Devices, or set the policy to automatic. Each deputy fetches the core's own bundle, verifies its signature, reinstalls between sign-ins and reports back. Deputies now report their real version. This is the last bundle to install by hand.",
   "files": {
     "deputy-windows-amd64": {
-      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/588818241",
-      "sha256": "59bc7631113afe110a450476abd9f0b595c79a1286e8d346b14c9309555f47fa",
-      "size": 8037376
+      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/588847840",
+      "sha256": "8e842b4844b7cd911b0924a3ea4efc36b8df19d929ef3c9497a88df6558a6a6c",
+      "size": 8270848
     },
     "linux-amd64": {
-      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/588818240",
-      "sha256": "5d11ac283e62bc9a2b260cbd03f9dee91f45af3933d324a5a28897c3517d036e",
-      "size": 24371360
+      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/588847836",
+      "sha256": "c38e67fb6d3aa525c2ad2ef4476241513f3cfb8941afaa22f35ce4a42581668e",
+      "size": 24408224
     },
     "linux-arm64": {
-      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/588818242",
-      "sha256": "c707fcaabd3cb50494668a42490d1623182458b98dc24527ce9c0503f7121d5c",
+      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/588847837",
+      "sha256": "93e3be5a588aacd9d4a0c6965537f55eb16b6697e4ec3d56f8bbc7aeb532403a",
       "size": 22937760
     }
   },
-  "signature": "2C4VO6VqhxBNK0vOwVRc8uUk2pb7q3zvZTwtWCBsveTX2hrozyvP2M9Jdvs04ffw0hULvIsitEclK0BeSDlRDQ=="
+  "signature": "ti3HWoqnuglf8+GAX6H521Wq8XxmFXrmNpROlT4em7bYiNlfn/G3bgifHeYFPSFOulDSlYgzT2PUI7lohvm2DQ=="
 }
