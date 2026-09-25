@@ -1,24 +1,24 @@
 {
   "channel": "stable",
-  "version": "v0.7.1",
-  "published": "2026-09-25T14:40:54.966584Z",
-  "notes": "Who may have agents is now a grant: add people or a group such as members to the built-in agent-owners group. Nobody but admins can create agents until then, and leaving the group stops a person's agents at once.",
+  "version": "v0.8.0",
+  "published": "2026-09-25T15:01:43.815942Z",
+  "notes": "Badge number format setting under System \u003e Sign-in settings: choose Wiegand 26 and any reader, whether it types the full UID, the printed number or facility:card, matches the same card; badges are saved as Wiegand. People now show the numbers a badge is known by.",
   "files": {
     "agent-windows-amd64": {
-      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/588556929",
-      "sha256": "368109e3e4954ccef2d30ca280f0bba673c4e1bb91d414f48ff5186f86313010",
+      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/588594696",
+      "sha256": "b154ecb70235c72cb5619608fcac07655cdd7841d70abacdd64c497d87be3b68",
       "size": 7870464
     },
     "linux-amd64": {
-      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/588556931",
-      "sha256": "6a2e8bc6bb875306acc783d6dc3367561890b3729cadf04025c73085a17ba6a5",
-      "size": 24133792
+      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/588594695",
+      "sha256": "c922fbb31b9802111b8abcc8c423fcdcb51c1a04ea90b2c71c2ff06c524a6024",
+      "size": 24141984
     },
     "linux-arm64": {
-      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/588556930",
-      "sha256": "66ac3f31f3adc6f52b2ca4e0321cbcb61ee673a4728195f710386cf8c629b434",
+      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/588594697",
+      "sha256": "011ea47c5419bde430f0431cd5426b2ab9b43d9876f69b6ffaeba4b107bf8dcf",
       "size": 22675616
     }
   },
-  "signature": "u4yX+9La9Eg1PtZ+p9aPLQZityc+7BJ/wzjSevMUko0ejWE43a/tForJSAstts8yYyK1Qi4ro2nUyU9rVbELBQ=="
+  "signature": "B4PraQbKspbFLQBaY5bF9lDhnqBxghQAUyV83NDqgD0CHDmyYJIDF6VtBDaTAEwGR2UQSQc35vUCSZIF9excAQ=="
 }
