@@ -1,24 +1,24 @@
 {
   "channel": "stable",
-  "version": "v0.14.2",
-  "published": "2026-09-25T18:23:45.215223Z",
-  "notes": "Groups: pick people, devices or groups from a list when adding members. Put workstations in a group to give them a sign-in override, a shared session account, or scripts.",
+  "version": "v0.14.3",
+  "published": "2026-09-25T18:34:26.464757Z",
+  "notes": "Deputy self-update now runs its installer through a scheduled task, which is what works on a real workstation. Devices too old to update themselves say so instead of showing 'updating' forever, and a queued update can be cancelled.",
   "files": {
     "deputy-windows-amd64": {
-      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/588967121",
-      "sha256": "43f36aa8d2c91f60c23672dbc47cbc09386c792e9c8308f2511a8c9a22bc5abe",
-      "size": 8270848
+      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/588983553",
+      "sha256": "555773ebeb482b80498e7f9727c0697feb956d0b293c16349805478072492861",
+      "size": 8273408
     },
     "linux-amd64": {
-      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/588967126",
-      "sha256": "67fe0550f98f68390307471dbc403b2d07bae0cd8422acafd94f4e4e326625a3",
+      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/588983552",
+      "sha256": "87ebf1ff013b3dfb07de61fcc277728f6f015382533d5884797d0fab8aa016fc",
       "size": 24420512
     },
     "linux-arm64": {
-      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/588967123",
-      "sha256": "13c9a3e06ce397c207f33b5d09be95690a454318aeb40308acad6e036ab1f916",
+      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/588983556",
+      "sha256": "3385c60435711dea421404546d428dfe73187d16b6588c27ab2ae223881002ab",
       "size": 22937760
     }
   },
-  "signature": "rOPSad6dQ8Gabkv+271pzv3GMTwI1w76M4z+m+H//BaLmhrf/JRGhiMfGU5MarCF8P/exCwOdf4YzfzoqSlhCw=="
+  "signature": "TcEykFC/NtaY6nbeLEJ8SXag1sXSdIQMnsupuFlgks9/dEGQP0uHQTnSrX7WCkTd/PHh3sXQBr/qzsqb0O4DAw=="
 }
