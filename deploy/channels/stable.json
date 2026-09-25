@@ -1,24 +1,24 @@
 {
   "channel": "stable",
-  "version": "v0.14.3",
-  "published": "2026-09-25T18:34:26.464757Z",
-  "notes": "Deputy self-update now runs its installer through a scheduled task, which is what works on a real workstation. Devices too old to update themselves say so instead of showing 'updating' forever, and a queued update can be cancelled.",
+  "version": "v0.14.4",
+  "published": "2026-09-25T18:53:19.699432Z",
+  "notes": "Lock screen: the badge field in badge mode is labelled Badge; use the Use username link to type a name.",
   "files": {
     "deputy-windows-amd64": {
-      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/588983553",
-      "sha256": "555773ebeb482b80498e7f9727c0697feb956d0b293c16349805478072492861",
+      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/589016273",
+      "sha256": "963b22e40d2c2e8559bbe3af560c2487357c6f2f19e668d99d76a3be8823adf4",
       "size": 8273408
     },
     "linux-amd64": {
-      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/588983552",
-      "sha256": "87ebf1ff013b3dfb07de61fcc277728f6f015382533d5884797d0fab8aa016fc",
+      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/589016268",
+      "sha256": "adc5aa093497978af0740ae61b0268777f9d0370d29d416aa5635b407fd8b1b7",
       "size": 24420512
     },
     "linux-arm64": {
-      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/588983556",
-      "sha256": "3385c60435711dea421404546d428dfe73187d16b6588c27ab2ae223881002ab",
+      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/589016272",
+      "sha256": "a280027e2d399b8aadf42ce8b0aa6ed3c866c0478465b72980a5f8a60c45a408",
       "size": 22937760
     }
   },
-  "signature": "TcEykFC/NtaY6nbeLEJ8SXag1sXSdIQMnsupuFlgks9/dEGQP0uHQTnSrX7WCkTd/PHh3sXQBr/qzsqb0O4DAw=="
+  "signature": "iFADp6uzOGJDXx1LGrgIJLrsC8+jvcF87evVi16XfqkWCLMqLbcRADqB2fMgWptNKLMvYhf8qhW7A+78Xq3nAg=="
 }
