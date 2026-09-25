@@ -1,24 +1,24 @@
 {
   "channel": "stable",
-  "version": "v0.11.0",
-  "published": "2026-09-25T16:12:05.318266Z",
-  "notes": "Sign-in method by group: override the default sign-in method for a group under System \u003e Sign-in settings, and it applies to the people and the workstations in that group. A workstation group set to Badge opens its lock screens on the badge (needs the v0.11.0 Windows bundle). Scripts are ready for more languages.",
+  "version": "v0.11.1",
+  "published": "2026-09-25T16:18:52.540349Z",
+  "notes": "Wording: scripts are described as scripts for devices rather than PowerShell for workstations, ahead of the macOS and Linux agents.",
   "files": {
     "agent-windows-amd64": {
-      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/588726934",
-      "sha256": "942d3caf6c20cf2561ecfac8dfed84907bc90c8d53fa11dd2ce1f974f8e96fcc",
+      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/588739026",
+      "sha256": "fec49f2fa91e09d9ad3abc507a1255509c194d424ebd056239450516eff842e7",
       "size": 8028672
     },
     "linux-amd64": {
-      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/588726931",
-      "sha256": "ead91184b12592cc1c402e5c29e85dbfc3bb23251bbb5ce15848c74e215d2f57",
+      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/588739027",
+      "sha256": "e5f889ab459304bdd7caf6a164e1eafd012fb4771ea0b7bbcbf526fe68ed7fa4",
       "size": 24359072
     },
     "linux-arm64": {
-      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/588726924",
-      "sha256": "775744addbc3feb0878dcbb4a3b6f9e2e4d4f57824eb0853b49a1a771c9497c1",
+      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/588739029",
+      "sha256": "eea71e4a6956d860ba26577a0a895a474f10aef534c8fffb7e0a10ecdc4d1b96",
       "size": 22937760
     }
   },
-  "signature": "0nBn11Eer0a84fM6honxKMGAc2FQ1tuARW9GsgDqIOqEO/UhYnGum6sNWhvcPg8YbaX7jPNXaBo+CPUKXGsIBw=="
+  "signature": "q4E7OBv92PGmKFExIi1HQwDVcbeZ7c0j7aAcM0hoBO4EnfQDToka+E368tsVDqQgKQc7cEMqpaWgjlbFhSp3Cg=="
 }
