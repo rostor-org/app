@@ -1,24 +1,24 @@
 {
   "channel": "stable",
-  "version": "v0.8.3",
-  "published": "2026-09-25T15:13:40.405549Z",
-  "notes": "The badge number on the sign-in page is masked as it is typed or tapped.",
+  "version": "v0.9.0",
+  "published": "2026-09-25T15:36:28.537599Z",
+  "notes": "Scripts: PowerShell pushed to workstations. Write a script, assign it to every workstation or a device group, choose now or at sign-in, and order the list; the core signs each delivery, the agent runs them one at a time in order as SYSTEM and reports every run. Authoring needs a passkey or badge-with-PIN sign-in. Install the new Windows bundle on workstations to enable it.",
   "files": {
     "agent-windows-amd64": {
-      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/588617136",
-      "sha256": "faf8b6d391938f06f31916c93dbd4704ff3005ce22b8ec1693341a2b3edb113a",
-      "size": 7870464
+      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/588658510",
+      "sha256": "2f301b05918a64bb4ea8c15450ba3fc09eea1d62e6df781acd579bc0b8f37421",
+      "size": 8023552
     },
     "linux-amd64": {
-      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/588617135",
-      "sha256": "73782362209a2b47a780ffd2ee827e5c43617c538e0e6bdf174e8ff262bc9ba9",
-      "size": 24150176
+      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/588658508",
+      "sha256": "f1b90be699f14a6aa162cb2bc9360660125ba5d7684408e730b989830ce34247",
+      "size": 24281248
     },
     "linux-arm64": {
-      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/588617128",
-      "sha256": "1dfdc1df247d6e1a87f541bc2c3de9a929b04231a60b7b89669c942daa85c3a8",
-      "size": 22675616
+      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/588658513",
+      "sha256": "45293700e6fbe1f2a2b6bc2f756122ccdb44d865889a51fcaefe1c5a6cb14eb9",
+      "size": 22806688
     }
   },
-  "signature": "PTqFiIPIUU6bZdKGjtQjwcAibAO0OcvIj3U/CS+evYyAGMK/uaxR0bNbe0EJDipv3EaFeBCJDFAjkgFFvOyRAA=="
+  "signature": "+jgjNP7nxG4n4EwKILfBfs8KPtgKbKZEtVlnvlRCUXiS9fjK85Zwuy1QKoARKcqEl+0Q/Cw6uRbxG8W27Kq6Bg=="
 }
