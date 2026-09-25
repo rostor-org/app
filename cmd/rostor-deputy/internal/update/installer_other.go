@@ -12,3 +12,5 @@ import (
 func platformInstaller(_ context.Context, _ string) error {
 	return errors.New("the update installer only runs on windows")
 }
+
+func platformCleanup() {}

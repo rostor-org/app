@@ -80,6 +80,7 @@ export function createHttpApi(opts: ClientOptions = {}): Api {
     deviceSettings: () => call<DeviceSettings>('GET', '/v1/admin/settings/devices'),
     setDeviceSettings: (body) => call<DeviceSettings>('PUT', '/v1/admin/settings/devices', body),
     markDeviceUpdate: (id) => call<void>('POST', `/v1/admin/devices/${encodeURIComponent(id)}/update`),
+    cancelDeviceUpdate: (id) => call<void>('DELETE', `/v1/admin/devices/${encodeURIComponent(id)}/update`),
     markAllDeviceUpdates: () => call<{ marked: number }>('POST', '/v1/admin/devices/update-all'),
     portal: () => call<Portal>('GET', '/v1/portal', undefined, true),
     tiles: () => call<List<Tile>>('GET', '/v1/admin/portal/tiles'),

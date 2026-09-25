@@ -211,7 +211,7 @@ at most one update attempt per version. Download to
 check the size and sha256, verify the signature, extract beside it, write
 `updates\pending.json` (`{version, started_at}`), then start
 `powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File
-<extracted>\install.ps1` detached (the installer stops this service,
+<extracted>\install.ps1` through a one-shot SYSTEM scheduled task `RostorDeputyUpdate` (v0.14.3: a child started straight from the service ran nothing) (the installer stops this service,
 replaces the binary and the DLL, and starts the new service; a re-run
 keeps the enrollment) with its output to `updates\<version>\install.log`.
 On start, a deputy that finds `pending.json` reports the outcome and

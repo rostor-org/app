@@ -40,6 +40,9 @@ const (
 	BundleName    = "rostor-windows-amd64.zip"
 	InstallScript = "install.ps1"
 	InstallLog    = "install.log"
+	// InstallGrace is how long an old deputy waits for the installer it
+	// started before reporting the attempt as failed.
+	InstallGrace  = 5 * time.Minute
 	AttemptedMark = "attempted"
 	pendingName   = "pending.json"
 )
@@ -309,6 +312,11 @@ func (c *Coordinator) ReportPending(ctx context.Context) error {
 		status := core.RunFailed
 		if p.Version == c.Version {
 			status = core.RunOK
+		} else if since := c.now().Sub(p.StartedAt); since < InstallGrace {
+			// The installer was started moments ago and this is still the old
+			// deputy: give it time before calling the attempt failed.
+			c.logf("update to %s: installer started %s ago; waiting", p.Version, since.Round(time.Second))
+			return nil
 		}
 		tail := readTail(filepath.Join(c.dir(), p.Version, InstallLog), TailBytes)
 		c.logf("update to %s (from %s, started %s): %s, running %s", p.Version, p.FromVersion, p.StartedAt.UTC().Format(time.RFC3339), status, c.Version)
@@ -318,6 +326,7 @@ func (c *Coordinator) ReportPending(ctx context.Context) error {
 		if err := RemovePending(c.pendingPath()); err != nil {
 			c.logf("remove %s: %v", c.pendingPath(), err)
 		}
+		platformCleanup()
 	}
 	c.cleanup(keep)
 	return nil

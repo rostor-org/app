@@ -114,10 +114,34 @@ func (s *Server) handleMarkDeviceUpdate(w http.ResponseWriter, r *http.Request) 
 	w.WriteHeader(202)
 }
 
+// DELETE /v1/admin/devices/{id}/update: take back a queued update.
+func (s *Server) handleUnmarkDeviceUpdate(w http.ResponseWriter, r *http.Request) {
+	p, err := s.resolveUser(r, s.DB, r.PathValue("id"))
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	if p.Kind != "device" {
+		s.writeErr(w, r, 404, "request.not_found", map[string]any{"type": "device"})
+		return
+	}
+	if err := s.setUpdateWanted(r.Context(), s.DB, p.ID, false); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	a := actorOf(r)
+	s.auditEvent(r.Context(), audit.Event{ActorKind: a.Kind, ActorID: a.ID, Action: "device.update_cancelled", TargetType: "device", TargetID: p.ID,
+		Outcome: "ok", Detail: map[string]any{}, CorrelationID: a.CorrelationID})
+	w.WriteHeader(204)
+}
+
 // POST /v1/admin/devices/update-all: every trusted device on another version.
 func (s *Server) handleMarkAllDeviceUpdates(w http.ResponseWriter, r *http.Request) {
+	// Deputies from before v0.14.0 report a bare "0.1.0" and have no updater:
+	// marking them would only show "updating" forever. They need one manual install.
 	rows, err := s.DB.Query(r.Context(), `SELECT d.principal_id FROM devices d WHERE d.tenant_id=$1 AND d.lifecycle IN ('enrolled','trusted')
-		AND coalesce(d.posture->>'deputy_version', d.posture->>'agent_version', '') <> $2`, s.TenantID, s.Version)
+		AND coalesce(d.posture->>'deputy_version', d.posture->>'agent_version', '') <> $2
+		AND coalesce(d.posture->>'deputy_version', '') LIKE 'v%'`, s.TenantID, s.Version)
 	if err != nil {
 		s.fail(w, r, err)
 		return

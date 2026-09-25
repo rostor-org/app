@@ -1794,6 +1794,22 @@ func TestDeputyUpdate(t *testing.T) {
 	if n := h.adminCall("POST", "/v1/admin/devices/update-all", nil)["marked"]; n != float64(1) {
 		t.Fatalf("update-all should mark the one outdated device: %v", n)
 	}
+	// Cancelling takes the mark back; under auto the offer still stands.
+	if st, _ := h.call(h.client(nil), "DELETE", "/v1/admin/devices/"+oldID+"/update", h.admin, nil); st != 204 {
+		t.Fatalf("cancel: %d", st)
+	}
+	for _, d := range h.adminCall("GET", "/v1/admin/devices", nil)["items"].([]any) {
+		if m := d.(map[string]any); m["id"] == oldID && m["update"].(map[string]any)["wanted"] != false {
+			t.Fatalf("cancel should clear the mark: %v", m)
+		}
+	}
+	// A deputy from before the updater (bare "0.1.0") is skipped by update-all: it needs a manual install.
+	_, legacyID := enrol("LEGACY-1", "0.1.0")
+	_ = legacyID
+	h.adminCall("PUT", "/v1/admin/settings/devices", map[string]any{"deputy": map[string]any{"update": "manual"}})
+	if n := h.adminCall("POST", "/v1/admin/devices/update-all", nil)["marked"]; n != float64(1) {
+		t.Fatalf("update-all should skip the legacy deputy: %v", n)
+	}
 	if st, _ := h.call(h.client(nil), "PUT", "/v1/admin/settings/devices", h.admin, map[string]any{"deputy": map[string]any{"update": "sometimes"}}); st != 400 {
 		t.Fatalf("bad policy value: %d", st)
 	}

@@ -1080,11 +1080,18 @@ export function createMockApi(_opts: { onUnauthorized?: () => void } = {}): Api 
       append(`user:${session?.principal.id ?? ''}`, 'device.update_marked', `device:${id}`, 'session', 'AL1', 'ok', { version: system.version })
       emit('device.updated')
     },
+    async cancelDeviceUpdate(id) {
+      await delay(150)
+      const d = devices.find((x) => x.id === id)
+      if (!d) throw mockErr(404, 'request.not_found', { type: 'device' })
+      d.update = { ...(d.update ?? { status: null }), wanted: false }
+      emit('device.updated')
+    },
     async markAllDeviceUpdates() {
       await delay(250)
       let marked = 0
       for (const d of devices) {
-        if (d.lifecycle === 'trusted' && d.deputy_version !== system.version) { d.update = { ...(d.update ?? { status: null }), wanted: true }; marked++ }
+        if (d.lifecycle === 'trusted' && d.deputy_version !== system.version && d.deputy_version?.startsWith('v')) { d.update = { ...(d.update ?? { status: null }), wanted: true }; marked++ }
       }
       emit('device.updated')
       return { marked }

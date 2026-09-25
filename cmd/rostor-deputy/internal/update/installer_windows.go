@@ -8,37 +8,47 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"syscall"
-
-	"golang.org/x/sys/windows"
 )
 
-// platformInstaller runs the bundle's install.ps1 with the contract's exact
-// command line, its output appended to install.log beside it, detached from
-// this process: its own process group and no console, and not waited on.
-// The installer stops this service, so the child must outlive us — an
-// exec.CommandContext or a Wait here would be self-defeating. The log file
-// is handed over as a raw handle (an *os.File, not a pipe), so no goroutine
-// in this process is needed to keep it flowing.
-func platformInstaller(_ context.Context, dir string) error {
+// TaskName is the one-shot scheduled task that runs the installer as SYSTEM.
+const TaskName = "RostorDeputyUpdate"
+
+// platformInstaller hands the bundle's install.ps1 to the Task Scheduler
+// as a SYSTEM task and runs it at once. A child started straight from this
+// service with DETACHED_PROCESS produced no output and never ran the script
+// (seen on the ChattLab VM, v0.14.0), whereas a scheduled task gets a full
+// environment of its own and outlives the service the installer stops.
+// The command line lives in a .cmd beside the bundle so the task needs no
+// quoting inside quoting; output goes to install.log.
+func platformInstaller(ctx context.Context, dir string) error {
+	script := filepath.Join(dir, InstallScript)
 	logPath := filepath.Join(dir, InstallLog)
-	logf, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
-	if err != nil {
-		return fmt.Errorf("open %s: %w", logPath, err)
+	runner := filepath.Join(dir, "run-update.cmd")
+	body := "@echo off\r\n" +
+		`powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "` + script + `" >> "` + logPath + `" 2>&1` + "\r\n"
+	if err := os.WriteFile(runner, []byte(body), 0o644); err != nil {
+		return fmt.Errorf("write %s: %w", runner, err)
 	}
-	defer logf.Close() // the child holds its own inherited handle
-	cmd := exec.Command("powershell.exe",
-		"-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
-		"-File", filepath.Join(dir, InstallScript))
-	cmd.Dir = dir
-	cmd.Stdout = logf
-	cmd.Stderr = logf
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		CreationFlags: windows.CREATE_NEW_PROCESS_GROUP | windows.DETACHED_PROCESS,
+	create := exec.CommandContext(ctx, "schtasks.exe", "/Create", "/F", "/TN", TaskName, "/SC", "ONCE", "/ST", "23:59",
+		"/RU", "SYSTEM", "/RL", "HIGHEST", "/TR", `cmd.exe /c "`+runner+`"`)
+	create.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	if out, err := create.CombinedOutput(); err != nil {
+		return fmt.Errorf("schtasks create: %w: %s", err, strings.TrimSpace(string(out)))
 	}
-	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("start powershell: %w", err)
+	run := exec.CommandContext(ctx, "schtasks.exe", "/Run", "/TN", TaskName)
+	run.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	if out, err := run.CombinedOutput(); err != nil {
+		return fmt.Errorf("schtasks run: %w: %s", err, strings.TrimSpace(string(out)))
 	}
-	// Let go of the handle; nobody here will Wait on the installer.
-	return cmd.Process.Release()
+	return nil
+}
+
+// platformCleanup removes the one-shot task once an update has been
+// reported; best effort.
+func platformCleanup() {
+	del := exec.Command("schtasks.exe", "/Delete", "/F", "/TN", TaskName)
+	del.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	_, _ = del.CombinedOutput()
 }

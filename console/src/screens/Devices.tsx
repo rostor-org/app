@@ -31,6 +31,10 @@ export function Devices() {
     mutationFn: (id: string) => api.markDeviceUpdate(id),
     onSuccess: () => { void qc.invalidateQueries({ queryKey: ['devices'] }); toast(t('ui.devices.update_marked_toast')) },
   })
+  const cancelOne = useMutation({
+    mutationFn: (id: string) => api.cancelDeviceUpdate(id),
+    onSuccess: () => { void qc.invalidateQueries({ queryKey: ['devices'] }); toast(t('ui.devices.update_cancelled_toast')) },
+  })
   const markAll = useMutation({
     mutationFn: () => api.markAllDeviceUpdates(),
     onSuccess: (r) => { void qc.invalidateQueries({ queryKey: ['devices'] }); toast(t('ui.devices.update_all_toast', { n: f.int(r.marked) })) },
@@ -41,7 +45,7 @@ export function Devices() {
   const cas = useQuery({ queryKey: ['ca'], queryFn: () => api.cas(), enabled: can('system.read') })
   const byLc = summary.data?.devices ?? {}
   const coreVersion = sys.data?.version ?? ''
-  const outdated = (devices.data?.items ?? []).filter((d) => d.lifecycle === 'trusted' && d.deputy_version && coreVersion && d.deputy_version !== coreVersion)
+  const outdated = (devices.data?.items ?? []).filter((d) => d.lifecycle === 'trusted' && d.deputy_version?.startsWith('v') && coreVersion && d.deputy_version !== coreVersion)
   const closeInstall = useCallback(() => setInstalling(false), [])
   const caById = new Map<string, CA>((cas.data?.items ?? []).map((c) => [c.id, c]))
   const newest = cas.data?.items.find((c) => c.newest)
@@ -97,7 +101,7 @@ export function Devices() {
                 <td className="num"><CertCell d={d} f={f} /></td>
                 <td><IssuerCell d={d} ca={d.ca_key_id ? caById.get(d.ca_key_id) : undefined} newest={newest} f={f} /></td>
                 <td className="num">{d.cert_renewed_at ? f.relDay(d.cert_renewed_at) : <Dash />}</td>
-                <td><DeputyCell d={d} coreVersion={coreVersion} canWrite={can('devices.write')} busy={markOne.isPending} onUpdate={() => markOne.mutate(d.id)} /></td>
+                <td><DeputyCell d={d} coreVersion={coreVersion} canWrite={can('devices.write')} busy={markOne.isPending || cancelOne.isPending} onUpdate={() => markOne.mutate(d.id)} onCancel={() => cancelOne.mutate(d.id)} /></td>
               </tr>
             ))}
           </tbody>
@@ -109,16 +113,27 @@ export function Devices() {
 }
 
 /** The deputy's version, whether an update is queued, and the last attempt's outcome, with the Update action when behind the core. */
-function DeputyCell({ d, coreVersion, canWrite, busy, onUpdate }: { d: Device; coreVersion: string; canWrite: boolean; busy: boolean; onUpdate: () => void }) {
+function DeputyCell({ d, coreVersion, canWrite, busy, onUpdate, onCancel }: { d: Device; coreVersion: string; canWrite: boolean; busy: boolean; onUpdate: () => void; onCancel: () => void }) {
   const t = useT()
   const f = useFormat()
   if (!d.deputy_version) return <Dash />
   const behind = !!coreVersion && d.deputy_version !== coreVersion
+  // Deputies from before v0.14.0 report a bare "0.1.0" and cannot update themselves.
+  const legacy = !d.deputy_version.startsWith('v')
   const u = d.update
+  if (legacy) {
+    return (
+      <>
+        <span className="mono expiring nowrap">{d.deputy_version}</span>
+        <br /><small className="muted">{t('ui.devices.update_manual')}</small>
+        {u?.wanted && canWrite && <><br /><button type="button" className="btn quiet" disabled={busy} onClick={onCancel}>{t('ui.devices.update_cancel')}</button></>}
+      </>
+    )
+  }
   return (
     <>
       <span className={behind ? 'mono expiring nowrap' : 'mono nowrap'}>{d.deputy_version}</span>
-      {u?.wanted && <> <Pill value="pending" label={t('ui.devices.update_queued', { version: coreVersion })} /></>}
+      {u?.wanted && <> <Pill value="pending" label={t('ui.devices.update_queued', { version: coreVersion })} />{canWrite && <> <button type="button" className="btn quiet" disabled={busy} onClick={onCancel}>{t('ui.devices.update_cancel')}</button></>}</>}
       {!u?.wanted && u?.status === 'failed' && <> <Pill value="bad" label={t('ui.devices.update_failed', { version: u.version ?? '', time: f.relDay(u.at ?? '') })} /></>}
       {!u?.wanted && u?.status === 'ok' && !behind && <><br /><small className="muted">{t('ui.devices.update_ok', { time: f.relDay(u.at ?? '') })}</small></>}
       {u?.status === 'failed' && u.output_tail && <details className="output"><summary className="muted">{t('ui.devices.update_output')}</summary><pre className="code">{u.output_tail}</pre></details>}

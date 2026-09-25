@@ -682,6 +682,7 @@ export interface Api {
   setDeviceSettings(body: DeviceSettings): Promise<DeviceSettings>
   /** Marks one device, or every outdated one, to update to the core's version on its next heartbeat (devices.write). */
   markDeviceUpdate(id: string): Promise<void>
+  cancelDeviceUpdate(id: string): Promise<void>
   markAllDeviceUpdates(): Promise<{ marked: number }>
   /** Explains a badge reading without storing it (any signed-in principal). */
   badgeRead(fields: Record<string, string>): Promise<BadgeReading>

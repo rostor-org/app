@@ -102,6 +102,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PUT /v1/admin/settings/devices", s.adminAuth("policies.write", s.handlePutDeviceSettings))
 	mux.HandleFunc("POST /v1/admin/devices/update-all", s.adminAuth("devices.write", s.handleMarkAllDeviceUpdates))
 	mux.HandleFunc("POST /v1/admin/devices/{id}/update", s.adminAuth("devices.write", s.handleMarkDeviceUpdate))
+	mux.HandleFunc("DELETE /v1/admin/devices/{id}/update", s.adminAuth("devices.write", s.handleUnmarkDeviceUpdate))
 	mux.HandleFunc("GET /v1/devices/self/update", s.deviceAuth(s.handleDeviceUpdate))
 	mux.HandleFunc("GET /v1/devices/self/update/bundle", s.deviceAuth(s.handleDeviceUpdateBundle))
 	mux.HandleFunc("POST /v1/devices/self/update/runs", s.deviceAuth(s.handleDeviceUpdateRun))

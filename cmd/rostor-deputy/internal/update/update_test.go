@@ -565,7 +565,16 @@ func TestReportPendingFailed(t *testing.T) {
 	// The old deputy came back up: it is v0.13.0 and pending says v0.14.0.
 	c, _ := newCoordinator(t, ca, client, &fakeInstaller{}, "v0.13.0")
 	writePending(t, c, "v0.14.0", "v0.13.0")
-	// No install.log at all: the tail is simply empty.
+	// Moments after starting the installer the old deputy is still running:
+	// that is not a failure yet, so nothing is reported and pending stays.
+	if err := c.ReportPending(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(client.reports) != 0 || !exists(filepath.Join(c.Dir, "pending.json")) {
+		t.Fatalf("within the grace nothing should be reported: %+v", client.reports)
+	}
+	// Past the grace it is a failure. No install.log at all: the tail is simply empty.
+	c.Now = func() time.Time { return time.Now().Add(InstallGrace + time.Minute) }
 	if err := c.ReportPending(context.Background()); err != nil {
 		t.Fatal(err)
 	}

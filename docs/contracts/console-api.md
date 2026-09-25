@@ -159,8 +159,11 @@ plugin registry, key rotation, policy counts on groups.
   output_tail}` (the last reported attempt). Devices fetch
   `GET /v1/devices/self/update` and the bundle, and report with `POST
   /v1/devices/self/update/runs`; audit `deputy.update` (by the device) and
-  `device.update_marked` (by the admin). The wanted version is always the
-  core's own.
+  `device.update_marked` / `device.update_cancelled` (by the admin). The
+  wanted version is always the core's own. `DELETE
+  /v1/admin/devices/{id}/update` (v0.14.3) takes a queued update back.
+  Deputies from before v0.14.0 report a bare `0.1.0` and have no updater:
+  update-all skips them and the console says they need one manual install.
 - Lock-screen default (v0.13.0): `PUT /v1/admin/settings/auth` accepts
   `logon:{default_provider:"rostor"|"windows"}` (echoed by GET under
   `logon`), and an override may set the same key; `windows` leaves the
