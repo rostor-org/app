@@ -226,7 +226,7 @@ and before the first answer the deputy behaves as if the default method
 were `password`. The `ui` pipe reply carries `default_method` (`password`,
 `passkey` or `badge`) beside `strings`. When it is `badge`, `tile_label`
 and `username_label` come from the catalog's `tile_label_badge` ("Tap
-your badge") and `username_label_badge` ("Badge, or username") entries;
+your badge") and `username_label_badge` ("Badge") entries;
 every other string, including `badge_hint`, is unchanged. The credential
 provider renders whatever it is given, so a policy change in the console
 shows at the next lock without a DLL update. `--mock-core` reports

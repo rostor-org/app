@@ -79,7 +79,7 @@ func TestUIFollowsPolicy(t *testing.T) {
 	pol.Badge.Format = "wiegand26"
 	b.SetPolicy(pol)
 	rep = ui()
-	if rep.DefaultMethod != "badge" || rep.Strings.TileLabel != "Tap your badge" || rep.Strings.UsernameLabel != "Badge, or username" {
+	if rep.DefaultMethod != "badge" || rep.Strings.TileLabel != "Tap your badge" || rep.Strings.UsernameLabel != "Badge" {
 		t.Fatalf("badge policy: %+v %+v", rep.DefaultMethod, rep.Strings)
 	}
 	// Only the tile and identifier labels and the heading change; the rest

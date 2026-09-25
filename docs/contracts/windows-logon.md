@@ -263,7 +263,7 @@ unreachable the credprov shows its tile with empty labels and reports
 
 The `ui` reply carries `"default_method"` next to `strings`. When it is
 `badge`, the deputy already returns badge-first strings (`tile_label`
-"Tap your badge", `username_label` "Badge, or username", the
+"Tap your badge", `username_label` "Badge", the
 `badge_hint`); the credential provider renders whatever strings it is
 given, so a policy change shows at the next lock without a credential
 provider update. The credential provider may additionally use

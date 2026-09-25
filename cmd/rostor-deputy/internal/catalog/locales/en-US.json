@@ -8,7 +8,7 @@
     "pin_label": "PIN",
     "badge_hint": "Tap your badge or type your username",
     "tile_label_badge": "Tap your badge",
-    "username_label_badge": "Badge, or username",
+    "username_label_badge": "Badge",
     "heading": "Sign in to {tenant}",
     "heading_badge": "Tap your badge · {tenant}",
     "heading_no_tenant": "Sign in",

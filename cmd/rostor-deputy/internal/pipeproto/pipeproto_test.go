@@ -78,13 +78,13 @@ func TestReadRequestTooLong(t *testing.T) {
 func TestUIReplyDefaultMethod(t *testing.T) {
 	// A `ui` reply carries default_method beside strings (§2.1, v0.11.0).
 	var buf bytes.Buffer
-	in := Reply{OK: true, DefaultMethod: "badge", Strings: &UIStrings{TileLabel: "Tap your badge", UsernameLabel: "Badge, or username",
+	in := Reply{OK: true, DefaultMethod: "badge", Strings: &UIStrings{TileLabel: "Tap your badge", UsernameLabel: "Badge",
 		PasswordLabel: "Password", SubmitLabel: "Sign in", Connecting: "Contacting Rostor…", PinLabel: "PIN", BadgeHint: "Tap your badge or type your username"}}
 	if err := Write(&buf, in); err != nil {
 		t.Fatal(err)
 	}
 	wire := strings.TrimSpace(buf.String())
-	if !strings.Contains(wire, `"default_method":"badge"`) || !strings.Contains(wire, `"strings":{"tile_label":"Tap your badge","username_label":"Badge, or username"`) {
+	if !strings.Contains(wire, `"default_method":"badge"`) || !strings.Contains(wire, `"strings":{"tile_label":"Tap your badge","username_label":"Badge"`) {
 		t.Fatalf("wire: %s", wire)
 	}
 	out, err := ReadReply(bufio.NewReader(&buf))
@@ -117,7 +117,7 @@ func TestUIReplyBadgeFirstStrings(t *testing.T) {
 	// v0.13.0: heading, switch_to_username and switch_to_badge ride in
 	// `strings`, after the seven original keys, and round-trip intact.
 	var buf bytes.Buffer
-	in := Reply{OK: true, DefaultMethod: "badge", Strings: &UIStrings{TileLabel: "Tap your badge", UsernameLabel: "Badge, or username",
+	in := Reply{OK: true, DefaultMethod: "badge", Strings: &UIStrings{TileLabel: "Tap your badge", UsernameLabel: "Badge",
 		PasswordLabel: "Password", SubmitLabel: "Sign in", Connecting: "Contacting Rostor…", PinLabel: "PIN", BadgeHint: "Tap your badge or type your username",
 		Heading: "Tap your badge · ChattLab", SwitchToUsername: "Use username", SwitchToBadge: "Use badge"}}
 	if err := Write(&buf, in); err != nil {
