@@ -1,24 +1,24 @@
 {
   "channel": "stable",
-  "version": "v0.7.0",
-  "published": "2026-09-25T12:45:08.612995Z",
-  "notes": "Agents: software principals owned by a person that can never do more than their owner. Members create their own agents on My account, issue tokens and hand over rights they hold; admins manage all from People. MCP endpoint at /mcp so agents and Claude sessions operate Rostor through the same API and audit.",
+  "version": "v0.7.1",
+  "published": "2026-09-25T14:40:54.966584Z",
+  "notes": "Who may have agents is now a grant: add people or a group such as members to the built-in agent-owners group. Nobody but admins can create agents until then, and leaving the group stops a person's agents at once.",
   "files": {
     "agent-windows-amd64": {
-      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/588344526",
-      "sha256": "10348d1abdb278f621f6c58c1bdfbfd4925e07dadb82cc572430f8a441464dd2",
+      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/588556929",
+      "sha256": "368109e3e4954ccef2d30ca280f0bba673c4e1bb91d414f48ff5186f86313010",
       "size": 7870464
     },
     "linux-amd64": {
-      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/588344527",
-      "sha256": "950c416e41d47ce7a7f8ff07048170c256eca51f52230c132581da81779d1c52",
-      "size": 24125600
+      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/588556931",
+      "sha256": "6a2e8bc6bb875306acc783d6dc3367561890b3729cadf04025c73085a17ba6a5",
+      "size": 24133792
     },
     "linux-arm64": {
-      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/588344531",
-      "sha256": "f4831fcea80982ea44a75ced6eb4ec166f2e8e7e86483a3fe69315f9ad85dc5f",
+      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/588556930",
+      "sha256": "66ac3f31f3adc6f52b2ca4e0321cbcb61ee673a4728195f710386cf8c629b434",
       "size": 22675616
     }
   },
-  "signature": "Pk4Q6sSmu13HE5A/5fdqRHhyLvEwwbqw4mx1Z/jELHx7eIAKxqvHyb9Lgldxdbj+Kkfgh6zaL2IBtDF3OdK7Ag=="
+  "signature": "u4yX+9La9Eg1PtZ+p9aPLQZityc+7BJ/wzjSevMUko0ejWE43a/tForJSAstts8yYyK1Qi4ro2nUyU9rVbELBQ=="
 }
