@@ -226,7 +226,7 @@ export function Login() {
               <div className="tap" onClick={() => num.current?.focus()}>
                 <div className="tap-mark" aria-hidden="true"><Mark /></div>
                 <div className="tap-text">{t('ui.login.tap_to_access')}</div>
-                <input id="login-badge" ref={num} className="tap-input" value={number} onChange={(e) => setNumber(e.target.value)}
+                <input id="login-badge" ref={num} className="tap-input" type="password" value={number} onChange={(e) => setNumber(e.target.value)}
                   onBlur={() => setTimeout(() => { if (mode === 'badge' && !needPin && !typeBadge) num.current?.focus() }, 50)}
                   autoComplete="off" autoCapitalize="none" spellCheck={false} inputMode="none" aria-label={t('ui.login.badge')} required />
                 <button type="button" className="btn quiet" onClick={(e) => { e.stopPropagation(); setTypeBadge(true) }}>{t('ui.login.type_badge_instead')}</button>
@@ -234,7 +234,7 @@ export function Login() {
             ) : (
               <>
                 <label htmlFor="login-badge">{t('ui.login.badge')}</label>
-                <input id="login-badge" ref={num} className="input mono" value={number} onChange={(e) => setNumber(e.target.value)} readOnly={needPin}
+                <input id="login-badge" ref={num} className="input mono" type="password" value={number} onChange={(e) => setNumber(e.target.value)} readOnly={needPin}
                   autoComplete="off" autoCapitalize="none" spellCheck={false} inputMode="numeric" required />
                 {!needPin && <div className="sub">{t('ui.login.badge_hint')}</div>}
               </>
