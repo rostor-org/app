@@ -1,24 +1,24 @@
 {
   "channel": "stable",
-  "version": "v0.6.1",
-  "published": "2026-09-24T19:35:30.928818Z",
-  "notes": "Fixes v0.6.0 showing raw string codes on the Access screen. Grant form picks subject, resource and role from the directory and can define a new role; Audit shows people by default with a tick for system activity.",
+  "version": "v0.6.2",
+  "published": "2026-09-25T00:53:38.320938Z",
+  "notes": "Typing in drawers no longer loses focus (badge readers register whole numbers again); the console is dark by default with a Light option under System \u003e Appearance.",
   "files": {
     "agent-windows-amd64": {
-      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/586676916",
-      "sha256": "e210666ae78b19bf7e259cd2720e9aa8ae0ff11284fa1a32070cc5e7b38436b3",
+      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/587195247",
+      "sha256": "15a08071a944f880db714f42ccab5debd0c1eb1652babb32e348b249b902a17a",
       "size": 7870464
     },
     "linux-amd64": {
-      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/586676913",
-      "sha256": "26100be033966a58184a0c4a456c1ce3f50d9e028539683c736e2686acd3caac",
-      "size": 23945376
+      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/587195248",
+      "sha256": "e6bfffd150c4ca878ebe0aa7074d353e3d2ec04937976602953fb78baebaa341",
+      "size": 23949472
     },
     "linux-arm64": {
-      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/586676920",
-      "sha256": "b7b3dde1b229140c5e66fbdd06bf71bdd9d157abbae08cc409903eb34ae50d7b",
+      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/587195252",
+      "sha256": "218e00aa558c238391ac0a50c9606e3ff655f4701435f8dd513a6448934be79c",
       "size": 22544544
     }
   },
-  "signature": "9s1sSamTcnKQW8Ii9YCe7nv8rvzKkv54KABRKRJlY37MSxIpiUCVoHYlFOlL0Cm0d4eJ6Z68P5ofYDAhQdluDQ=="
+  "signature": "S4TJyruEuNes6K2oZ0ROUfkcR/K0jz8WFC+go2LLSmnK8nxBX+bShjXFDOh73il1DgvHQDABhZsurzzDCTOGCg=="
 }
