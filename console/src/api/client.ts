@@ -1,5 +1,5 @@
 import type {
-  Api, ApiErrorBody, AuditPage, AuditQuery, AuditVerify, AuthSettings, Binding, Brand, CA, CAList, Catalog, CreationOptionsJSON, Device, Downloads,
+  Api, ApiErrorBody, AuditPage, AuditQuery, AuditVerify, AuthOverride, AuthSettings, Binding, Brand, CA, CAList, Catalog, CreationOptionsJSON, Device, Downloads,
   EnrollmentToken, Explanation, Grant, Group, GroupDetail, List, LiveHandlers, LoginOK,
   LoginRequest, LoginResponse, PasskeyCeremony, Plugin, Principal, RequestOptionsJSON, Role, Session, SetupStatus, Summary, SystemInfo, UpdateState,
   User, UserDetail, WhyQuery, ResourceCatalog, Agent, AgentDetail, BadgeReading, Script, ScriptDetail, ScriptAssignment, ScriptRun, Portal, Tile,
@@ -129,6 +129,9 @@ export function createHttpApi(opts: ClientOptions = {}): Api {
     downloadUrl: (name) => `${base}/v1/admin/downloads/${name}`,
     authSettings: () => call<AuthSettings>('GET', '/v1/admin/settings/auth'),
     setAuthSettings: (body) => call<AuthSettings>('PUT', '/v1/admin/settings/auth', body),
+    authOverrides: () => call<List<AuthOverride>>('GET', '/v1/admin/settings/auth/overrides'),
+    setAuthOverride: (group, body) => call<AuthOverride>('PUT', `/v1/admin/settings/auth/overrides/${encodeURIComponent(group)}`, body),
+    deleteAuthOverride: (group) => call<void>('DELETE', `/v1/admin/settings/auth/overrides/${encodeURIComponent(group)}`),
 
     stream: (h, lastEventId) => openStream(base + '/v1/events/stream', h, lastEventId, opts.onUnauthorized),
   }

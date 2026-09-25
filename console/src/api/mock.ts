@@ -3,7 +3,7 @@
 import type { LoginMethod,
   Api, AuditRow, AuthSettings, CA, CAList, Device, Downloads, Explanation, Grant, Group, GroupDetail, LiveEvent, LiveHandlers, LoginOK, LoginResponse,
   LiveState, Member, Plugin, Role, Session, Summary, SystemInfo, UpdateState, User, UserDetail, Binding, Reason, ResourceNode, Agent, AgentDetail, HeldRight, BadgeFormat,
-  Script, ScriptDetail, ScriptRun, Tile,
+  Script, ScriptDetail, ScriptRun, Tile, AuthOverride,
 } from './types'
 import catalogEn from '../../catalog.en.json'
 
@@ -105,6 +105,10 @@ let webauthn = { rp_id: 'localhost', display_name: 'ChattLab', origins: ['https:
 let defaultMethod: LoginMethod = 'password'
 const enrolledPasskeys = () => Object.values(bindings).flat().filter((b) => b.method === 'webauthn' && b.state === 'active').length
 let badgeFormat: BadgeFormat = 'none'
+// Sign-in overrides by group (v0.11.0): the workstation group opens its lock screens on the badge.
+const overrides: AuthOverride[] = [
+  { group: { id: 'grp_staff', name: 'staff' }, login: { default_method: 'badge' }, created_at: daysAgo(3, 9, 12) },
+]
 const authSettings = (): AuthSettings => ({ webauthn: { ...webauthn, origins: [...webauthn.origins], enrolled_passkeys: enrolledPasskeys() }, login: { default_method: defaultMethod }, badge: { format: badgeFormat } })
 
 // Pending passkey ceremonies: id → the principal it was begun for ('' = discoverable).
@@ -1032,6 +1036,25 @@ export function createMockApi(_opts: { onUnauthorized?: () => void } = {}): Api 
       if (body.badge) badgeFormat = body.badge.format
       append(`user:${session?.principal.id ?? ''}`, 'policy.update', 'policy:tenant-auth', 'session', 'AL1', 'ok', { 'webauthn.rp_id': rp_id, 'webauthn.origins': origins, 'login.default_method': defaultMethod })
       return authSettings()
+    },
+    async authOverrides() { await delay(); return { items: clone(overrides), total: overrides.length } },
+    async setAuthOverride(name, body) {
+      await delay(250)
+      const g = groups.find((x) => x.name === name)
+      if (!g) throw mockErr(404, 'request.not_found', { type: 'group' })
+      if (!['password', 'passkey', 'badge'].includes(body?.login?.default_method)) throw mockErr(400, 'request.malformed', { field: 'login.default_method' })
+      const o: AuthOverride = { group: { id: g.id, name: g.name }, login: { default_method: body.login.default_method }, created_at: iso(Date.now()) }
+      const i = overrides.findIndex((x) => x.group.name === name)
+      if (i < 0) overrides.push(o); else overrides[i] = o
+      append(`user:${session?.principal.id ?? ''}`, 'policy.update', `policy:auth:${g.name}`, 'session', 'AL1', 'ok', { group: g.name, 'login.default_method': o.login.default_method })
+      return clone(o)
+    },
+    async deleteAuthOverride(name) {
+      await delay(200)
+      const i = overrides.findIndex((x) => x.group.name === name)
+      if (i < 0) throw mockErr(404, 'request.not_found', { type: 'policy' })
+      overrides.splice(i, 1)
+      append(`user:${session?.principal.id ?? ''}`, 'policy.delete', `policy:auth:${name}`, 'session', 'AL1', 'ok', { group: name })
     },
 
     stream(h, _lastEventId) {

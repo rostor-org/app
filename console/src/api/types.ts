@@ -95,6 +95,19 @@ export interface AuthSettingsUpdate {
   login?: { default_method: LoginMethod }
   badge?: { format: BadgeFormat }
 }
+/**
+ * A per-group override of the tenant's login.default_method
+ * (GET /v1/admin/settings/auth/overrides). Applies to people and to devices
+ * in the group; when several apply, the newest wins.
+ */
+export interface AuthOverride {
+  group: GroupRef
+  login: { default_method: LoginMethod }
+  created_at: string
+}
+export interface AuthOverrideUpdate {
+  login: { default_method: LoginMethod }
+}
 
 export interface Session {
   principal: Principal
@@ -714,6 +727,11 @@ export interface Api {
   downloadUrl(name: 'windows'): string
   authSettings(): Promise<AuthSettings>
   setAuthSettings(body: AuthSettingsUpdate): Promise<AuthSettings>
+  /** Sign-in overrides by group (system.read). */
+  authOverrides(): Promise<List<AuthOverride>>
+  /** Creates or replaces the override for a group, by name (policies.write). */
+  setAuthOverride(group: string, body: AuthOverrideUpdate): Promise<AuthOverride>
+  deleteAuthOverride(group: string): Promise<void>
 
   /** Open the live stream. Returns a function that closes it. */
   stream(h: LiveHandlers, lastEventId: string | null): () => void

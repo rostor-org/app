@@ -9,7 +9,7 @@ import { loadedVersion, reloadApp, setAutoReloading } from '../lib/version'
 import { setTheme, storedTheme, type Theme } from '../lib/theme'
 import { useToast } from '../components/Toast'
 import { Drawer } from '../components/Drawer'
-import { apiBody, describeError, ErrorNote, Head, Pill } from '../components/bits'
+import { apiBody, describeError, ErrorNote, Head, Loading, Pill } from '../components/bits'
 
 const ROTATE_WORD = 'ROTATE'
 const RETIRE_WORD = 'RETIRE'
@@ -250,6 +250,74 @@ function SignInSettings({ canWrite }: { canWrite: boolean }) {
               </span>
             )}
           </div>
+        </form>
+      )}
+      <SignInOverrides canWrite={canWrite} />
+    </div>
+  )
+}
+
+const METHOD_LABEL: Record<LoginMethod, string> = { password: 'ui.method.password', passkey: 'ui.method.webauthn', badge: 'ui.method.badge' }
+const METHODS: LoginMethod[] = ['password', 'passkey', 'badge']
+
+/**
+ * Sign-in overrides by group: login.default_method per group, for people and
+ * for devices in it (GET/PUT/DELETE /v1/admin/settings/auth/overrides). Each
+ * change saves at once; nothing here is part of the settings form above.
+ */
+function SignInOverrides({ canWrite }: { canWrite: boolean }) {
+  const t = useT()
+  const qc = useQueryClient()
+  const toast = useToast()
+  const ids = { group: useId(), method: useId() }
+  const list = useQuery({ queryKey: ['auth-overrides'], queryFn: () => api.authOverrides() })
+  const groups = useQuery({ queryKey: ['groups', ''], queryFn: () => api.groups(), enabled: canWrite, staleTime: 60_000 })
+  const [group, setGroup] = useState('')
+  const [method, setMethod] = useState<LoginMethod>('badge')
+  const refresh = () => { void qc.invalidateQueries({ queryKey: ['auth-overrides'] }); void qc.invalidateQueries({ queryKey: ['audit'] }) }
+  const add = useMutation({
+    mutationFn: (v: { group: string; method: LoginMethod }) => api.setAuthOverride(v.group, { login: { default_method: v.method } }),
+    onSuccess: (o) => { refresh(); setGroup(''); toast(t('ui.signin.overrides.added_toast', { group: o.group.name, method: t(METHOD_LABEL[o.login.default_method]) })) },
+  })
+  const remove = useMutation({
+    mutationFn: (name: string) => api.deleteAuthOverride(name),
+    onSuccess: (_, name) => { refresh(); toast(t('ui.signin.overrides.removed_toast', { group: name })) },
+  })
+  const items = list.data?.items ?? []
+  const taken = new Set(items.map((o) => o.group.name))
+  const available = (groups.data?.items ?? []).filter((g) => !taken.has(g.name))
+  const submit = (e: FormEvent) => { e.preventDefault(); if (group) add.mutate({ group, method }) }
+  return (
+    <div style={{ marginTop: 18 }}>
+      <b>{t('ui.signin.overrides.title')}</b>
+      <p className="muted" style={{ marginTop: 4 }}>{t('ui.signin.overrides.hint')}</p>
+      <ErrorNote error={list.error ?? groups.error ?? add.error ?? remove.error} />
+      {list.isPending && <Loading />}
+      {!list.isPending && items.length === 0 && <p className="muted">{t('ui.signin.overrides.empty')}</p>}
+      {items.length > 0 && (
+        <ul className="list">
+          {items.map((o) => (
+            <li key={o.group.id} className="inline">
+              <span><b>{o.group.name}</b> <span className="muted">→</span> {t(METHOD_LABEL[o.login.default_method] ?? 'ui.common.none')}</span>
+              {canWrite && (
+                <span className="actions">
+                  <button type="button" className="btn quiet danger" disabled={remove.isPending} onClick={() => remove.mutate(o.group.name)}>{t('ui.common.remove')}</button>
+                </span>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+      {canWrite && (
+        <form className="inline" onSubmit={submit} style={{ marginTop: 10 }}>
+          <select id={ids.group} className="input" aria-label={t('ui.signin.overrides.group')} value={group} onChange={(e) => setGroup(e.target.value)} disabled={add.isPending}>
+            <option value="">{t('ui.signin.overrides.choose_group')}</option>
+            {available.map((g) => <option key={g.id} value={g.name}>{g.name}</option>)}
+          </select>
+          <select id={ids.method} className="input" aria-label={t('ui.signin.overrides.method')} value={method} onChange={(e) => setMethod(e.target.value as LoginMethod)} disabled={add.isPending}>
+            {METHODS.map((m) => <option key={m} value={m}>{t(METHOD_LABEL[m])}</option>)}
+          </select>
+          <button type="submit" className="btn" disabled={!group || add.isPending}>{t(add.isPending ? 'ui.common.working' : 'ui.common.add')}</button>
         </form>
       )}
     </div>
