@@ -403,6 +403,16 @@ export interface CreateUser {
   display_name: Record<string, string> // {en: "…"}
   state?: string
 }
+/** POST /v1/admin/badges/read: how a reader's output is understood under the tenant's badge format. */
+export interface BadgeReading {
+  format: BadgeFormat
+  stored: Record<string, string>
+  wiegand26?: string
+  facility?: number
+  card?: number
+  value24?: number
+}
+
 export interface EnrollBinding {
   method: string // "password" | "badge"
   label?: string
@@ -532,6 +542,8 @@ export interface Api {
   createUser(body: CreateUser): Promise<Principal>
   setUserState(id: string, state: string): Promise<void>
   enrollBinding(id: string, body: EnrollBinding): Promise<Binding>
+  /** Explains a badge reading without storing it (any signed-in principal). */
+  badgeRead(fields: Record<string, string>): Promise<BadgeReading>
   revokeBinding(id: string, bid: string): Promise<void>
   /** Self (with `current`) or admin reset (without). */
   changePassword(id: string, body: PasswordChange): Promise<void>

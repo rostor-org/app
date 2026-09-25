@@ -351,7 +351,11 @@ export function BadgeDrawer({ open, id, name, onClose, onDone }: { open: boolean
     mutationFn: () => api.enrollBinding(id, { method: 'badge', label: label.trim(), fields: pin ? { number: number.trim(), pin } : { number: number.trim() } }),
     onSuccess: (b) => { toast(t('ui.badge.registered_toast', { label: b.label, name })); close(); onDone() },
   })
-  const close = () => { setNumber(''); setPin(''); setPin2(''); setLabel(''); setMismatch(false); enroll.reset(); onClose() }
+  // How the reader's output is understood, shown as it is typed (debounced) so it can be compared with the fob.
+  const [probe, setProbe] = useState('')
+  useEffect(() => { const id = setTimeout(() => setProbe(number.trim()), 250); return () => clearTimeout(id) }, [number])
+  const reading = useQuery({ queryKey: ['badge-read', probe], queryFn: () => api.badgeRead({ number: probe }), enabled: open && probe !== '', staleTime: 60_000 })
+  const close = () => { setNumber(''); setPin(''); setPin2(''); setLabel(''); setMismatch(false); setProbe(''); enroll.reset(); onClose() }
   const onNumberKey = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key !== 'Enter') return
     e.preventDefault()
@@ -369,6 +373,14 @@ export function BadgeDrawer({ open, id, name, onClose, onDone }: { open: boolean
         <p className="note">{t('ui.badge.reader_note')}</p>
         <Field labelCode="ui.badge.number" hintCode="ui.badge.number_hint" value={number} onChange={(e) => setNumber(e.target.value)} onKeyDown={onNumberKey}
           required autoComplete="off" autoCapitalize="none" spellCheck={false} inputMode="numeric" className="input mono" ref={numRef} />
+        {probe !== '' && reading.data && (
+          <p className="note mono" aria-live="polite">
+            {reading.data.wiegand26
+              ? t('ui.badge.read_as', { facility: String(reading.data.facility ?? ''), card: String(reading.data.card ?? ''), value: String(reading.data.value24 ?? '') })
+              : t('ui.badge.read_unknown')}
+            {' · '}{t('ui.badge.read_saved', { forms: Object.entries(reading.data.stored).map(([k, v]) => `${t(`ui.badge.form.${k.replace('badge.', '')}`)} ${v}`).join(', ') })}
+          </p>
+        )}
         <Field labelCode="ui.badge.pin" hintCode="ui.badge.pin_hint" type="password" value={pin} onChange={(e) => setPin(e.target.value)}
           inputMode="numeric" pattern="[0-9]{4,}" autoComplete="off" ref={pinRef} />
         <Field labelCode="ui.badge.pin_confirm" type="password" value={pin2} onChange={(e) => setPin2(e.target.value)} inputMode="numeric" autoComplete="off" required={pin !== ''} />

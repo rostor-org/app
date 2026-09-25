@@ -533,3 +533,24 @@ func (s *Server) handleAgentGrantRevoke(w http.ResponseWriter, r *http.Request) 
 	}
 	w.WriteHeader(204)
 }
+
+// POST /v1/admin/badges/read {number|uid|facility|card}: how a reader's
+// output is understood under the tenant's badge format. Pure parsing, open
+// to any signed-in principal; nothing is looked up or stored.
+func (s *Server) handleBadgeRead(w http.ResponseWriter, r *http.Request) {
+	if _, _, ok := s.caller(w, r); !ok {
+		return
+	}
+	var fields map[string]string
+	if err := decode(r, &fields); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	bm, ok := s.Auth.Method("badge")
+	badge, isBadge := bm.(*auth.BadgeMethod)
+	if !ok || !isBadge {
+		s.writeErr(w, r, 400, "auth.method_unavailable", map[string]any{"method": "badge"})
+		return
+	}
+	s.writeJSON(w, 200, badge.Read(r.Context(), auth.StepInput{Fields: fields}))
+}

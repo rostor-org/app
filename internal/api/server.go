@@ -139,6 +139,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/admin/updates", s.adminAuth("updates.read", s.handleUpdateStatus))
 	mux.HandleFunc("POST /v1/admin/updates/apply", s.adminAuth("updates.write", s.handleUpdateApply))
 	mux.HandleFunc("POST /v1/admin/updates/check", s.adminAuth("updates.read", s.handleUpdateCheck))
+	mux.HandleFunc("POST /v1/admin/badges/read", s.handleBadgeRead)
 	// SPEC-agents: MCP on the same listener, tools dispatched through this mux.
 	mux.HandleFunc("/mcp", s.handleMCP)
 	s.noteAction("agents.own") // checked in handlers, not a route; the role editor must still offer it

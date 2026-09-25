@@ -298,3 +298,33 @@ func (m *BadgeMethod) SetPIN(raw []byte, pin string) ([]byte, error) {
 	}
 	return json.Marshal(mat)
 }
+
+// Reading is how a presented card number is understood under the tenant's
+// badge format: the forms that would be stored, plus the Wiegand pair and
+// the 24-bit value when they can be derived, so an admin can compare the
+// reader's output with what is printed on the fob before saving.
+type Reading struct {
+	Format   string            `json:"format"`
+	Stored   map[string]string `json:"stored"`
+	Wiegand  string            `json:"wiegand26,omitempty"`
+	Facility uint64            `json:"facility,omitempty"`
+	Card     uint64            `json:"card,omitempty"`
+	Value24  uint64            `json:"value24,omitempty"`
+}
+
+// Read explains a presentation without storing anything.
+func (m *BadgeMethod) Read(ctx context.Context, in StepInput) Reading {
+	format := m.format(ctx)
+	r := Reading{Format: format, Stored: badgeForms(in, format, false)}
+	w := r.Stored["badge.wiegand26"]
+	if w == "" {
+		w = rawBadgeForms(in)["badge.wiegand26"]
+	}
+	if fc, cn, ok := strings.Cut(w, ":"); ok {
+		r.Facility, _ = strconv.ParseUint(fc, 10, 32)
+		r.Card, _ = strconv.ParseUint(cn, 10, 32)
+		r.Wiegand = w
+		r.Value24 = r.Facility<<16 | r.Card
+	}
+	return r
+}

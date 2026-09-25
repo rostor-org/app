@@ -804,6 +804,22 @@ export function createMockApi(_opts: { onUnauthorized?: () => void } = {}): Api 
     },
     async downloads() { await delay(); downloadsAsked++; return downloads() },
     downloadUrl: () => FAKE_BUNDLE_URL,
+    async badgeRead(fields) {
+      await delay(80)
+      // The server's rules, abridged: a split pair, an eight-digit pair, a padded or plain 24-bit decimal, or a hex UID.
+      const v = (fields.number ?? fields.uid ?? '').trim()
+      let value24: number | undefined
+      const m = v.match(/^0*(\d{1,3})[:,\- ]0*(\d{1,5})$/)
+      if (m) value24 = Number(m[1]) * 65536 + Number(m[2])
+      else if (badgeFormat === 'wiegand26' && /^\d{8}$/.test(v) && Number(v.slice(0, 3)) <= 255 && Number(v.slice(3)) <= 65535) value24 = Number(v.slice(0, 3)) * 65536 + Number(v.slice(3))
+      else if (/^\d+$/.test(v)) value24 = Number(v) % 16777216
+      else if (/^[0-9a-f]{6,32}$/i.test(v.replace(/[\s:-]/g, ''))) value24 = parseInt(v.replace(/[\s:-]/g, '').slice(-6), 16)
+      if (value24 === undefined) return { format: badgeFormat, stored: {} as Record<string, string> }
+      const facility = Math.floor(value24 / 65536), card = value24 % 65536
+      const wiegand26 = `${facility}:${card}`
+      const stored: Record<string, string> = badgeFormat === 'wiegand26' ? { 'badge.wiegand26': wiegand26 } : { 'badge.printed': String(value24), 'badge.wiegand26': wiegand26 }
+      return { format: badgeFormat, stored, wiegand26, facility, card, value24 }
+    },
     async authSettings() { await delay(); return authSettings() },
     async setAuthSettings(body) {
       await delay(300)

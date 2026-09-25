@@ -148,6 +148,9 @@ plugin registry, key rotation, policy counts on groups.
   printed 24-bit number, or facility:card, is reduced to facility:card and
   the badge is saved as that one form; a byte-reversed UID is tried at
   presentation). Person detail badge bindings carry `forms: [{kind,value}]`.
+  `POST /v1/admin/badges/read {number|uid|facility,card}` (any signed-in
+  principal) → `{format, stored:{kind:value}, wiegand26?, facility?, card?,
+  value24?}`: how a reading is understood, nothing stored (v0.8.2).
 - Agents (v0.7.0, SPEC-agents). A principal of kind `agent` with an owner
   (`attributes.owner_id`, a person). Check ANDs the agent's decision with the
   owner's; a denial for that reason is `owner.denied` with the owner's own

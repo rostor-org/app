@@ -1242,6 +1242,14 @@ func TestBadgeFormatWiegand(t *testing.T) {
 	if st, out := h.call(h.client(nil), "POST", "/v1/auth/login", "", map[string]any{"method": "badge", "fields": map[string]string{"number": "4857726"}}); st != 200 || out["assurance"] != "AL1" {
 		t.Fatalf("badge login: %d %v", st, out)
 	}
+	// The check line in the Register badge drawer: how a reading is understood, nothing stored.
+	rd := h.adminCall("POST", "/v1/admin/badges/read", map[string]string{"number": "02622915"})
+	if rd["wiegand26"] != "26:22915" || rd["value24"] != float64(1726851) || rd["stored"].(map[string]any)["badge.wiegand26"] != "26:22915" {
+		t.Fatalf("read: %v", rd)
+	}
+	if st, _ := h.call(h.client(nil), "POST", "/v1/admin/badges/read", "", map[string]string{"number": "1"}); st != 401 {
+		t.Fatalf("read needs a session: %d", st)
+	}
 	// Dan's fob from two readers: padded 24-bit decimal, and the Wiegand pair
 	// run together. Enrolled from either, accepted from the other.
 	h.adminCall("POST", "/v1/admin/users", map[string]any{"username": "kim"})
