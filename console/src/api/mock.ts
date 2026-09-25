@@ -108,6 +108,8 @@ let badgeFormat: BadgeFormat = 'none'
 let defaultProvider: DefaultProvider = 'rostor'
 let deputyUpdate: DeputyUpdatePolicy = 'manual'
 let tenantName = 'ChattLab'
+/** Device principals in static groups (the console adds them from Groups). */
+const deviceMembers = new Map<string, Set<string>>()
 // Sign-in overrides by group (v0.11.0): the workstation group opens its lock screens on the badge.
 const overrides: AuthOverride[] = [
   { group: { id: 'grp_staff', name: 'staff' }, login: { default_method: 'badge' }, logon: { session_account: '', default_provider: '' }, created_at: daysAgo(3, 9, 12) },
@@ -637,6 +639,8 @@ export function createMockApi(_opts: { onUnauthorized?: () => void } = {}): Api 
         ...Object.entries(nested).filter(([, parents]) => parents.some((p) => p.id === g.id)).map(([id]) => groups.find((x) => x.id === id)).filter((x): x is Group => !!x)
           .map((x) => ({ kind: 'group', id: x.id, name: x.name, display_name: x.display_name })),
         ...users.filter((u) => u.groups.some((m) => m.name === g.name)).map((u) => ({ kind: 'principal', id: u.id, name: u.username, display_name: u.display_name })),
+        ...[...(deviceMembers.get(g.id) ?? [])].map((id) => devices.find((x) => x.id === id)).filter((x): x is Device => !!x)
+          .map((x) => ({ kind: 'device', id: x.id, name: x.display_name, display_name: x.display_name })),
       ]
       const d: GroupDetail = { ...clone(g), members, grants: clone(grants.filter((gr) => gr.subject.kind === 'group' && gr.subject.name === g.name)) }
       return d
@@ -655,15 +659,37 @@ export function createMockApi(_opts: { onUnauthorized?: () => void } = {}): Api 
       await delay(200)
       const g = groups.find((x) => x.name === name)
       if (!g) throw mockErr(404, 'request.not_found')
+      if (body.member_kind === 'group') {
+        const child = groups.find((x) => x.name === body.member || x.id === body.member)
+        if (!child) throw mockErr(404, 'request.not_found')
+        nested[child.id] = [...(nested[child.id] ?? []), { id: g.id, name: g.name }]
+        g.member_count++
+        append(`user:${session?.principal.id ?? ''}`, 'group.member_add', `group:${g.id}`, 'session', 'AL1', 'ok', { member: child.name })
+        emit('group.updated')
+        return
+      }
       if (body.member_kind !== 'principal') throw mockErr(400, 'request.malformed', { field: 'member_kind' })
       const u = byId(body.member)
-      if (!u) throw mockErr(404, 'principal.not_found')
+      if (!u) {
+        const dev = devices.find((x) => x.id === body.member)
+        if (!dev) throw mockErr(404, 'principal.not_found')
+        const set = deviceMembers.get(g.id) ?? new Set<string>()
+        if (!set.has(dev.id)) { set.add(dev.id); deviceMembers.set(g.id, set); g.member_count++ }
+        append(`user:${session?.principal.id ?? ''}`, 'group.member_add', `group:${g.id}`, 'session', 'AL1', 'ok', { member: dev.display_name })
+        emit('group.updated')
+        return
+      }
       if (!u.groups.some((m) => m.id === g.id)) { u.groups.push({ id: g.id, name: g.name }); g.member_count++ }
       append(`user:${session?.principal.id ?? ''}`, 'group.member_add', `group:${g.id}`, 'session', 'AL1', 'ok', { member: u.username })
       emit('group.updated')
     },
     async removeMember(name, body) {
       await delay(200)
+      {
+        const g0 = groups.find((x) => x.name === name)
+        const set = g0 && deviceMembers.get(g0.id)
+        if (g0 && set?.has(body.member)) { set.delete(body.member); g0.member_count--; emit('group.updated'); return }
+      }
       const g = groups.find((x) => x.name === name)
       if (!g) throw mockErr(404, 'request.not_found')
       const u = byId(body.member)

@@ -104,7 +104,13 @@ function GroupDrawer({ name, onClose }: { name: string | undefined; onClose: () 
   const g = useQuery({ queryKey: ['group', name], queryFn: () => api.group(name!), enabled: open })
   const d = g.data
   const [member, setMember] = useState('')
-  const [kind, setKind] = useState<MemberChange['member_kind']>('principal')
+  // What to add: a person, a device, or a group. Devices are principals too;
+  // a device group is what the sign-in overrides and scripts target.
+  const [kind, setKind] = useState<'person' | 'device' | 'group'>('person')
+  const canPick = can('groups.write') && open
+  const people = useQuery({ queryKey: ['users', ''], queryFn: () => api.users(), enabled: canPick && kind === 'person' })
+  const devs = useQuery({ queryKey: ['devices', ''], queryFn: () => api.devices(), enabled: canPick && kind === 'device' })
+  const allGroups = useQuery({ queryKey: ['groups', ''], queryFn: () => api.groups(), enabled: canPick && kind === 'group' })
   const refresh = () => { for (const k of invalidateGroups) void qc.invalidateQueries({ queryKey: [k] }) }
   const add = useMutation({
     mutationFn: (body: MemberChange) => api.addMember(name!, body),
@@ -130,11 +136,18 @@ function GroupDrawer({ name, onClose }: { name: string | undefined; onClose: () 
           <div className="section">
             <h3>{t('ui.group.members')}</h3>
             {can('groups.write') && d.kind === 'static' && (
-              <form className="inline" style={{ marginBottom: 8 }} onSubmit={(e) => { e.preventDefault(); if (member.trim()) add.mutate({ member_kind: kind, member: member.trim() }) }}>
-                <SelectField labelCode="ui.group.member_kind" value={kind} onChange={(e) => setKind(e.target.value as MemberChange['member_kind'])}
-                  options={[['principal', 'ui.group.member_kind.principal'], ['group', 'ui.group.member_kind.group']]} />
-                <Field labelCode="ui.group.member_username" value={member} onChange={(e) => setMember(e.target.value)} autoComplete="off" autoCapitalize="none" spellCheck={false} />
-                <button type="submit" className="btn" disabled={!member.trim() || add.isPending}>{t('ui.group.add_member')}</button>
+              <form className="inline" style={{ marginBottom: 8 }} onSubmit={(e) => { e.preventDefault(); if (member) add.mutate({ member_kind: kind === 'group' ? 'group' : 'principal', member }) }}>
+                <SelectField labelCode="ui.group.member_kind" value={kind} onChange={(e) => { setKind(e.target.value as 'person' | 'device' | 'group'); setMember('') }}
+                  options={[['person', 'ui.group.member_kind.principal'], ['device', 'ui.group.member_kind.device'], ['group', 'ui.group.member_kind.group']]} />
+                <SelectField labelCode="ui.group.member_pick" value={member} onChange={(e) => setMember(e.target.value)} options={[
+                  ['', kind === 'person' ? 'ui.group.pick.person' : kind === 'device' ? 'ui.group.pick.device' : 'ui.group.pick.group'],
+                  ...(kind === 'person'
+                    ? (people.data?.items ?? []).filter((u) => u.kind !== 'device' && !d.members.some((m) => m.id === u.id)).map((u): [string, undefined] => [u.username, undefined])
+                    : kind === 'device'
+                      ? (devs.data?.items ?? []).filter((x) => !d.members.some((m) => m.id === x.id)).map((x): [string, undefined] => [x.id, undefined])
+                      : (allGroups.data?.items ?? []).filter((x) => x.name !== name && !d.members.some((m) => m.id === x.id)).map((x): [string, undefined] => [x.name, undefined])),
+                ]} />
+                <button type="submit" className="btn" disabled={!member || add.isPending}>{t('ui.group.add_member')}</button>
               </form>
             )}
             <div className="list">
@@ -142,17 +155,18 @@ function GroupDrawer({ name, onClose }: { name: string | undefined; onClose: () 
               {d.members.map((m) => {
                 const label = m.kind === 'group' ? (m.name ?? m.id) : f.name(m.display_name, m.username ?? m.name ?? m.id)
                 const ref = m.username ?? m.name ?? m.id
+                const target = m.kind === 'group' ? `/groups/${encodeURIComponent(ref)}` : m.kind === 'device' ? '/devices' : `/people/${encodeURIComponent(m.id)}`
                 return (
                   <div key={`${m.kind}:${m.id}`}>
                     <span>
-                      <button type="button" className="rowlink" onClick={() => nav(m.kind === 'group' ? `/groups/${encodeURIComponent(ref)}` : `/people/${encodeURIComponent(m.id)}`)}>{label}</button>
+                      <button type="button" className="rowlink" onClick={() => nav(target)}>{label}</button>
                       {' '}<span className="muted mono">{ref}</span>
                     </span>
                     <span className="actions">
                       {m.state ? <StatePill family="ui.state" value={m.state} /> : <span className="chip">{t(`ui.group.member_kind.${m.kind}`)}</span>}
                       {can('groups.write') && d.kind === 'static' && (
                         <button type="button" className="btn quiet danger" disabled={remove.isPending}
-                          onClick={() => { if (confirm(t('ui.common.confirm_remove_member', { member: ref, group: name }))) remove.mutate({ member_kind: m.kind === 'group' ? 'group' : 'principal', member: ref }) }}>{t('ui.common.remove')}</button>
+                          onClick={() => { if (confirm(t('ui.common.confirm_remove_member', { member: label, group: name }))) remove.mutate({ member_kind: m.kind === 'group' ? 'group' : 'principal', member: m.kind === 'device' ? m.id : ref }) }}>{t('ui.common.remove')}</button>
                       )}
                     </span>
                   </div>
