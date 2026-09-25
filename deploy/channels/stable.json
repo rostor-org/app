@@ -1,24 +1,24 @@
 {
   "channel": "stable",
-  "version": "v0.14.1",
-  "published": "2026-09-25T17:34:16.528903Z",
-  "notes": "Organisation name is a setting under System: it appears in the console header, on the sign-in page and portal, in passkey prompts and on the workstation lock-screen tile.",
+  "version": "v0.14.2",
+  "published": "2026-09-25T18:23:45.215223Z",
+  "notes": "Groups: pick people, devices or groups from a list when adding members. Put workstations in a group to give them a sign-in override, a shared session account, or scripts.",
   "files": {
     "deputy-windows-amd64": {
-      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/588876191",
-      "sha256": "3534fc96fe23a4127dddccbac65fe87dea703dd8586d2679f60957b817e8d809",
+      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/588967121",
+      "sha256": "43f36aa8d2c91f60c23672dbc47cbc09386c792e9c8308f2511a8c9a22bc5abe",
       "size": 8270848
     },
     "linux-amd64": {
-      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/588876189",
-      "sha256": "c500d7b9437f8af97a2056d08212b15e50d24393e970bca36a55e3a8fd184ce1",
-      "size": 24416416
+      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/588967126",
+      "sha256": "67fe0550f98f68390307471dbc403b2d07bae0cd8422acafd94f4e4e326625a3",
+      "size": 24420512
     },
     "linux-arm64": {
-      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/588876192",
-      "sha256": "2fbc0ad2d4a6f609ebd51b97fec79046c3b046f85728611144a44d7fa7dd12ed",
+      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/588967123",
+      "sha256": "13c9a3e06ce397c207f33b5d09be95690a454318aeb40308acad6e036ab1f916",
       "size": 22937760
     }
   },
-  "signature": "+yXyEWy3WROmwCrQber+A6iSygFdwKwQXuRQVj8HmFKE5xBDhEwzsIX75dQ9tGZ/gohnct02wxC7aZRHoHONCw=="
+  "signature": "rOPSad6dQ8Gabkv+271pzv3GMTwI1w76M4z+m+H//BaLmhrf/JRGhiMfGU5MarCF8P/exCwOdf4YzfzoqSlhCw=="
 }
