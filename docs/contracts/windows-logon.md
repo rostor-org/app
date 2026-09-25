@@ -181,6 +181,11 @@ The deputy fetches it on every heartbeat, keeps the last answer, and uses
 it for the `ui` reply below; before the first answer it behaves as
 `password`.
 
+### 1.5a Tenant name in the policy (v0.13.0)
+
+`GET /v1/devices/self/policy` also returns `"tenant_name"` (e.g.
+`"ChattLab"`), so the tile can name the organisation.
+
 ## 2. deputy ⇄ credprov named-pipe protocol
 
 Pipe: `\\.\pipe\rostor-deputy`. Security: DACL grants full access to
@@ -220,6 +225,25 @@ The `ui` reply carries `"default_method"` next to `strings`. When it is
 given, so a policy change shows at the next lock without a credential
 provider update. The credential provider may additionally use
 `default_method` to open on the identifier field with the hint visible.
+
+#### Badge-first tile and the organisation name (v0.13.0)
+
+`strings` gains three entries: `heading` (large text above the fields:
+"Sign in to ChattLab", or "Tap your badge · ChattLab" when the default
+method is badge), `switch_to_username` ("Use username") and
+`switch_to_badge` ("Use badge"). All are rendered from the deputy's
+catalog with the tenant name from §1.5a; an older deputy that omits them
+leaves the provider on its previous labels.
+
+When `default_method` is `badge` the provider shows a **masked** field as
+the identifier (a reader burst appears as dots, never as digits), labelled
+by `username_label`, with a command link `switch_to_username` that swaps
+in the plain username field; in username mode the link reads
+`switch_to_badge`. A submit from the masked field sends the text as the
+badge number (the `badge` shape of §2.3); a submit from the plain field is
+the identifier-first shape of §2.2. PIN handling is unchanged. When
+`default_method` is `password` or `passkey` the tile opens on the plain
+field with `switch_to_badge` offered.
 
 ### 2.2 `logon` — authenticate and obtain the local credential
 

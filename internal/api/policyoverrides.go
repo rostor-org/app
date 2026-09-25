@@ -32,7 +32,9 @@ func (s *Server) handleDevicePolicy(w http.ResponseWriter, r *http.Request) {
 	if f, _ := pol["badge.format"].(string); f == "wiegand26" {
 		format = f
 	}
-	s.writeJSON(w, 200, map[string]any{"login": map[string]string{"default_method": method}, "badge": map[string]string{"format": format}})
+	var tenant string
+	_ = s.DB.QueryRow(r.Context(), `SELECT name FROM tenants WHERE id=$1`, s.TenantID).Scan(&tenant)
+	s.writeJSON(w, 200, map[string]any{"login": map[string]string{"default_method": method}, "badge": map[string]string{"format": format}, "tenant_name": tenant})
 }
 
 func (s *Server) overrideRows(r *http.Request) ([]map[string]any, error) {

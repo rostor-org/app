@@ -1579,6 +1579,9 @@ func TestAuthPolicyForDevices(t *testing.T) {
 		if st != 200 {
 			t.Fatalf("policy: %d %v", st, out)
 		}
+		if name, _ := out["tenant_name"].(string); name == "" {
+			t.Fatalf("policy should name the tenant for the lock screen: %v", out)
+		}
 		return out["login"].(map[string]any)["default_method"].(string), out["badge"].(map[string]any)["format"].(string)
 	}
 	if m, f := policy(lab); m != "password" || f != "wiegand26" {
