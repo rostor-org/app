@@ -1,24 +1,24 @@
 {
   "channel": "stable",
-  "version": "v0.8.2",
-  "published": "2026-09-25T15:11:07.76496Z",
-  "notes": "Register badge shows how the reader's output was understood (facility, card, card value, and what will be saved) before you save it.",
+  "version": "v0.8.3",
+  "published": "2026-09-25T15:13:40.405549Z",
+  "notes": "The badge number on the sign-in page is masked as it is typed or tapped.",
   "files": {
     "agent-windows-amd64": {
-      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/588612491",
-      "sha256": "14a4349e94dd9e8bd738b9bace6f454146271c59637d2d814d7b165fb191a60b",
+      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/588617136",
+      "sha256": "faf8b6d391938f06f31916c93dbd4704ff3005ce22b8ec1693341a2b3edb113a",
       "size": 7870464
     },
     "linux-amd64": {
-      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/588612493",
-      "sha256": "584242ae04a0dbd584ea03ac7ab1e0066a06e6c4bdd5f0c513190a36f69a3007",
+      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/588617135",
+      "sha256": "73782362209a2b47a780ffd2ee827e5c43617c538e0e6bdf174e8ff262bc9ba9",
       "size": 24150176
     },
     "linux-arm64": {
-      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/588612488",
-      "sha256": "7ef0c9e788399f2c4e84e5fc67b1c1c06e662e88ffb282ff6e0725c3706373c7",
+      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/588617128",
+      "sha256": "1dfdc1df247d6e1a87f541bc2c3de9a929b04231a60b7b89669c942daa85c3a8",
       "size": 22675616
     }
   },
-  "signature": "xzoe1YT6HkPaan98HSVKe7nTuI/Nd+3STqOiCjcE6TIeD7CTxLKjptgyzC4p3IsaOj4buJCA9LDK13Ub++hSDQ=="
+  "signature": "PTqFiIPIUU6bZdKGjtQjwcAibAO0OcvIj3U/CS+evYyAGMK/uaxR0bNbe0EJDipv3EaFeBCJDFAjkgFFvOyRAA=="
 }
