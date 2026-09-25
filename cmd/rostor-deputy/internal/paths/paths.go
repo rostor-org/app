@@ -28,6 +28,13 @@ var (
 	// temp directory so the staged file inherits the SYSTEM/Administrators
 	// ACL and cannot be swapped by a standard user between write and exec.
 	ScriptsDir = filepath.Join(ProgramData, "scripts")
-	LogDir     = filepath.Join(ProgramData, "logs")
-	LogFile    = filepath.Join(LogDir, "deputy.log")
+	// UpdatesDir holds one directory per deputy version the self-updater
+	// (contract §1.6) has downloaded: the zip, its extracted files, the
+	// installer's log and the "attempted" marker.
+	UpdatesDir = filepath.Join(ProgramData, "updates")
+	// PendingJSON records an update the installer was started for and
+	// whose outcome the next deputy to come up must report.
+	PendingJSON = filepath.Join(UpdatesDir, "pending.json")
+	LogDir      = filepath.Join(ProgramData, "logs")
+	LogFile     = filepath.Join(LogDir, "deputy.log")
 )

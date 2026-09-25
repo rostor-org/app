@@ -1,6 +1,10 @@
 package core
 
-import "context"
+import (
+	"context"
+	"errors"
+	"io"
+)
 
 // Mock is the `--mock-core` verifier: no network, fixed answers so the pipe →
 // local account → reply path can be exercised before core is running.
@@ -69,3 +73,14 @@ func (m Mock) Policy(_ context.Context) (*PolicyResponse, error) {
 	p.TenantName = MockTenantName
 	return &p, nil
 }
+
+// Update implements the §1.6 check for the mock: never an update.
+func (m Mock) Update(_ context.Context) (*UpdateResponse, error) { return &UpdateResponse{}, nil }
+
+// UpdateBundle has nothing to serve: the mock never offers an update.
+func (m Mock) UpdateBundle(_ context.Context, _ io.Writer) (int64, error) {
+	return 0, errors.New("mock core has no update bundle")
+}
+
+// ReportUpdate accepts and discards an update report.
+func (m Mock) ReportUpdate(_ context.Context, _ UpdateRun) error { return nil }

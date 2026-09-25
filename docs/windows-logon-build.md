@@ -280,3 +280,29 @@ name) instead of the person's derived one and logs `ALLOW as shared local
 the masked path (through the link when needed); `--badge-plain` keeps the
 plain-field heuristic; `test.cmd` links `pipeclient.cpp` into the harness
 so it can read the `ui` reply itself.
+
+## Self-update (contract §1.6, v0.14.0)
+
+At the end of every heartbeat (after scripts) the service calls `GET
+/v1/devices/self/update`. When core names a version other than the running
+one, and no logon is in flight, and `C:\ProgramData\Rostor\updates\<version>\attempted`
+does not exist, the deputy streams `GET …/update/bundle` to
+`updates\<version>\rostor-windows-amd64.zip`, checks its size and sha256
+against the announcement, verifies core's ECDSA signature over
+`bundle\n<version>\n<sha256>` against any CA in the pinned `ca.crt`,
+unpacks the zip beside it (entries with `..`, absolute paths, drive
+letters or symlinks refuse the whole bundle), writes `updates\pending.json`
+and the `attempted` marker, and starts `powershell.exe -NoProfile
+-NonInteractive -ExecutionPolicy Bypass -File updates\<version>\install.ps1`
+detached with its output in `updates\<version>\install.log`. That
+installer stops the service, replaces the binary and DLL, and starts the
+new service; the enrollment is kept. Whichever deputy comes up next finds
+`pending.json` and posts `POST …/update/runs` with `ok` when its own
+version equals the pending one, `failed` otherwise, plus the last 4 KB of
+`install.log`; the file is removed once core accepts the report (a
+rejected report is retried every heartbeat), and older version
+directories are emptied down to their log and marker. A refused bundle is
+logged as `update to <version> refused: …` and nothing runs; a version is
+installed at most once per deputy. The deputy's version comes from
+`-ldflags "-X main.version=…"` (it was a `const` before v0.14.0, so every
+build reported `0.1.0`); a plain `go build` reports `0.1.0`.

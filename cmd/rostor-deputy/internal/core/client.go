@@ -236,6 +236,77 @@ func (c *Client) ReportRun(ctx context.Context, id string, run ScriptRun) error 
 	return nil
 }
 
+// Update implements GET /v1/devices/self/update (§1.6). A nil Update in
+// the response means this device stays as it is.
+func (c *Client) Update(ctx context.Context) (*UpdateResponse, error) {
+	var out UpdateResponse
+	status, err := c.doJSON(ctx, http.MethodGet, "/v1/devices/self/update", nil, &out)
+	if err != nil {
+		return nil, err
+	}
+	if status != http.StatusOK {
+		return nil, fmt.Errorf("%w: update returned HTTP %d", ErrUnreachable, status)
+	}
+	return &out, nil
+}
+
+// BundleTimeout bounds the bundle download as a whole. The zip is a few
+// megabytes and a workstation on a slow VPN must still finish it; the
+// caller's context can always cut it shorter.
+const BundleTimeout = 5 * time.Minute
+
+// UpdateBundle implements GET /v1/devices/self/update/bundle (§1.6),
+// streaming the zip into w and returning the byte count. Nothing is
+// buffered in memory: the caller hashes as it writes and checks the size
+// and digest against what Update announced.
+func (c *Client) UpdateBundle(ctx context.Context, w io.Writer) (int64, error) {
+	ctx, cancel := context.WithTimeout(ctx, BundleTimeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.BaseURL+"/v1/devices/self/update/bundle", nil)
+	if err != nil {
+		return 0, err
+	}
+	req.Header.Set("Accept", "application/zip")
+	req.Header.Set("User-Agent", "rostor-deputy/"+c.AgentVersion)
+	c.mu.RLock()
+	hc := c.http
+	c.mu.RUnlock()
+	// The shared client carries the short per-call Timeout, which covers
+	// the whole body read; the bundle needs the transport's header timeout
+	// only and the context above for the rest.
+	resp, err := (&http.Client{Transport: hc.Transport}).Do(req)
+	if err != nil {
+		if isTLSError(err) {
+			return 0, fmt.Errorf("%w: %w: %v", ErrUnreachable, ErrTLS, err)
+		}
+		return 0, fmt.Errorf("%w: %v", ErrUnreachable, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return 0, fmt.Errorf("%w: update bundle returned HTTP %d", ErrUnreachable, resp.StatusCode)
+	}
+	if ct := resp.Header.Get("Content-Type"); !strings.HasPrefix(ct, "application/zip") {
+		return 0, fmt.Errorf("update bundle has content type %q, want application/zip", ct)
+	}
+	n, err := io.Copy(w, resp.Body)
+	if err != nil {
+		return n, fmt.Errorf("%w: %v", ErrUnreachable, err)
+	}
+	return n, nil
+}
+
+// ReportUpdate implements POST /v1/devices/self/update/runs (§1.6).
+func (c *Client) ReportUpdate(ctx context.Context, run UpdateRun) error {
+	status, err := c.doJSON(ctx, http.MethodPost, "/v1/devices/self/update/runs", run, nil)
+	if err != nil {
+		return err
+	}
+	if status != http.StatusCreated {
+		return fmt.Errorf("report update returned HTTP %d", status)
+	}
+	return nil
+}
+
 func (c *Client) doJSON(ctx context.Context, method, path string, in, out any) (int, error) {
 	var body io.Reader
 	if in != nil {

@@ -604,3 +604,51 @@ func TestUnusableSessionAccountFailsCleanly(t *testing.T) {
 		}
 	}
 }
+
+// blockingVerifier holds every Verify until release is closed, so a test
+// can observe a logon that is in flight.
+type blockingVerifier struct {
+	entered chan struct{}
+	release chan struct{}
+}
+
+func (v *blockingVerifier) Verify(_ context.Context, _ core.VerifyRequest) (*core.VerifyResponse, error) {
+	v.entered <- struct{}{}
+	<-v.release
+	return &core.VerifyResponse{Decision: core.DecisionDeny, Reason: []core.Reason{{Code: "auth.failed"}}}, nil
+}
+
+func TestInFlightCountsLogons(t *testing.T) {
+	v := &blockingVerifier{entered: make(chan struct{}), release: make(chan struct{})}
+	b := &Broker{Verifier: v, Accounts: &fakeAccounts{}}
+	if b.InFlight() != 0 {
+		t.Fatalf("idle: %d", b.InFlight())
+	}
+	// ui requests are not logons and are not counted.
+	b.Handle(context.Background(), pipeproto.Request{Op: "ui"})
+	if b.InFlight() != 0 {
+		t.Fatalf("after ui: %d", b.InFlight())
+	}
+	const n = 3
+	done := make(chan pipeproto.Reply, n)
+	for i := 0; i < n; i++ {
+		go func() {
+			done <- b.Handle(context.Background(), pipeproto.Request{Op: "logon", Identifier: "dan", Secret: "x"})
+		}()
+	}
+	for i := 0; i < n; i++ {
+		<-v.entered
+	}
+	if got := b.InFlight(); got != n {
+		t.Fatalf("with %d logons blocked in core: InFlight %d", n, got)
+	}
+	close(v.release)
+	for i := 0; i < n; i++ {
+		if rep := <-done; rep.OK {
+			t.Fatalf("unexpected ALLOW: %+v", rep)
+		}
+	}
+	if got := b.InFlight(); got != 0 {
+		t.Fatalf("after the replies: %d", got)
+	}
+}

@@ -31,9 +31,14 @@ import (
 	"rostor.org/app/cmd/rostor-deputy/internal/pipeproto"
 	"rostor.org/app/cmd/rostor-deputy/internal/scripts"
 	"rostor.org/app/cmd/rostor-deputy/internal/trust"
+	"rostor.org/app/cmd/rostor-deputy/internal/update"
 )
 
-const version = "0.1.0"
+// version is the deputy's own version, set at build time with
+// -ldflags "-X main.version=vX.Y.Z" (a var, not a const: -X cannot set a
+// constant, and self-update decides "ok" or "failed" by comparing this with
+// the version it installed). The default is what a plain `go build` reports.
+var version = "0.1.0"
 
 const usage = `usage: rostor-deputy <command> [flags]
 
@@ -173,7 +178,14 @@ func buildBroker(logger *log.Logger, mock bool) (*broker.Broker, error) {
 			}
 		}
 	}
-	go heartbeat(mgr, coord, b, logger)
+	upd := &update.Coordinator{
+		Client:  mgr.Client,
+		CAFile:  paths.CACert,
+		Version: version,
+		Logger:  logger,
+		Busy:    func() bool { return b.InFlight() > 0 },
+	}
+	go heartbeat(mgr, coord, upd, b, logger)
 	return b, nil
 }
 
@@ -222,12 +234,16 @@ func newTrustManager(cfg *enroll.Config, res core.Resource, logger *log.Logger) 
 }
 
 // heartbeat runs the trust check (bundle update, renewal), posts posture
-// (§1.3), refreshes the effective auth policy (§1.5) and runs the due
-// immediate scripts (§1.4) at start and every ten minutes; failures are
-// only logged. A failed policy fetch keeps the broker's last good value.
-// Scripts come last so a bundle rotation applied in the same tick is what
-// their signatures are checked against.
-func heartbeat(mgr *trust.Manager, coord *scripts.Coordinator, b *broker.Broker, logger *log.Logger) {
+// (§1.3), refreshes the effective auth policy (§1.5), runs the due
+// immediate scripts (§1.4) and finally handles self-update (§1.6) at start
+// and every ten minutes; failures are only logged. A failed policy fetch
+// keeps the broker's last good value. Scripts come after the trust check
+// so a bundle rotation applied in the same tick is what their signatures
+// are checked against; the update check comes last of all, because when
+// it succeeds this process is about to be stopped. The pending-update
+// report is sent on the first tick (service start) and, if core did not
+// accept it then, retried on every later tick until it does.
+func heartbeat(mgr *trust.Manager, coord *scripts.Coordinator, upd *update.Coordinator, b *broker.Broker, logger *log.Logger) {
 	osVersion := windowsVersion()
 	first := true
 	for {
@@ -266,6 +282,18 @@ func heartbeat(mgr *trust.Manager, coord *scripts.Coordinator, b *broker.Broker,
 				logger.Printf("scripts: %v", err)
 			}
 		}
+		ctx, cancel = context.WithTimeout(context.Background(), core.Timeout)
+		if err := upd.ReportPending(ctx); err != nil {
+			logger.Printf("update: %v", err)
+		}
+		cancel()
+		// The download has its own bound (core.BundleTimeout); a logon in
+		// flight defers the whole thing to the next tick.
+		ctx, cancel = context.WithTimeout(context.Background(), core.BundleTimeout+core.Timeout)
+		if err := upd.Check(ctx); err != nil {
+			logger.Printf("update: %v", err)
+		}
+		cancel()
 		time.Sleep(10 * time.Minute)
 	}
 }

@@ -32,6 +32,11 @@ type Broker struct {
 	// (SPEC-scripts) run behind the lock screen, not in front of it.
 	OnLogon func(identifier, principalID, localAccount string)
 
+	// inFlight counts logon requests between entering and leaving Handle,
+	// so the self-updater can refuse to stop the service under a person
+	// who is mid sign-in (contract §1.6).
+	inFlight atomic.Int64
+
 	// policy is the last effective auth policy the heartbeat fetched
 	// (§1.5), stored as a core.PolicyResponse value. It is read on every
 	// `ui` request from the pipe goroutines and written from the heartbeat,
@@ -74,10 +79,20 @@ func (b *Broker) Handle(ctx context.Context, req pipeproto.Request) pipeproto.Re
 	case "ui":
 		return b.ui(locale)
 	case "logon":
+		b.inFlight.Add(1)
+		defer b.inFlight.Add(-1)
 		return b.logon(ctx, locale, req)
 	default:
 		return b.fail(locale, "deputy.bad_request", "")
 	}
+}
+
+// InFlight is the number of logon requests currently inside Handle. The
+// sign-in hook (OnLogon) runs after the reply and is not counted: scripts
+// behind the lock screen are the scripts coordinator's business, and an
+// update waits for logons, not for them.
+func (b *Broker) InFlight() int {
+	return int(b.inFlight.Load())
 }
 
 // TenantName is the organisation name from the current policy (§1.5a), or

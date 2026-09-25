@@ -198,3 +198,33 @@ const (
 	DefaultProviderRostor  = "rostor"
 	DefaultProviderWindows = "windows"
 )
+
+// UpdateInfo is the non-null half of GET /v1/devices/self/update (§1.6):
+// the deputy version this device should run, the sha256 (hex) and byte
+// size of rostor-windows-amd64.zip, and the core's signature over
+// "bundle\n" + version + "\n" + sha256 (base64 ASN.1 DER ECDSA P-256 with
+// the CA key named by Signer, verified against ca.crt like a script).
+type UpdateInfo struct {
+	Version   string `json:"version"`
+	SHA256    string `json:"sha256"`
+	Signature string `json:"signature"`
+	Signer    string `json:"signer"`
+	Size      int64  `json:"size"`
+}
+
+// UpdateResponse is GET /v1/devices/self/update. Update is nil when the
+// device should stay as it is.
+type UpdateResponse struct {
+	Update *UpdateInfo `json:"update"`
+}
+
+// UpdateRun is the body of POST /v1/devices/self/update/runs (§1.6): the
+// outcome of an update attempt, sent by whichever deputy comes up after
+// the installer ran. Status is RunOK when the running version equals the
+// version that was installed, RunFailed otherwise.
+type UpdateRun struct {
+	Version     string `json:"version"`
+	Status      string `json:"status"`
+	FromVersion string `json:"from_version"`
+	OutputTail  string `json:"output_tail"`
+}
