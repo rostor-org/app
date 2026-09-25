@@ -1,24 +1,24 @@
 {
   "channel": "stable",
-  "version": "v0.6.2",
-  "published": "2026-09-25T00:53:38.320938Z",
-  "notes": "Typing in drawers no longer loses focus (badge readers register whole numbers again); the console is dark by default with a Light option under System \u003e Appearance.",
+  "version": "v0.7.0",
+  "published": "2026-09-25T12:45:08.612995Z",
+  "notes": "Agents: software principals owned by a person that can never do more than their owner. Members create their own agents on My account, issue tokens and hand over rights they hold; admins manage all from People. MCP endpoint at /mcp so agents and Claude sessions operate Rostor through the same API and audit.",
   "files": {
     "agent-windows-amd64": {
-      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/587195247",
-      "sha256": "15a08071a944f880db714f42ccab5debd0c1eb1652babb32e348b249b902a17a",
+      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/588344526",
+      "sha256": "10348d1abdb278f621f6c58c1bdfbfd4925e07dadb82cc572430f8a441464dd2",
       "size": 7870464
     },
     "linux-amd64": {
-      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/587195248",
-      "sha256": "e6bfffd150c4ca878ebe0aa7074d353e3d2ec04937976602953fb78baebaa341",
-      "size": 23949472
+      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/588344527",
+      "sha256": "950c416e41d47ce7a7f8ff07048170c256eca51f52230c132581da81779d1c52",
+      "size": 24125600
     },
     "linux-arm64": {
-      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/587195252",
-      "sha256": "218e00aa558c238391ac0a50c9606e3ff655f4701435f8dd513a6448934be79c",
-      "size": 22544544
+      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/588344531",
+      "sha256": "f4831fcea80982ea44a75ced6eb4ec166f2e8e7e86483a3fe69315f9ad85dc5f",
+      "size": 22675616
     }
   },
-  "signature": "S4TJyruEuNes6K2oZ0ROUfkcR/K0jz8WFC+go2LLSmnK8nxBX+bShjXFDOh73il1DgvHQDABhZsurzzDCTOGCg=="
+  "signature": "Pk4Q6sSmu13HE5A/5fdqRHhyLvEwwbqw4mx1Z/jELHx7eIAKxqvHyb9Lgldxdbj+Kkfgh6zaL2IBtDF3OdK7Ag=="
 }
