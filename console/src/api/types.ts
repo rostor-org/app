@@ -674,6 +674,9 @@ export interface Api {
   createTile(body: TileInput): Promise<Tile>
   updateTile(id: string, body: TileInput): Promise<Tile>
   deleteTile(id: string): Promise<void>
+  /** The organisation's name, shown everywhere (system.read / system.write). */
+  organisation(): Promise<{ name: string }>
+  setOrganisation(name: string): Promise<{ name: string }>
   /** Deputy self-update policy (system.read / policies.write). */
   deviceSettings(): Promise<DeviceSettings>
   setDeviceSettings(body: DeviceSettings): Promise<DeviceSettings>

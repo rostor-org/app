@@ -107,6 +107,7 @@ const enrolledPasskeys = () => Object.values(bindings).flat().filter((b) => b.me
 let badgeFormat: BadgeFormat = 'none'
 let defaultProvider: DefaultProvider = 'rostor'
 let deputyUpdate: DeputyUpdatePolicy = 'manual'
+let tenantName = 'ChattLab'
 // Sign-in overrides by group (v0.11.0): the workstation group opens its lock screens on the badge.
 const overrides: AuthOverride[] = [
   { group: { id: 'grp_staff', name: 'staff' }, login: { default_method: 'badge' }, logon: { session_account: '', default_provider: '' }, created_at: daysAgo(3, 9, 12) },
@@ -425,7 +426,16 @@ function why(principal: string, action: string, rtype: string, rid: string): Exp
 export function createMockApi(_opts: { onUnauthorized?: () => void } = {}): Api {
   return {
     async catalog(locale) { await delay(30); return { locale, strings: { ...serverCodes, ...(catalogEn as Record<string, string>) } } },
-    async brand() { await delay(20); return { tenant_name: 'ChattLab', tokens: { ink: '#14161a', paper: '#f4f2ee', signal: '#e07a24' } } },
+    async brand() { await delay(20); return { tenant_name: tenantName, tokens: { ink: '#14161a', paper: '#f4f2ee', signal: '#e07a24' } } },
+    async organisation() { await delay(); return { name: tenantName } },
+    async setOrganisation(name) {
+      await delay(200)
+      const n = name.trim()
+      if (!n || n.length > 80) throw mockErr(400, 'request.malformed', { field: 'name' })
+      append(`user:${session?.principal.id ?? ''}`, 'tenant.rename', 'tenant:tnt_mock', 'session', 'AL1', 'ok', { from: tenantName, to: n })
+      tenantName = n
+      return { name: tenantName }
+    },
     async login(req) {
       await delay(400)
       if (failedAttempts >= 5) return { code: 'auth.locked', params: { minutes: 15 }, message: 'Too many failed attempts. Try again in 15 minutes.' }

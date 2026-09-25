@@ -133,6 +133,7 @@ export function System() {
           {sys.data && <p><b>{t(`ui.system.profile.${sys.data.profile}`)}</b></p>}
         </div>
         {can('system.read') && <SignInSettings canWrite={can('policies.write')} />}
+        <OrganisationCard canWrite={can('system.write')} />
         <AppearanceCard />
         <TilesCard canWrite={can('system.write')} />
       </div>
@@ -141,6 +142,39 @@ export function System() {
 }
 
 /** This browser's console theme (see lib/theme). Dark unless light is chosen here. */
+/** The organisation's name: the console header, the sign-in page, the portal, passkey prompts and the workstation tiles all show it. */
+function OrganisationCard({ canWrite }: { canWrite: boolean }) {
+  const t = useT()
+  const id = useId()
+  const qc = useQueryClient()
+  const toast = useToast()
+  const q = useQuery({ queryKey: ['organisation'], queryFn: () => api.organisation() })
+  const [name, setName] = useState<string | null>(null)
+  const cur = name ?? q.data?.name ?? ''
+  const save = useMutation({
+    mutationFn: (n: string) => api.setOrganisation(n),
+    onSuccess: (r) => { setName(null); for (const k of ['organisation', 'brand', 'system', 'device-settings']) void qc.invalidateQueries({ queryKey: [k] }); toast(t('ui.system.organisation_saved_toast', { name: r.name })) },
+  })
+  return (
+    <div className="card">
+      <h3>{t('ui.system.organisation')}</h3>
+      <ErrorNote error={q.error ?? save.error} />
+      <form onSubmit={(e) => { e.preventDefault(); if (cur.trim()) save.mutate(cur.trim()) }}>
+        <div className="field">
+          <label htmlFor={id}>{t('ui.system.organisation_name')}</label>
+          <input id={id} className="input" value={cur} onChange={(e) => setName(e.target.value)} maxLength={80} readOnly={!canWrite} autoComplete="organization" />
+          <small className="muted">{t('ui.system.organisation_hint')}</small>
+        </div>
+        {canWrite && (
+          <div className="actions">
+            <button type="submit" className="btn primary" disabled={save.isPending || name === null || !cur.trim() || cur.trim() === q.data?.name}>{t(save.isPending ? 'ui.common.working' : 'ui.common.save')}</button>
+          </div>
+        )}
+      </form>
+    </div>
+  )
+}
+
 function AppearanceCard() {
   const t = useT()
   const id = useId()

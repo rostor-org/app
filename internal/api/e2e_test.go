@@ -1798,3 +1798,25 @@ func TestDeputyUpdate(t *testing.T) {
 		t.Fatalf("bad policy value: %d", st)
 	}
 }
+
+// The organisation's name is one field, shown everywhere: the brand the
+// console reads without a session, and the tenant name devices get.
+func TestOrganisationName(t *testing.T) {
+	h := newHarness(t)
+	if st, out := h.call(h.client(nil), "PUT", "/v1/admin/settings/organisation", h.admin, map[string]any{"name": "   "}); st != 400 {
+		t.Fatalf("empty name: %d %v", st, out)
+	}
+	if got := h.adminCall("PUT", "/v1/admin/settings/organisation", map[string]any{"name": " ChattLab "})["name"]; got != "ChattLab" {
+		t.Fatalf("rename: %v", got)
+	}
+	if st, out := h.call(h.client(nil), "GET", "/v1/brand", "", nil); st != 200 || out["tenant_name"] != "ChattLab" {
+		t.Fatalf("brand should carry the new name: %d %v", st, out)
+	}
+	if got := h.adminCall("GET", "/v1/admin/settings/organisation", nil)["name"]; got != "ChattLab" {
+		t.Fatalf("get: %v", got)
+	}
+	rows := h.adminCall("GET", "/v1/admin/audit?q=tenant.rename", nil)["items"].([]any)
+	if len(rows) == 0 {
+		t.Fatal("rename should be audited")
+	}
+}

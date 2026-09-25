@@ -142,6 +142,11 @@ plugin registry, key rotation, policy counts on groups.
   type, whatever existing roles already use. `POST /v1/admin/roles`
   `{resource_type,name,permissions}` defines a role (roles.write) and is what
   the form's "New role…" calls before creating the grant.
+- Organisation name (v0.14.1): `GET/PUT /v1/admin/settings/organisation`
+  (system.read / system.write) `{name}` (1–80 chars); it is the tenant's
+  name, shown by `/v1/brand`, the sign-in page and portal, the passkey
+  relying-party display name, and the device policy's `tenant_name`.
+  Audit `tenant.rename`.
 - Deputy updates (v0.14.0). Tenant policy `deputy.update`: `GET/PUT
   /v1/admin/settings/devices` (system.read / policies.write) →
   `{deputy:{update:"auto"|"manual"}}`; `auto` tells every device whose

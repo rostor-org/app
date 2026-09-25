@@ -96,6 +96,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /v1/admin/settings/auth/overrides/{group}", s.adminAuth("policies.write", s.handleDeleteAuthOverride))
 	mux.HandleFunc("GET /v1/devices/self/policy", s.deviceAuth(s.handleDevicePolicy))
 	// Deputy self-update (contract §1.6).
+	mux.HandleFunc("GET /v1/admin/settings/organisation", s.adminAuth("system.read", s.handleGetOrganisation))
+	mux.HandleFunc("PUT /v1/admin/settings/organisation", s.adminAuth("system.write", s.handlePutOrganisation))
 	mux.HandleFunc("GET /v1/admin/settings/devices", s.adminAuth("system.read", s.handleGetDeviceSettings))
 	mux.HandleFunc("PUT /v1/admin/settings/devices", s.adminAuth("policies.write", s.handlePutDeviceSettings))
 	mux.HandleFunc("POST /v1/admin/devices/update-all", s.adminAuth("devices.write", s.handleMarkAllDeviceUpdates))
