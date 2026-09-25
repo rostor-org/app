@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useId, useRef, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { api, type AuthSettings, type BadgeFormat, type CA, type LoginMethod, type SystemInfo } from '../api'
+import { api, type AuthSettings, type BadgeFormat, type CA, type DefaultProvider, type LoginMethod, type SystemInfo } from '../api'
 import { TilesCard } from '../components/TilesCard'
 import { useT } from '../i18n/catalog'
 import { useSession } from '../auth/session'
@@ -170,31 +170,31 @@ function SignInSettings({ canWrite }: { canWrite: boolean }) {
   const f = useFormat()
   const qc = useQueryClient()
   const toast = useToast()
-  const ids = { rp: useId(), name: useId(), origins: useId(), confirm: useId(), method: useId(), badge: useId() }
+  const ids = { rp: useId(), name: useId(), origins: useId(), confirm: useId(), method: useId(), badge: useId(), provider: useId() }
   const q = useQuery({ queryKey: ['auth-settings'], queryFn: () => api.authSettings() })
-  const [form, setForm] = useState<{ rp_id: string; display_name: string; origins: string; default_method: LoginMethod; badge_format: BadgeFormat } | null>(null)
+  const [form, setForm] = useState<{ rp_id: string; display_name: string; origins: string; default_method: LoginMethod; badge_format: BadgeFormat; default_provider: DefaultProvider } | null>(null)
   const [confirm, setConfirm] = useState('')
   const saved = q.data?.webauthn
   // Edit a copy; the query stays the source of truth until save.
-  const cur = form ?? (saved ? { rp_id: saved.rp_id, display_name: saved.display_name, origins: (saved.origins ?? []).join('\n'), default_method: q.data?.login?.default_method ?? 'password', badge_format: q.data?.badge?.format ?? 'none' } : null)
+  const cur = form ?? (saved ? { rp_id: saved.rp_id, display_name: saved.display_name, origins: (saved.origins ?? []).join('\n'), default_method: q.data?.login?.default_method ?? 'password', badge_format: q.data?.badge?.format ?? 'none', default_provider: q.data?.logon?.default_provider ?? 'rostor' } : null)
   const enrolled = saved?.enrolled_passkeys ?? 0
   const rpChanged = !!saved && !!cur && cur.rp_id.trim().toLowerCase() !== saved.rp_id
   const needConfirm = rpChanged && enrolled > 0
-  const dirty = !!saved && !!cur && (rpChanged || cur.display_name !== saved.display_name || cur.origins !== (saved.origins ?? []).join('\n') || cur.default_method !== (q.data?.login?.default_method ?? 'password') || cur.badge_format !== (q.data?.badge?.format ?? 'none'))
+  const dirty = !!saved && !!cur && (rpChanged || cur.display_name !== saved.display_name || cur.origins !== (saved.origins ?? []).join('\n') || cur.default_method !== (q.data?.login?.default_method ?? 'password') || cur.badge_format !== (q.data?.badge?.format ?? 'none') || cur.default_provider !== (q.data?.logon?.default_provider ?? 'rostor'))
   // Type the new domain back; when the domain is being cleared, the old one.
   const confirmWord = (cur?.rp_id.trim().toLowerCase() || saved?.rp_id) ?? ''
   const confirmed = !needConfirm || confirm.trim().toLowerCase() === confirmWord
 
   const save = useMutation({
-    mutationFn: (body: AuthSettings['webauthn'] & { default_method: LoginMethod; badge_format: BadgeFormat }) => api.setAuthSettings({ webauthn: { rp_id: body.rp_id, display_name: body.display_name, origins: body.origins }, login: { default_method: body.default_method }, badge: { format: body.badge_format } }),
+    mutationFn: (body: AuthSettings['webauthn'] & { default_method: LoginMethod; badge_format: BadgeFormat; default_provider: DefaultProvider }) => api.setAuthSettings({ webauthn: { rp_id: body.rp_id, display_name: body.display_name, origins: body.origins }, login: { default_method: body.default_method }, badge: { format: body.badge_format }, logon: { default_provider: body.default_provider } }),
     onSuccess: (s) => { qc.setQueryData(['auth-settings'], s); setForm(null); setConfirm(''); toast(t('ui.signin.saved_toast')) },
   })
   const submit = (e: FormEvent) => {
     e.preventDefault()
     if (!cur || !confirmed) return
-    save.mutate({ rp_id: cur.rp_id.trim().toLowerCase(), display_name: cur.display_name.trim(), origins: cur.origins.split(/\r?\n/).map((o) => o.trim()).filter(Boolean), enrolled_passkeys: enrolled, default_method: cur.default_method, badge_format: cur.badge_format })
+    save.mutate({ rp_id: cur.rp_id.trim().toLowerCase(), display_name: cur.display_name.trim(), origins: cur.origins.split(/\r?\n/).map((o) => o.trim()).filter(Boolean), enrolled_passkeys: enrolled, default_method: cur.default_method, badge_format: cur.badge_format, default_provider: cur.default_provider })
   }
-  const set = (k: 'rp_id' | 'display_name' | 'origins' | 'default_method' | 'badge_format') => (e: { target: { value: string } }) => { if (cur) setForm({ ...cur, [k]: e.target.value }) }
+  const set = (k: 'rp_id' | 'display_name' | 'origins' | 'default_method' | 'badge_format' | 'default_provider') => (e: { target: { value: string } }) => { if (cur) setForm({ ...cur, [k]: e.target.value }) }
 
   return (
     <div className="card">
@@ -233,6 +233,14 @@ function SignInSettings({ canWrite }: { canWrite: boolean }) {
               <option value="wiegand26">{t('ui.signin.badge_format.wiegand26')}</option>
             </select>
             <small className="muted">{t('ui.signin.badge_format_hint')}</small>
+          </div>
+          <div className="field">
+            <label htmlFor={ids.provider}>{t('ui.signin.default_provider')}</label>
+            <select id={ids.provider} className="input" value={cur.default_provider} onChange={set('default_provider')} disabled={!canWrite}>
+              <option value="rostor">{t('ui.signin.default_provider.rostor')}</option>
+              <option value="windows">{t('ui.signin.default_provider.windows')}</option>
+            </select>
+            <small className="muted">{t('ui.signin.default_provider_hint')}</small>
           </div>
           {needConfirm && (
             <div className="field">
@@ -275,11 +283,12 @@ function SignInOverrides({ canWrite }: { canWrite: boolean }) {
   const [group, setGroup] = useState('')
   const [method, setMethod] = useState<LoginMethod | ''>('badge')
   const [account, setAccount] = useState('')
+  const [provider, setProvider] = useState<DefaultProvider | ''>('')
   const refresh = () => { void qc.invalidateQueries({ queryKey: ['auth-overrides'] }); void qc.invalidateQueries({ queryKey: ['audit'] }) }
   const add = useMutation({
-    mutationFn: (v: { group: string; method: LoginMethod | ''; account: string }) => api.setAuthOverride(v.group, {
+    mutationFn: (v: { group: string; method: LoginMethod | ''; account: string; provider: DefaultProvider | '' }) => api.setAuthOverride(v.group, {
       ...(v.method ? { login: { default_method: v.method } } : {}),
-      ...(v.account.trim() ? { logon: { session_account: v.account.trim().toLowerCase() } } : {}),
+      ...(v.account.trim() || v.provider ? { logon: { ...(v.account.trim() ? { session_account: v.account.trim().toLowerCase() } : {}), ...(v.provider ? { default_provider: v.provider } : {}) } } : {}),
     }),
     onSuccess: (o) => { refresh(); setGroup(''); setAccount(''); toast(t('ui.signin.overrides.added_toast', { group: o.group.name, method: o.login.default_method ? t(METHOD_LABEL[o.login.default_method]) : t('ui.signin.overrides.method_default') })) },
   })
@@ -290,7 +299,7 @@ function SignInOverrides({ canWrite }: { canWrite: boolean }) {
   const items = list.data?.items ?? []
   const taken = new Set(items.map((o) => o.group.name))
   const available = (groups.data?.items ?? []).filter((g) => !taken.has(g.name))
-  const submit = (e: FormEvent) => { e.preventDefault(); if (group && (method || account.trim())) add.mutate({ group, method, account }) }
+  const submit = (e: FormEvent) => { e.preventDefault(); if (group && (method || account.trim() || provider)) add.mutate({ group, method, account, provider }) }
   return (
     <div style={{ marginTop: 18 }}>
       <b>{t('ui.signin.overrides.title')}</b>
@@ -303,7 +312,8 @@ function SignInOverrides({ canWrite }: { canWrite: boolean }) {
           {items.map((o) => (
             <li key={o.group.id} className="inline">
               <span><b>{o.group.name}</b> <span className="muted">→</span> {o.login.default_method ? t(METHOD_LABEL[o.login.default_method]) : t('ui.signin.overrides.method_default')}
-                {o.logon?.session_account && <> <span className="muted">·</span> {t('ui.signin.overrides.as_account', { account: o.logon.session_account })}</>}</span>
+                {o.logon?.session_account && <> <span className="muted">·</span> {t('ui.signin.overrides.as_account', { account: o.logon.session_account })}</>}
+                {o.logon?.default_provider && <> <span className="muted">·</span> {t(`ui.signin.default_provider.${o.logon.default_provider}`)}</>}</span>
               {canWrite && (
                 <span className="actions">
                   <button type="button" className="btn quiet danger" disabled={remove.isPending} onClick={() => remove.mutate(o.group.name)}>{t('ui.common.remove')}</button>
@@ -324,7 +334,12 @@ function SignInOverrides({ canWrite }: { canWrite: boolean }) {
             {METHODS.map((m) => <option key={m} value={m}>{t(METHOD_LABEL[m])}</option>)}
           </select>
           <input className="input mono" aria-label={t('ui.signin.overrides.session_account')} placeholder={t('ui.signin.overrides.session_account')} value={account} onChange={(e) => setAccount(e.target.value)} maxLength={20} autoComplete="off" autoCapitalize="none" spellCheck={false} disabled={add.isPending} />
-          <button type="submit" className="btn" disabled={!group || (!method && !account.trim()) || add.isPending}>{t(add.isPending ? 'ui.common.working' : 'ui.common.add')}</button>
+          <select className="input" aria-label={t('ui.signin.default_provider')} value={provider} onChange={(e) => setProvider(e.target.value as DefaultProvider | '')} disabled={add.isPending}>
+            <option value="">{t('ui.signin.overrides.provider_default')}</option>
+            <option value="rostor">{t('ui.signin.default_provider.rostor')}</option>
+            <option value="windows">{t('ui.signin.default_provider.windows')}</option>
+          </select>
+          <button type="submit" className="btn" disabled={!group || (!method && !account.trim() && !provider) || add.isPending}>{t(add.isPending ? 'ui.common.working' : 'ui.common.add')}</button>
         </form>
       )}
     </div>

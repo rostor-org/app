@@ -85,15 +85,19 @@ export interface WebAuthnSettings {
 export type LoginMethod = 'password' | 'passkey' | 'badge'
 /** Badge number format (auth policy badge.format): keep every form, or reduce every reading to Wiegand-26 facility:card. */
 export type BadgeFormat = 'none' | 'wiegand26'
+/** Which tile a Windows lock screen selects: the Rostor tile, or Windows' own sign-in with Rostor one click away. */
+export type DefaultProvider = 'rostor' | 'windows'
 export interface AuthSettings {
   webauthn: WebAuthnSettings & { enrolled_passkeys: number }
   login: { default_method: LoginMethod }
   badge: { format: BadgeFormat }
+  logon: { default_provider: DefaultProvider }
 }
 export interface AuthSettingsUpdate {
   webauthn: WebAuthnSettings
   login?: { default_method: LoginMethod }
   badge?: { format: BadgeFormat }
+  logon?: { default_provider: DefaultProvider }
 }
 /**
  * A per-group override of the tenant's login.default_method
@@ -104,12 +108,12 @@ export interface AuthOverride {
   group: GroupRef
   login: { default_method: LoginMethod | '' }
   /** A shared local account every session on the group's devices runs as (licensed workstations); empty when none. */
-  logon: { session_account: string }
+  logon: { session_account: string; default_provider: DefaultProvider | '' }
   created_at: string
 }
 export interface AuthOverrideUpdate {
   login?: { default_method: LoginMethod }
-  logon?: { session_account: string }
+  logon?: { session_account?: string; default_provider?: DefaultProvider }
 }
 
 export interface Session {

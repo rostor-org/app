@@ -41,8 +41,12 @@ func (s *Server) handleDevicePolicy(w http.ResponseWriter, r *http.Request) {
 	var tenant string
 	_ = s.DB.QueryRow(r.Context(), `SELECT name FROM tenants WHERE id=$1`, s.TenantID).Scan(&tenant)
 	account, _ := pol["logon.session_account"].(string)
+	provider := "rostor"
+	if p, _ := pol["logon.default_provider"].(string); p == "windows" {
+		provider = p
+	}
 	s.writeJSON(w, 200, map[string]any{"login": map[string]string{"default_method": method}, "badge": map[string]string{"format": format},
-		"logon": map[string]string{"session_account": account}, "tenant_name": tenant})
+		"logon": map[string]string{"session_account": account, "default_provider": provider}, "tenant_name": tenant})
 }
 
 func (s *Server) overrideRows(r *http.Request) ([]map[string]any, error) {
@@ -64,8 +68,9 @@ func (s *Server) overrideRows(r *http.Request) ([]map[string]any, error) {
 		}
 		method, _ := doc["login.default_method"].(string)
 		account, _ := doc["logon.session_account"].(string)
+		provider, _ := doc["logon.default_provider"].(string)
 		out = append(out, map[string]any{"policy_id": pid, "group": map[string]string{"id": gid, "name": gname},
-			"login": map[string]string{"default_method": method}, "logon": map[string]string{"session_account": account}, "created_at": created})
+			"login": map[string]string{"default_method": method}, "logon": map[string]string{"session_account": account, "default_provider": provider}, "created_at": created})
 	}
 	return out, rows.Err()
 }
@@ -94,6 +99,8 @@ func (s *Server) handlePutAuthOverride(w http.ResponseWriter, r *http.Request) {
 			// The deputy owns it like any derived account; the audit still
 			// names the person who signed in.
 			SessionAccount string `json:"session_account"`
+			// DefaultProvider: which tile the lock screen selects, rostor or windows.
+			DefaultProvider string `json:"default_provider"`
 		} `json:"logon"`
 	}
 	if err := decode(r, &req); err != nil {
@@ -111,7 +118,13 @@ func (s *Server) handlePutAuthOverride(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, directory.Err("request.malformed", "field", "logon.session_account"))
 		return
 	}
-	if req.Login.DefaultMethod == "" && account == "" {
+	switch req.Logon.DefaultProvider {
+	case "", "rostor", "windows":
+	default:
+		s.fail(w, r, directory.Err("request.malformed", "field", "logon.default_provider"))
+		return
+	}
+	if req.Login.DefaultMethod == "" && account == "" && req.Logon.DefaultProvider == "" {
 		s.fail(w, r, directory.Err("request.malformed", "field", "override"))
 		return
 	}
@@ -127,6 +140,9 @@ func (s *Server) handlePutAuthOverride(w http.ResponseWriter, r *http.Request) {
 	}
 	if account != "" {
 		doc["logon.session_account"] = account
+	}
+	if req.Logon.DefaultProvider != "" {
+		doc["logon.default_provider"] = req.Logon.DefaultProvider
 	}
 	err = s.tx(r, func(tx pgx.Tx) error {
 		if _, err := tx.Exec(r.Context(), `DELETE FROM policies WHERE tenant_id=$1 AND domain='auth' AND name=$2`, s.TenantID, name); err != nil {

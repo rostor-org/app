@@ -1657,6 +1657,23 @@ func TestAuthPolicyForDevices(t *testing.T) {
 	if out := verify(office, "OFFICE-1"); out["decision"] != "ALLOW" || out["session_account"] != nil {
 		t.Fatalf("office verify should not carry a shared account: %v", out)
 	}
+	// Which tile the lock screen selects: tenant-wide windows, lab group back to rostor.
+	h.adminCall("PUT", "/v1/admin/settings/auth", map[string]any{"webauthn": map[string]any{"rp_id": "", "display_name": "", "origins": []string{}}, "login": map[string]any{"default_method": "password"}, "logon": map[string]any{"default_provider": "windows"}})
+	if got := h.adminCall("GET", "/v1/admin/settings/auth", nil)["logon"].(map[string]any)["default_provider"]; got != "windows" {
+		t.Fatalf("tenant provider: %v", got)
+	}
+	st, out = h.call(office, "GET", "/v1/devices/self/policy", "", nil)
+	if st != 200 || out["logon"].(map[string]any)["default_provider"] != "windows" {
+		t.Fatalf("office should follow the tenant: %d %v", st, out)
+	}
+	h.adminCall("PUT", "/v1/admin/settings/auth/overrides/lab-pcs", map[string]any{"login": map[string]any{"default_method": "badge"}, "logon": map[string]any{"session_account": "chattlab", "default_provider": "rostor"}})
+	st, out = h.call(lab, "GET", "/v1/devices/self/policy", "", nil)
+	if st != 200 || out["logon"].(map[string]any)["default_provider"] != "rostor" || out["logon"].(map[string]any)["session_account"] != "chattlab" {
+		t.Fatalf("lab should follow its override: %d %v", st, out)
+	}
+	if st, out := h.call(h.client(nil), "PUT", "/v1/admin/settings/auth/overrides/lab-pcs", h.admin, map[string]any{"logon": map[string]any{"default_provider": "linux"}}); st != 400 {
+		t.Fatalf("bad provider: %d %v", st, out)
+	}
 	// The audit names dana, not the shared account.
 	rows := h.adminCall("GET", "/v1/admin/audit?q=verify&include_system=1", nil)["items"].([]any)
 	if len(rows) == 0 || rows[0].(map[string]any)["detail"].(map[string]any)["principal_name"] != "dana" {

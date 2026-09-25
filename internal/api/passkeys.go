@@ -82,7 +82,22 @@ func (s *Server) handleGetAuthSettings(w http.ResponseWriter, r *http.Request) {
 	_ = s.DB.QueryRow(r.Context(), `SELECT count(*) FROM authenticator_bindings WHERE tenant_id=$1 AND method='webauthn' AND state='active'`, s.TenantID).Scan(&enrolled)
 	s.writeJSON(w, 200, map[string]any{"webauthn": map[string]any{"rp_id": rp.ID, "display_name": rp.DisplayName, "origins": rp.Origins, "enrolled_passkeys": enrolled},
 		"login": map[string]any{"default_method": s.defaultLoginMethod(r.Context())},
-		"badge": map[string]any{"format": s.badgeFormat(r.Context())}})
+		"badge": map[string]any{"format": s.badgeFormat(r.Context())},
+		"logon": map[string]any{"default_provider": s.defaultProvider(r.Context())}})
+}
+
+// defaultProvider is which tile a Windows lock screen selects (auth policy
+// `logon.default_provider`): rostor, or windows for the built-in password
+// tile with Rostor one click away. Rostor when unset.
+func (s *Server) defaultProvider(ctx context.Context) string {
+	pol, _, err := directory.EffectivePolicy(ctx, s.DB, s.TenantID, "auth", "")
+	if err != nil {
+		return "rostor"
+	}
+	if p, _ := pol["logon.default_provider"].(string); p == "windows" {
+		return p
+	}
+	return "rostor"
 }
 
 // badgeFormat is the tenant's badge number format (auth policy
@@ -129,10 +144,22 @@ func (s *Server) handlePutAuthSettings(w http.ResponseWriter, r *http.Request) {
 		Badge struct {
 			Format string `json:"format"`
 		} `json:"badge"`
+		Logon struct {
+			DefaultProvider string `json:"default_provider"`
+		} `json:"logon"`
 	}
 	if err := decode(r, &req); err != nil {
 		s.fail(w, r, err)
 		return
+	}
+	switch req.Logon.DefaultProvider {
+	case "", "rostor", "windows":
+	default:
+		s.fail(w, r, directory.Err("request.malformed", "field", "logon.default_provider"))
+		return
+	}
+	if req.Logon.DefaultProvider == "" {
+		req.Logon.DefaultProvider = "rostor"
 	}
 	switch req.Badge.Format {
 	case "", "none", "wiegand26":
@@ -167,7 +194,7 @@ func (s *Server) handlePutAuthSettings(w http.ResponseWriter, r *http.Request) {
 		req.WebAuthn.Origins = []string{}
 	}
 	doc := map[string]any{"webauthn.rp_id": rpID, "webauthn.display_name": req.WebAuthn.DisplayName, "webauthn.origins": req.WebAuthn.Origins,
-		"login.default_method": req.Login.DefaultMethod, "badge.format": req.Badge.Format}
+		"login.default_method": req.Login.DefaultMethod, "badge.format": req.Badge.Format, "logon.default_provider": req.Logon.DefaultProvider}
 	err := s.tx(r, func(tx pgx.Tx) error {
 		// Replace the tenant-wide auth policy in place so there is exactly one.
 		raw, _ := json.Marshal(doc)

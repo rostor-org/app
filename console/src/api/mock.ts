@@ -3,7 +3,7 @@
 import type { LoginMethod,
   Api, AuditRow, AuthSettings, CA, CAList, Device, Downloads, Explanation, Grant, Group, GroupDetail, LiveEvent, LiveHandlers, LoginOK, LoginResponse,
   LiveState, Member, Plugin, Role, Session, Summary, SystemInfo, UpdateState, User, UserDetail, Binding, Reason, ResourceNode, Agent, AgentDetail, HeldRight, BadgeFormat,
-  Script, ScriptDetail, ScriptRun, Tile, AuthOverride,
+  Script, ScriptDetail, ScriptRun, Tile, AuthOverride, DefaultProvider,
 } from './types'
 import catalogEn from '../../catalog.en.json'
 
@@ -105,12 +105,13 @@ let webauthn = { rp_id: 'localhost', display_name: 'ChattLab', origins: ['https:
 let defaultMethod: LoginMethod = 'password'
 const enrolledPasskeys = () => Object.values(bindings).flat().filter((b) => b.method === 'webauthn' && b.state === 'active').length
 let badgeFormat: BadgeFormat = 'none'
+let defaultProvider: DefaultProvider = 'rostor'
 // Sign-in overrides by group (v0.11.0): the workstation group opens its lock screens on the badge.
 const overrides: AuthOverride[] = [
-  { group: { id: 'grp_staff', name: 'staff' }, login: { default_method: 'badge' }, logon: { session_account: '' }, created_at: daysAgo(3, 9, 12) },
-  { group: { id: 'grp_laser', name: 'laser-certified' }, login: { default_method: 'badge' }, logon: { session_account: 'chattlab' }, created_at: daysAgo(1, 10, 0) },
+  { group: { id: 'grp_staff', name: 'staff' }, login: { default_method: 'badge' }, logon: { session_account: '', default_provider: '' }, created_at: daysAgo(3, 9, 12) },
+  { group: { id: 'grp_laser', name: 'laser-certified' }, login: { default_method: 'badge' }, logon: { session_account: 'chattlab', default_provider: 'rostor' }, created_at: daysAgo(1, 10, 0) },
 ]
-const authSettings = (): AuthSettings => ({ webauthn: { ...webauthn, origins: [...webauthn.origins], enrolled_passkeys: enrolledPasskeys() }, login: { default_method: defaultMethod }, badge: { format: badgeFormat } })
+const authSettings = (): AuthSettings => ({ webauthn: { ...webauthn, origins: [...webauthn.origins], enrolled_passkeys: enrolledPasskeys() }, login: { default_method: defaultMethod }, badge: { format: badgeFormat }, logon: { default_provider: defaultProvider } })
 
 // Pending passkey ceremonies: id → the principal it was begun for ('' = discoverable).
 const ceremonies = new Map<string, string>()
@@ -1035,6 +1036,7 @@ export function createMockApi(_opts: { onUnauthorized?: () => void } = {}): Api 
       webauthn = { rp_id, display_name: body.webauthn.display_name.trim(), origins }
       if (body.login) defaultMethod = body.login.default_method
       if (body.badge) badgeFormat = body.badge.format
+      if (body.logon) defaultProvider = body.logon.default_provider
       append(`user:${session?.principal.id ?? ''}`, 'policy.update', 'policy:tenant-auth', 'session', 'AL1', 'ok', { 'webauthn.rp_id': rp_id, 'webauthn.origins': origins, 'login.default_method': defaultMethod })
       return authSettings()
     },
@@ -1047,8 +1049,10 @@ export function createMockApi(_opts: { onUnauthorized?: () => void } = {}): Api 
       if (method !== '' && !['password', 'passkey', 'badge'].includes(method)) throw mockErr(400, 'request.malformed', { field: 'login.default_method' })
       const account = (body.logon?.session_account ?? '').trim().toLowerCase()
       if (account !== '' && !/^[a-z][a-z0-9._-]{0,19}$/.test(account)) throw mockErr(400, 'request.malformed', { field: 'logon.session_account' })
-      if (method === '' && account === '') throw mockErr(400, 'request.malformed', { field: 'override' })
-      const o: AuthOverride = { group: { id: g.id, name: g.name }, login: { default_method: method }, logon: { session_account: account }, created_at: iso(Date.now()) }
+      const provider = body.logon?.default_provider ?? ''
+      if (provider !== '' && provider !== 'rostor' && provider !== 'windows') throw mockErr(400, 'request.malformed', { field: 'logon.default_provider' })
+      if (method === '' && account === '' && provider === '') throw mockErr(400, 'request.malformed', { field: 'override' })
+      const o: AuthOverride = { group: { id: g.id, name: g.name }, login: { default_method: method }, logon: { session_account: account, default_provider: provider }, created_at: iso(Date.now()) }
       const i = overrides.findIndex((x) => x.group.name === name)
       if (i < 0) overrides.push(o); else overrides[i] = o
       append(`user:${session?.principal.id ?? ''}`, 'policy.update', `policy:auth:${g.name}`, 'session', 'AL1', 'ok', { group: g.name, 'login.default_method': o.login.default_method, 'logon.session_account': o.logon.session_account })

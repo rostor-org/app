@@ -142,6 +142,12 @@ plugin registry, key rotation, policy counts on groups.
   type, whatever existing roles already use. `POST /v1/admin/roles`
   `{resource_type,name,permissions}` defines a role (roles.write) and is what
   the form's "New role…" calls before creating the grant.
+- Lock-screen default (v0.13.0): `PUT /v1/admin/settings/auth` accepts
+  `logon:{default_provider:"rostor"|"windows"}` (echoed by GET under
+  `logon`), and an override may set the same key; `windows` leaves the
+  Windows password tile selected on the lock screen with Rostor one click
+  away, `rostor` (default) selects the Rostor tile. Devices read it at
+  `GET /v1/devices/self/policy` under `logon.default_provider`.
 - Sign-in overrides by group (v0.11.0). The tenant-wide auth policy
   (`PUT /v1/admin/settings/auth`) can be overridden per group for
   `login.default_method`, and the override applies to people *and* to

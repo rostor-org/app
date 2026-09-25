@@ -245,6 +245,17 @@ the identifier-first shape of §2.2. PIN handling is unchanged. When
 `default_method` is `password` or `passkey` the tile opens on the plain
 field with `switch_to_badge` offered.
 
+#### Which tile is the default (v0.13.0)
+
+`GET /v1/devices/self/policy` also carries `"logon":{"default_provider":
+"rostor"|"windows"}` and the `ui` reply repeats it as
+`"default_provider"`. `rostor` (the default) keeps today's behaviour: the
+Rostor tile is selected when the lock screen appears. `windows` makes the
+provider report no default (`CREDENTIAL_PROVIDER_NO_DEFAULT`), so Windows
+selects its own password tile (local or domain user and password) and the
+Rostor tile stays one click away. Tenant-wide or per group, changed from
+the console; the deputy applies it at the next lock.
+
 #### Shared session account (v0.13.0)
 
 An ALLOW from `POST /v1/verify` may carry `"session_account":"chattlab"`
