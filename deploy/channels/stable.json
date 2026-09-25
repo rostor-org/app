@@ -1,24 +1,24 @@
 {
   "channel": "stable",
-  "version": "v0.10.0",
-  "published": "2026-09-25T16:01:55.375912Z",
-  "notes": "Portal: the console opens on a page of tiles grouped by category, one place for everything you can reach. Visitors see public tiles and a Sign in button; members see My account and whatever links they have been granted; admins see the administration screens. Add link tiles under System, make them public or grant them to groups under Access.",
+  "version": "v0.11.0",
+  "published": "2026-09-25T16:12:05.318266Z",
+  "notes": "Sign-in method by group: override the default sign-in method for a group under System \u003e Sign-in settings, and it applies to the people and the workstations in that group. A workstation group set to Badge opens its lock screens on the badge (needs the v0.11.0 Windows bundle). Scripts are ready for more languages.",
   "files": {
     "agent-windows-amd64": {
-      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/588707098",
-      "sha256": "d025f312a7a31cad710e5ca2f92a6e22d089dc2e3304c874fb0b148603412952",
-      "size": 8023552
+      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/588726934",
+      "sha256": "942d3caf6c20cf2561ecfac8dfed84907bc90c8d53fa11dd2ce1f974f8e96fcc",
+      "size": 8028672
     },
     "linux-amd64": {
-      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/588707103",
-      "sha256": "d82ab3ad91445e15ec8e783a5403ef14e700ce6a98faa7f082be31dd412903db",
-      "size": 24334496
+      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/588726931",
+      "sha256": "ead91184b12592cc1c402e5c29e85dbfc3bb23251bbb5ce15848c74e215d2f57",
+      "size": 24359072
     },
     "linux-arm64": {
-      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/588707104",
-      "sha256": "315322fc8b0193e7844d0d5c08c995640733003315d77d83fc98c5df1142a4af",
-      "size": 22872224
+      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/588726924",
+      "sha256": "775744addbc3feb0878dcbb4a3b6f9e2e4d4f57824eb0853b49a1a771c9497c1",
+      "size": 22937760
     }
   },
-  "signature": "nOa8STSN+BkJe8S3+LATuJfrEt21V1Isq6sHmh7bXTwlRoWfYTwe3tKEF75NbgZrUxiPHPURzOKWJMq5kvpwAg=="
+  "signature": "0nBn11Eer0a84fM6honxKMGAc2FQ1tuARW9GsgDqIOqEO/UhYnGum6sNWhvcPg8YbaX7jPNXaBo+CPUKXGsIBw=="
 }
