@@ -165,6 +165,22 @@ staged file removed afterwards. Sign-in runs receive `ROSTOR_USER`
 (identifier), `ROSTOR_PRINCIPAL` (principal id) and
 `ROSTOR_LOCAL_ACCOUNT` (the derived local account) in the environment.
 
+### 1.5 Effective auth policy (agent, on the heartbeat) — v0.11.0
+
+`GET /v1/devices/self/policy` (mTLS) →
+
+```json
+{"login":{"default_method":"badge"},"badge":{"format":"wiegand26"}}
+```
+
+The tenant's auth policy as it applies to **this device**: the tenant-wide
+document overridden by any group-scoped override whose group the device
+principal is in (nested groups count; when several apply, the newest
+override wins). `default_method` is `password`, `passkey` or `badge`.
+The agent fetches it on every heartbeat, keeps the last answer, and uses
+it for the `ui` reply below; before the first answer it behaves as
+`password`.
+
 ## 2. agent ⇄ credprov named-pipe protocol
 
 Pipe: `\\.\pipe\rostor-agent`. Security: DACL grants full access to
@@ -194,6 +210,16 @@ The credprov has **no** English literals of its own; every visible word comes
 from this reply (spec §0.2, no hardcoded user-facing strings). If the agent is
 unreachable the credprov shows its tile with empty labels and reports
 `agent.unreachable` on submit — it never invents text.
+
+#### `ui` and the default method (v0.11.0)
+
+The `ui` reply carries `"default_method"` next to `strings`. When it is
+`badge`, the agent already returns badge-first strings (`tile_label`
+"Tap your badge", `username_label` "Badge, or username", the
+`badge_hint`); the credential provider renders whatever strings it is
+given, so a policy change shows at the next lock without a credential
+provider update. The credential provider may additionally use
+`default_method` to open on the identifier field with the hint visible.
 
 ### 2.2 `logon` — authenticate and obtain the local credential
 

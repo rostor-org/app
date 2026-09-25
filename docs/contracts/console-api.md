@@ -142,6 +142,19 @@ plugin registry, key rotation, policy counts on groups.
   type, whatever existing roles already use. `POST /v1/admin/roles`
   `{resource_type,name,permissions}` defines a role (roles.write) and is what
   the form's "New role…" calls before creating the grant.
+- Sign-in overrides by group (v0.11.0). The tenant-wide auth policy
+  (`PUT /v1/admin/settings/auth`) can be overridden per group for
+  `login.default_method`, and the override applies to people *and* to
+  devices in that group (a workstation group set to `badge` opens its lock
+  screens on the badge). `GET /v1/admin/settings/auth/overrides`
+  (system.read) → `{items:[{group:{id,name}, login:{default_method},
+  created_at}]}`; `PUT /v1/admin/settings/auth/overrides/{group}`
+  (policies.write) `{login:{default_method}}` → the item (creates or
+  replaces; the policy is named `auth:<group>`); `DELETE
+  /v1/admin/settings/auth/overrides/{group}` → 204. When a principal is in
+  several overridden groups the newest override wins. Devices read their
+  effective policy at `GET /v1/devices/self/policy`. Audit:
+  `policy.update` / `policy.delete` with the group in the detail.
 - Portal (v0.10.0, SPEC-portal). `GET /v1/portal` (no session needed) →
   `{signed_in, tiles:[{id, kind:"screen"|"link", href, category, order,
   icon, title, description, public, builtin, requires, grants}]}`: the
