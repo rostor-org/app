@@ -1,24 +1,24 @@
 {
   "channel": "stable",
-  "version": "v0.8.0",
-  "published": "2026-09-25T15:01:43.815942Z",
-  "notes": "Badge number format setting under System \u003e Sign-in settings: choose Wiegand 26 and any reader, whether it types the full UID, the printed number or facility:card, matches the same card; badges are saved as Wiegand. People now show the numbers a badge is known by.",
+  "version": "v0.8.1",
+  "published": "2026-09-25T15:06:15.123666Z",
+  "notes": "Wiegand readers that type the pair as eight digits (026 22915 → 02622915) are recognised; a card registered from such a reader or from a plain-number reader signs in from the other.",
   "files": {
     "agent-windows-amd64": {
-      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/588594696",
-      "sha256": "b154ecb70235c72cb5619608fcac07655cdd7841d70abacdd64c497d87be3b68",
+      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/588602925",
+      "sha256": "54045610fd426570c0eff79c0c5d41f22ea1183a89154a2da1418253b9f73ba1",
       "size": 7870464
     },
     "linux-amd64": {
-      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/588594695",
-      "sha256": "c922fbb31b9802111b8abcc8c423fcdcb51c1a04ea90b2c71c2ff06c524a6024",
-      "size": 24141984
+      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/588602935",
+      "sha256": "389a3190c9c26ee280c8e5c3b8b394c85fe053fee6a7021109f4c13ab8d0c6be",
+      "size": 24146080
     },
     "linux-arm64": {
-      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/588594697",
-      "sha256": "011ea47c5419bde430f0431cd5426b2ab9b43d9876f69b6ffaeba4b107bf8dcf",
+      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/588602924",
+      "sha256": "056baf2c4de13e4795f1f4b4d4aba959de70d3dc6ecf4cba4d644adfb8452692",
       "size": 22675616
     }
   },
-  "signature": "B4PraQbKspbFLQBaY5bF9lDhnqBxghQAUyV83NDqgD0CHDmyYJIDF6VtBDaTAEwGR2UQSQc35vUCSZIF9excAQ=="
+  "signature": "K+SkO6i6XxZUP2MovqY63CDnwOzxFC7d7btx+oMscUsrOiS1qGg2HERBVITOuJfxHdzhmUdAYRf9re7v1R5MCw=="
 }
