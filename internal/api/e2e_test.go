@@ -16,6 +16,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
@@ -24,6 +25,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -1678,5 +1680,121 @@ func TestAuthPolicyForDevices(t *testing.T) {
 	rows := h.adminCall("GET", "/v1/admin/audit?q=verify&include_system=1", nil)["items"].([]any)
 	if len(rows) == 0 || rows[0].(map[string]any)["detail"].(map[string]any)["principal_name"] != "dana" {
 		t.Fatalf("verify audit should name the person: %v", rows)
+	}
+}
+
+// Deputy self-update: manual by default (only marked devices are told),
+// auto tells every outdated device; the offer is the core's version with
+// the bundle's hash signed by the CA; the report clears the mark.
+func TestDeputyUpdate(t *testing.T) {
+	h := newHarness(t)
+	h.srv.StateDir = t.TempDir()
+	// A cached "bundle" for the running version, as PrefetchDownloads would leave it.
+	bundle := filepath.Join(h.srv.StateDir, "downloads", h.srv.Version, "rostor-windows-amd64.zip")
+	if err := os.MkdirAll(filepath.Dir(bundle), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(bundle, []byte("PK\x05\x06"+strings.Repeat("\x00", 18)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	enrol := func(host, version string) (*http.Client, string) {
+		tok := h.adminCall("POST", "/v1/admin/enrollment-tokens", map[string]any{"resource_type": "workstation"})["enrollment_token"].(string)
+		key, csrPEM := csr(t)
+		st, out := h.call(h.client(nil), "POST", "/v1/devices/enroll", "", map[string]any{"enrollment_token": tok, "csr_pem": csrPEM, "posture": map[string]any{"hostname": host, "deputy_version": version}})
+		if st != 201 {
+			t.Fatalf("enroll %s: %d %v", host, st, out)
+		}
+		certBlock, _ := pem.Decode([]byte(out["certificate_pem"].(string)))
+		keyDER, _ := x509.MarshalECPrivateKey(key)
+		cert, _ := tls.X509KeyPair(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certBlock.Bytes}), pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER}))
+		return h.client(&cert), out["device_id"].(string)
+	}
+	old, oldID := enrol("OLD-1", "v0.1.0")
+	current, _ := enrol("NEW-1", h.srv.Version)
+	offer := func(c *http.Client) map[string]any {
+		st, out := h.call(c, "GET", "/v1/devices/self/update", "", nil)
+		if st != 200 {
+			t.Fatalf("update: %d %v", st, out)
+		}
+		u, _ := out["update"].(map[string]any)
+		return u
+	}
+	// Manual by default: nobody is told.
+	if got := h.adminCall("GET", "/v1/admin/settings/devices", nil)["deputy"].(map[string]any)["update"]; got != "manual" {
+		t.Fatalf("default policy: %v", got)
+	}
+	if offer(old) != nil {
+		t.Fatal("unmarked device should not be offered an update")
+	}
+	// Mark it: the offer names the core's version, the bundle's hash, and a CA signature that verifies.
+	if st, _ := h.call(h.client(nil), "POST", "/v1/admin/devices/"+oldID+"/update", h.admin, nil); st != 202 {
+		t.Fatalf("mark: %d", st)
+	}
+	u := offer(old)
+	if u == nil || u["version"] != h.srv.Version {
+		t.Fatalf("offer: %v", u)
+	}
+	_, trust := h.call(old, "GET", "/v1/devices/self/trust", "", nil)
+	verified := false
+	for _, p := range trust["ca_pems"].([]any) {
+		blk, _ := pem.Decode([]byte(p.(string)))
+		crt, _ := x509.ParseCertificate(blk.Bytes)
+		sig, _ := base64.StdEncoding.DecodeString(u["signature"].(string))
+		sum := sha256.Sum256([]byte("bundle\n" + u["version"].(string) + "\n" + u["sha256"].(string)))
+		if ecdsa.VerifyASN1(crt.PublicKey.(*ecdsa.PublicKey), sum[:], sig) {
+			verified = true
+		}
+	}
+	if !verified {
+		t.Fatal("bundle signature should verify against the trust bundle")
+	}
+	// The bundle streams and matches the offered hash.
+	req, _ := jsonReq("GET", h.ts.URL+"/v1/devices/self/update/bundle", nil)
+	resp, err := old.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != 200 || hex.EncodeToString(func() []byte { x := sha256.Sum256(body); return x[:] }()) != u["sha256"] || float64(len(body)) != u["size"] {
+		t.Fatalf("bundle: %d %d bytes", resp.StatusCode, len(body))
+	}
+	// The device list shows the mark; a device already on the version is never offered one even when marked.
+	for _, d := range h.adminCall("GET", "/v1/admin/devices", nil)["items"].([]any) {
+		m := d.(map[string]any)
+		if m["id"] == oldID && (m["update"].(map[string]any)["wanted"] != true || m["deputy_version"] != "v0.1.0") {
+			t.Fatalf("device row: %v", m)
+		}
+	}
+	if offer(current) != nil {
+		t.Fatal("a current device is never offered an update")
+	}
+	// The report clears the mark, whatever the outcome, and is audited by the device.
+	if st, out := h.call(old, "POST", "/v1/devices/self/update/runs", "", map[string]any{"version": h.srv.Version, "status": "failed", "from_version": "v0.1.0", "output_tail": "install-service failed (1)"}); st != 201 {
+		t.Fatalf("report: %d %v", st, out)
+	}
+	if offer(old) != nil {
+		t.Fatal("a failed attempt must not be retried until marked again")
+	}
+	for _, d := range h.adminCall("GET", "/v1/admin/devices", nil)["items"].([]any) {
+		m := d.(map[string]any)
+		if m["id"] == oldID && (m["update"].(map[string]any)["status"] != "failed" || m["update"].(map[string]any)["wanted"] != false) {
+			t.Fatalf("device row after report: %v", m)
+		}
+	}
+	rows := h.adminCall("GET", "/v1/admin/audit?q=deputy.update&include_system=1", nil)["items"].([]any)
+	if len(rows) == 0 || rows[0].(map[string]any)["outcome"] != "error" {
+		t.Fatalf("deputy.update audit: %v", rows)
+	}
+	// Auto: every outdated device is told without a mark; update-all marks them too.
+	h.adminCall("PUT", "/v1/admin/settings/devices", map[string]any{"deputy": map[string]any{"update": "auto"}})
+	if offer(old) == nil {
+		t.Fatal("auto should offer the update to an outdated device")
+	}
+	if n := h.adminCall("POST", "/v1/admin/devices/update-all", nil)["marked"]; n != float64(1) {
+		t.Fatalf("update-all should mark the one outdated device: %v", n)
+	}
+	if st, _ := h.call(h.client(nil), "PUT", "/v1/admin/settings/devices", h.admin, map[string]any{"deputy": map[string]any{"update": "sometimes"}}); st != 400 {
+		t.Fatalf("bad policy value: %d", st)
 	}
 }

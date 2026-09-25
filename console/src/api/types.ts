@@ -269,6 +269,13 @@ export interface Device {
   ca_key_id?: string
   trust_version?: string
   cert_renewed_at?: string | null
+  /** v0.14.0: the deputy's reported version and the last self-update attempt. */
+  deputy_version?: string
+  update?: { wanted: boolean; status: 'ok' | 'failed' | null; version?: string; at?: string; from_version?: string; output_tail?: string }
+}
+export type DeputyUpdatePolicy = 'auto' | 'manual'
+export interface DeviceSettings {
+  deputy: { update: DeputyUpdatePolicy }
 }
 
 // ---- certificates and trust (GET /v1/admin/ca, v0.5.0) ----------------------
@@ -667,6 +674,12 @@ export interface Api {
   createTile(body: TileInput): Promise<Tile>
   updateTile(id: string, body: TileInput): Promise<Tile>
   deleteTile(id: string): Promise<void>
+  /** Deputy self-update policy (system.read / policies.write). */
+  deviceSettings(): Promise<DeviceSettings>
+  setDeviceSettings(body: DeviceSettings): Promise<DeviceSettings>
+  /** Marks one device, or every outdated one, to update to the core's version on its next heartbeat (devices.write). */
+  markDeviceUpdate(id: string): Promise<void>
+  markAllDeviceUpdates(): Promise<{ marked: number }>
   /** Explains a badge reading without storing it (any signed-in principal). */
   badgeRead(fields: Record<string, string>): Promise<BadgeReading>
   revokeBinding(id: string, bid: string): Promise<void>

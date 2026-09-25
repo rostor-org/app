@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { api, type CA, type Device, type EnrollmentToken } from '../api'
+import { api, type CA, type DeputyUpdatePolicy, type Device, type EnrollmentToken } from '../api'
 import { useT } from '../i18n/catalog'
 import { useSession } from '../auth/session'
 import { useFormat, type Fmt } from '../lib/format'
@@ -18,11 +18,30 @@ export function Devices() {
   const { can } = useSession()
   const [q, setQ] = useState('')
   const [installing, setInstalling] = useState(false)
+  const qc = useQueryClient()
+  const toast = useToast()
   const summary = useQuery({ queryKey: ['summary'], queryFn: () => api.summary() })
+  const sys = useQuery({ queryKey: ['system'], queryFn: () => api.system(), enabled: can('system.read') })
+  const settings = useQuery({ queryKey: ['device-settings'], queryFn: () => api.deviceSettings(), enabled: can('system.read') })
+  const setPolicy = useMutation({
+    mutationFn: (update: DeputyUpdatePolicy) => api.setDeviceSettings({ deputy: { update } }),
+    onSuccess: (r) => { void qc.invalidateQueries({ queryKey: ['device-settings'] }); toast(t(`ui.devices.update_policy_toast.${r.deputy.update}`)) },
+  })
+  const markOne = useMutation({
+    mutationFn: (id: string) => api.markDeviceUpdate(id),
+    onSuccess: () => { void qc.invalidateQueries({ queryKey: ['devices'] }); toast(t('ui.devices.update_marked_toast')) },
+  })
+  const markAll = useMutation({
+    mutationFn: () => api.markAllDeviceUpdates(),
+    onSuccess: (r) => { void qc.invalidateQueries({ queryKey: ['devices'] }); toast(t('ui.devices.update_all_toast', { n: f.int(r.marked) })) },
+  })
+
   const devices = useQuery({ queryKey: ['devices', q], queryFn: () => api.devices(q || undefined) })
   // The CA list names each issuer and says which one is newest (needs system.read).
   const cas = useQuery({ queryKey: ['ca'], queryFn: () => api.cas(), enabled: can('system.read') })
   const byLc = summary.data?.devices ?? {}
+  const coreVersion = sys.data?.version ?? ''
+  const outdated = (devices.data?.items ?? []).filter((d) => d.lifecycle === 'trusted' && d.deputy_version && coreVersion && d.deputy_version !== coreVersion)
   const closeInstall = useCallback(() => setInstalling(false), [])
   const caById = new Map<string, CA>((cas.data?.items ?? []).map((c) => [c.id, c]))
   const newest = cas.data?.items.find((c) => c.newest)
@@ -30,8 +49,23 @@ export function Devices() {
   return (
     <section>
       <Head titleCode="ui.devices.title" subCode="ui.devices.subtitle">
+        {can('devices.write') && outdated.length > 0 && (
+          <button type="button" className="btn" disabled={markAll.isPending} onClick={() => markAll.mutate()}>{t('ui.devices.update_all', { n: f.int(outdated.length), version: coreVersion })}</button>
+        )}
         {can('devices.write') && <button type="button" className="btn primary" onClick={() => setInstalling(true)}>{t('ui.devices.install')}</button>}
       </Head>
+      {settings.data && (
+        <p className="muted inline" style={{ marginTop: -6 }}>
+          <label htmlFor="deputy-update-policy">{t('ui.devices.update_policy')}</label>
+          <select id="deputy-update-policy" className="input" style={{ width: 'auto' }} value={settings.data.deputy.update} disabled={!can('policies.write') || setPolicy.isPending}
+            onChange={(e) => setPolicy.mutate(e.target.value as DeputyUpdatePolicy)}>
+            <option value="manual">{t('ui.devices.update_policy.manual')}</option>
+            <option value="auto">{t('ui.devices.update_policy.auto')}</option>
+          </select>
+          <span>{t('ui.devices.update_policy_hint')}</span>
+        </p>
+      )}
+      <ErrorNote error={settings.error ?? setPolicy.error ?? markOne.error ?? markAll.error} />
       <div className="strip">
         <Stat value={f.int(byLc['trusted'] ?? 0)} labelCode="ui.devices.stat.trusted" />
         <Stat value={f.int(byLc['quarantined'] ?? 0)} labelCode="ui.devices.stat.quarantined" />
@@ -48,11 +82,11 @@ export function Devices() {
           <thead><tr>
             <th>{t('ui.devices.col.device')}</th><th>{t('ui.devices.col.type')}</th><th>{t('ui.devices.col.lifecycle')}</th>
             <th>{t('ui.devices.col.last_seen')}</th><th>{t('ui.devices.col.posture')}</th><th>{t('ui.devices.col.certificate')}</th>
-            <th>{t('ui.devices.col.issuer')}</th><th>{t('ui.devices.col.renewed')}</th>
+            <th>{t('ui.devices.col.issuer')}</th><th>{t('ui.devices.col.renewed')}</th><th>{t('ui.devices.col.deputy')}</th>
           </tr></thead>
           <tbody>
-            {devices.isPending && <tr><td colSpan={8}><Loading /></td></tr>}
-            {devices.data?.items.length === 0 && <tr><td colSpan={8}><Empty /></td></tr>}
+            {devices.isPending && <tr><td colSpan={9}><Loading /></td></tr>}
+            {devices.data?.items.length === 0 && <tr><td colSpan={9}><Empty /></td></tr>}
             {devices.data?.items.map((d) => (
               <tr key={d.id}>
                 <td><b>{d.display_name}</b><br /><span className="mono muted">{f.shortId(d.id)}</span></td>
@@ -63,6 +97,7 @@ export function Devices() {
                 <td className="num"><CertCell d={d} f={f} /></td>
                 <td><IssuerCell d={d} ca={d.ca_key_id ? caById.get(d.ca_key_id) : undefined} newest={newest} f={f} /></td>
                 <td className="num">{d.cert_renewed_at ? f.relDay(d.cert_renewed_at) : <Dash />}</td>
+                <td><DeputyCell d={d} coreVersion={coreVersion} canWrite={can('devices.write')} busy={markOne.isPending} onUpdate={() => markOne.mutate(d.id)} /></td>
               </tr>
             ))}
           </tbody>
@@ -70,6 +105,27 @@ export function Devices() {
       </div>
       <InstallDrawer open={installing} onClose={closeInstall} />
     </section>
+  )
+}
+
+/** The deputy's version, whether an update is queued, and the last attempt's outcome, with the Update action when behind the core. */
+function DeputyCell({ d, coreVersion, canWrite, busy, onUpdate }: { d: Device; coreVersion: string; canWrite: boolean; busy: boolean; onUpdate: () => void }) {
+  const t = useT()
+  const f = useFormat()
+  if (!d.deputy_version) return <Dash />
+  const behind = !!coreVersion && d.deputy_version !== coreVersion
+  const u = d.update
+  return (
+    <>
+      <span className={behind ? 'mono expiring nowrap' : 'mono nowrap'}>{d.deputy_version}</span>
+      {u?.wanted && <> <Pill value="pending" label={t('ui.devices.update_queued', { version: coreVersion })} /></>}
+      {!u?.wanted && u?.status === 'failed' && <> <Pill value="bad" label={t('ui.devices.update_failed', { version: u.version ?? '', time: f.relDay(u.at ?? '') })} /></>}
+      {!u?.wanted && u?.status === 'ok' && !behind && <><br /><small className="muted">{t('ui.devices.update_ok', { time: f.relDay(u.at ?? '') })}</small></>}
+      {u?.status === 'failed' && u.output_tail && <details className="output"><summary className="muted">{t('ui.devices.update_output')}</summary><pre className="code">{u.output_tail}</pre></details>}
+      {canWrite && behind && !u?.wanted && d.lifecycle === 'trusted' && (
+        <><br /><button type="button" className="btn quiet" disabled={busy} onClick={onUpdate}>{t('ui.devices.update_to', { version: coreVersion })}</button></>
+      )}
+    </>
   )
 }
 

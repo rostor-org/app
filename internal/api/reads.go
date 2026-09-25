@@ -576,9 +576,19 @@ func (s *Server) handleListDevices(w http.ResponseWriter, r *http.Request) {
 		_ = json.Unmarshal(attrs, &a)
 		rt, _ := a["resource_type"].(string)
 		host, _ := a["hostname"].(string)
+		var post map[string]any
+		_ = json.Unmarshal(posture, &post)
+		wanted, _ := a["update_wanted"].(bool)
+		update := map[string]any{"wanted": wanted, "status": nil}
+		if lastUpd, ok := post["deputy_update"].(map[string]any); ok {
+			for k, v := range lastUpd {
+				update[k] = v
+			}
+		}
 		items = append(items, map[string]any{"id": id, "display_name": displayFrom(dn, host, locale(r)),
 			"resource": map[string]string{"type": rt, "id": host}, "lifecycle": lifecycle, "last_seen_at": last,
-			"posture": json.RawMessage(posture), "cert_not_after": notAfter, "ca_key_id": caID, "trust_version": trustVersion, "cert_renewed_at": renewed})
+			"posture": json.RawMessage(posture), "cert_not_after": notAfter, "ca_key_id": caID, "trust_version": trustVersion, "cert_renewed_at": renewed,
+			"deputy_version": deputyVersionOf(post), "update": update})
 	}
 	s.writeJSON(w, 200, map[string]any{"items": items, "total": len(items)})
 }

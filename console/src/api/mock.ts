@@ -3,7 +3,7 @@
 import type { LoginMethod,
   Api, AuditRow, AuthSettings, CA, CAList, Device, Downloads, Explanation, Grant, Group, GroupDetail, LiveEvent, LiveHandlers, LoginOK, LoginResponse,
   LiveState, Member, Plugin, Role, Session, Summary, SystemInfo, UpdateState, User, UserDetail, Binding, Reason, ResourceNode, Agent, AgentDetail, HeldRight, BadgeFormat,
-  Script, ScriptDetail, ScriptRun, Tile, AuthOverride, DefaultProvider,
+  Script, ScriptDetail, ScriptRun, Tile, AuthOverride, DefaultProvider, DeputyUpdatePolicy,
 } from './types'
 import catalogEn from '../../catalog.en.json'
 
@@ -106,6 +106,7 @@ let defaultMethod: LoginMethod = 'password'
 const enrolledPasskeys = () => Object.values(bindings).flat().filter((b) => b.method === 'webauthn' && b.state === 'active').length
 let badgeFormat: BadgeFormat = 'none'
 let defaultProvider: DefaultProvider = 'rostor'
+let deputyUpdate: DeputyUpdatePolicy = 'manual'
 // Sign-in overrides by group (v0.11.0): the workstation group opens its lock screens on the badge.
 const overrides: AuthOverride[] = [
   { group: { id: 'grp_staff', name: 'staff' }, login: { default_method: 'badge' }, logon: { session_account: '', default_provider: '' }, created_at: daysAgo(3, 9, 12) },
@@ -217,7 +218,8 @@ function renewOnto(caId: string, from?: string) {
 
 const devices: Device[] = [
   { id: 'dev_12ce4c4b9f0a', display_name: 'DESKTOP-UPJD27E', resource: { type: 'workstation', id: 'DESKTOP-UPJD27E' }, lifecycle: 'trusted', last_seen_at: iso(now - 1 * min),
-    posture: { os: 'Windows 10.0.19045', agent: '0.1.0', via: 'heartbeat' }, cert_not_after: iso(now + 87 * day), ca_key_id: 'cak_7c1d9e2a', trust_version: trustVersion, cert_renewed_at: iso(now - 3 * day) },
+    posture: { os: 'Windows 10.0.19045', deputy_version: 'v0.12.0', via: 'heartbeat' }, cert_not_after: iso(now + 87 * day), ca_key_id: 'cak_7c1d9e2a', trust_version: trustVersion, cert_renewed_at: iso(now - 3 * day),
+    deputy_version: 'v0.12.0', update: { wanted: false, status: 'failed', version: 'v0.13.0', at: iso(now - 40 * min), from_version: 'v0.12.0', output_tail: 'install-service failed (1)' } },
   { id: 'dev_a91c0b3e7d21', display_name: 'Front door controller', resource: { type: 'door', id: 'front' }, lifecycle: 'trusted', last_seen_at: iso(now - 3 * min),
     posture: { model: 'WG2004', snapshot: 'v418', doors_wired: '2 of 4', cards: 432, managed: 124 }, cert_not_after: iso(now + 21 * day), ca_key_id: 'cak_3f0a5b7e', trust_version: OLD_TRUST, cert_renewed_at: null },
   { id: 'dev_77e0f5a2c318', display_name: 'Laser interlock', resource: { type: 'interlock', id: 'laser-cutter-2' }, lifecycle: 'degraded', last_seen_at: iso(now - 26 * hour),
@@ -1025,6 +1027,31 @@ export function createMockApi(_opts: { onUnauthorized?: () => void } = {}): Api 
       if (i < 0) throw mockErr(404, 'request.not_found', { type: 'tile' })
       if (tiles[i]!.builtin) throw mockErr(403, 'request.forbidden', { reason: 'builtin_tile' })
       tiles.splice(i, 1)
+    },
+    async deviceSettings() { await delay(); return { deputy: { update: deputyUpdate } } },
+    async setDeviceSettings(body) {
+      await delay(200)
+      if (body.deputy.update !== 'auto' && body.deputy.update !== 'manual') throw mockErr(400, 'request.malformed', { field: 'deputy.update' })
+      deputyUpdate = body.deputy.update
+      append(`user:${session?.principal.id ?? ''}`, 'policy.update', 'policy:tenant-devices', 'session', 'AL1', 'ok', { 'deputy.update': deputyUpdate })
+      return { deputy: { update: deputyUpdate } }
+    },
+    async markDeviceUpdate(id) {
+      await delay(200)
+      const d = devices.find((x) => x.id === id)
+      if (!d) throw mockErr(404, 'request.not_found', { type: 'device' })
+      d.update = { ...(d.update ?? { status: null }), wanted: true }
+      append(`user:${session?.principal.id ?? ''}`, 'device.update_marked', `device:${id}`, 'session', 'AL1', 'ok', { version: system.version })
+      emit('device.updated')
+    },
+    async markAllDeviceUpdates() {
+      await delay(250)
+      let marked = 0
+      for (const d of devices) {
+        if (d.lifecycle === 'trusted' && d.deputy_version !== system.version) { d.update = { ...(d.update ?? { status: null }), wanted: true }; marked++ }
+      }
+      emit('device.updated')
+      return { marked }
     },
     async authSettings() { await delay(); return authSettings() },
     async setAuthSettings(body) {
