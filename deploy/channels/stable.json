@@ -1,24 +1,24 @@
 {
   "channel": "stable",
-  "version": "v0.14.0",
-  "published": "2026-09-25T17:19:25.800938Z",
-  "notes": "Deputies update themselves from the console: queue an update per workstation or for all outdated ones under Devices, or set the policy to automatic. Each deputy fetches the core's own bundle, verifies its signature, reinstalls between sign-ins and reports back. Deputies now report their real version. This is the last bundle to install by hand.",
+  "version": "v0.14.1",
+  "published": "2026-09-25T17:34:16.528903Z",
+  "notes": "Organisation name is a setting under System: it appears in the console header, on the sign-in page and portal, in passkey prompts and on the workstation lock-screen tile.",
   "files": {
     "deputy-windows-amd64": {
-      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/588847840",
-      "sha256": "8e842b4844b7cd911b0924a3ea4efc36b8df19d929ef3c9497a88df6558a6a6c",
+      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/588876191",
+      "sha256": "3534fc96fe23a4127dddccbac65fe87dea703dd8586d2679f60957b817e8d809",
       "size": 8270848
     },
     "linux-amd64": {
-      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/588847836",
-      "sha256": "c38e67fb6d3aa525c2ad2ef4476241513f3cfb8941afaa22f35ce4a42581668e",
-      "size": 24408224
+      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/588876189",
+      "sha256": "c500d7b9437f8af97a2056d08212b15e50d24393e970bca36a55e3a8fd184ce1",
+      "size": 24416416
     },
     "linux-arm64": {
-      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/588847837",
-      "sha256": "93e3be5a588aacd9d4a0c6965537f55eb16b6697e4ec3d56f8bbc7aeb532403a",
+      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/588876192",
+      "sha256": "2fbc0ad2d4a6f609ebd51b97fec79046c3b046f85728611144a44d7fa7dd12ed",
       "size": 22937760
     }
   },
-  "signature": "ti3HWoqnuglf8+GAX6H521Wq8XxmFXrmNpROlT4em7bYiNlfn/G3bgifHeYFPSFOulDSlYgzT2PUI7lohvm2DQ=="
+  "signature": "+yXyEWy3WROmwCrQber+A6iSygFdwKwQXuRQVj8HmFKE5xBDhEwzsIX75dQ9tGZ/gohnct02wxC7aZRHoHONCw=="
 }
