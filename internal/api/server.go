@@ -140,6 +140,18 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/admin/updates/apply", s.adminAuth("updates.write", s.handleUpdateApply))
 	mux.HandleFunc("POST /v1/admin/updates/check", s.adminAuth("updates.read", s.handleUpdateCheck))
 	mux.HandleFunc("POST /v1/admin/badges/read", s.handleBadgeRead)
+	// SPEC-scripts: scripts to devices. Writes need scripts.write and an AL2 session.
+	mux.HandleFunc("GET /v1/admin/scripts", s.adminAuth("scripts.read", s.handleListScripts))
+	mux.HandleFunc("POST /v1/admin/scripts", s.adminAuth("scripts.write", s.handleCreateScript))
+	mux.HandleFunc("PUT /v1/admin/scripts/order", s.adminAuth("scripts.write", s.handleOrderScripts))
+	mux.HandleFunc("GET /v1/admin/scripts/{id}", s.adminAuth("scripts.read", s.handleGetScript))
+	mux.HandleFunc("PUT /v1/admin/scripts/{id}", s.adminAuth("scripts.write", s.handleUpdateScript))
+	mux.HandleFunc("DELETE /v1/admin/scripts/{id}", s.adminAuth("scripts.write", s.handleDeleteScript))
+	mux.HandleFunc("POST /v1/admin/scripts/{id}/assignments", s.adminAuth("scripts.write", s.handleAssignScript))
+	mux.HandleFunc("DELETE /v1/admin/scripts/{id}/assignments/{aid}", s.adminAuth("scripts.write", s.handleUnassignScript))
+	mux.HandleFunc("GET /v1/admin/scripts/{id}/runs", s.adminAuth("scripts.read", s.handleScriptRuns))
+	mux.HandleFunc("GET /v1/devices/self/scripts", s.deviceAuth(s.handleDeviceScripts))
+	mux.HandleFunc("POST /v1/devices/self/scripts/{id}/runs", s.deviceAuth(s.handleDeviceScriptRun))
 	// SPEC-agents: MCP on the same listener, tools dispatched through this mux.
 	mux.HandleFunc("/mcp", s.handleMCP)
 	s.noteAction("agents.own") // checked in handlers, not a route; the role editor must still offer it
@@ -310,7 +322,9 @@ func (s *Server) adminAuth(action string, next http.HandlerFunc) http.HandlerFun
 			return
 		}
 		actor := directory.Actor{Kind: p.Kind, ID: p.ID, CorrelationID: corrOf(r)}
-		next(w, r.WithContext(context.WithValue(r.Context(), ctxActor, actor)))
+		ctx := context.WithValue(r.Context(), ctxActor, actor)
+		ctx = context.WithValue(ctx, ctxPresented, authz.Presented{Assurance: assurance, Properties: props})
+		next(w, r.WithContext(ctx))
 	}
 }
 

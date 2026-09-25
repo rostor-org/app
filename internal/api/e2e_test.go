@@ -11,9 +11,11 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
@@ -22,6 +24,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -1263,5 +1266,191 @@ func TestBadgeFormatWiegand(t *testing.T) {
 	h.adminCall("POST", "/v1/admin/users/lee/bindings", map[string]any{"method": "badge", "fields": map[string]string{"number": "02733001"}})
 	if d := verify(map[string]string{"type": "badge", "number": "0001802473"}); d != "ALLOW" { // 27<<16 | 33001
 		t.Fatalf("padded-decimal reader should match the concatenated-wiegand enrolment: %s", d)
+	}
+}
+
+// SPEC-scripts acceptance: authoring needs AL2; devices receive their
+// scripts in position order, signed by the CA; runs come back as records
+// and audit rows.
+func TestScripts(t *testing.T) {
+	h := newHarness(t)
+	// dana: an admin who signs in with badge + PIN (AL2).
+	h.adminCall("POST", "/v1/admin/users", map[string]any{"username": "dana", "display_name": map[string]string{"en": "Dana"}})
+	h.adminCall("POST", "/v1/admin/users/dana/bindings", map[string]any{"method": "badge", "fields": map[string]string{"uid": "0a004a1f7e", "pin": "2468"}})
+	h.adminCall("POST", "/v1/admin/groups/directory-admins/members", map[string]any{"member_kind": "principal", "member": "dana"})
+	c := h.client(nil)
+	var cookie string
+	do := func(method, path string, body any) (int, map[string]any) {
+		var rd io.Reader
+		if body != nil {
+			b, _ := json.Marshal(body)
+			rd = bytes.NewReader(b)
+		}
+		req, _ := http.NewRequest(method, h.ts.URL+path, rd)
+		if cookie != "" {
+			req.AddCookie(&http.Cookie{Name: "rostor_session", Value: cookie})
+		}
+		req.Header.Set("X-Requested-With", "rostor-console")
+		resp, err := c.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		out := map[string]any{}
+		raw, _ := io.ReadAll(resp.Body)
+		if len(raw) > 0 && raw[0] == '{' {
+			_ = json.Unmarshal(raw, &out)
+		}
+		for _, ck := range resp.Cookies() {
+			if ck.Name == "rostor_session" {
+				cookie = ck.Value
+			}
+		}
+		return resp.StatusCode, out
+	}
+	if st, out := do("POST", "/v1/auth/login", map[string]any{"method": "badge", "fields": map[string]string{"uid": "0a004a1f7e", "pin": "2468"}}); st != 200 || out["assurance"] != "AL2" {
+		t.Fatalf("AL2 login: %d %v", st, out)
+	}
+	must := func(method, path string, body any, want int) map[string]any {
+		st, out := do(method, path, body)
+		if st != want {
+			t.Fatalf("%s %s: %d %v", method, path, st, out)
+		}
+		return out
+	}
+
+	// The AL1 admin token may read but not write.
+	if st, out := h.call(c, "POST", "/v1/admin/scripts", h.admin, map[string]any{"name": "x", "body": "Write-Host hi"}); st != 403 || out["code"] != "request.assurance_required" {
+		t.Fatalf("AL1 write should be refused: %d %v", st, out)
+	}
+	h.adminCall("GET", "/v1/admin/scripts", nil)
+
+	// Create two scripts; edit one so its version bumps; reorder.
+	a := must("POST", "/v1/admin/scripts", map[string]any{"name": "Map printers", "description": "printers", "body": "Add-Printer -Name P1"}, 201)
+	b := must("POST", "/v1/admin/scripts", map[string]any{"name": "Set wallpaper", "body": "Set-Wallpaper"}, 201)
+	aID, bID := a["id"].(string), b["id"].(string)
+	if a["version"] != float64(1) || a["body"] != "Add-Printer -Name P1" {
+		t.Fatalf("create: %v", a)
+	}
+	if st, out := do("POST", "/v1/admin/scripts", map[string]any{"name": "", "body": "x"}); st != 400 {
+		t.Fatalf("nameless script: %d %v", st, out)
+	}
+	if st, out := do("POST", "/v1/admin/scripts", map[string]any{"name": "bash", "language": "bash", "body": "x"}); st != 400 {
+		t.Fatalf("unsupported language: %d %v", st, out)
+	}
+	if v := must("PUT", "/v1/admin/scripts/"+aID, map[string]any{"description": "printers v2"}, 200); v["version"] != float64(1) {
+		t.Fatalf("description-only edit must not bump: %v", v)
+	}
+	if v := must("PUT", "/v1/admin/scripts/"+aID, map[string]any{"body": "Add-Printer -Name P2"}, 200); v["version"] != float64(2) {
+		t.Fatalf("body edit must bump: %v", v)
+	}
+	must("PUT", "/v1/admin/scripts/order", map[string]any{"ids": []string{bID, aID}}, 204)
+	list := must("GET", "/v1/admin/scripts", nil, 200)["items"].([]any)
+	if len(list) != 2 || list[0].(map[string]any)["id"] != bID || list[1].(map[string]any)["id"] != aID {
+		t.Fatalf("order: %v", list)
+	}
+
+	// Assign: b to every workstation (now), a to a device group (at sign-in).
+	must("POST", "/v1/admin/scripts/"+bID+"/assignments", map[string]any{"target_kind": "all", "target": "workstation", "mode": "immediate"}, 201)
+	h.adminCall("POST", "/v1/admin/groups", map[string]any{"name": "lab-pcs"})
+	asg := must("POST", "/v1/admin/scripts/"+aID+"/assignments", map[string]any{"target_kind": "group", "target": "lab-pcs", "mode": "signin"}, 201)
+	if st, out := do("POST", "/v1/admin/scripts/"+aID+"/assignments", map[string]any{"target_kind": "group", "target": "lab-pcs", "mode": "sometimes"}); st != 400 {
+		t.Fatalf("bad mode: %d %v", st, out)
+	}
+
+	// Two devices: one in lab-pcs, one not.
+	enrol := func(host string) (*http.Client, string) {
+		tok := h.adminCall("POST", "/v1/admin/enrollment-tokens", map[string]any{"resource_type": "workstation"})["enrollment_token"].(string)
+		key, csrPEM := csr(t)
+		st, out := h.call(h.client(nil), "POST", "/v1/devices/enroll", "", map[string]any{"enrollment_token": tok, "csr_pem": csrPEM, "posture": map[string]any{"hostname": host}})
+		if st != 201 {
+			t.Fatalf("enroll %s: %d %v", host, st, out)
+		}
+		certBlock, _ := pem.Decode([]byte(out["certificate_pem"].(string)))
+		keyDER, _ := x509.MarshalECPrivateKey(key)
+		cert, _ := tls.X509KeyPair(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certBlock.Bytes}), pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER}))
+		return h.client(&cert), out["device_id"].(string)
+	}
+	labPC, labID := enrol("LAB-1")
+	otherPC, _ := enrol("OFFICE-1")
+	h.adminCall("POST", "/v1/admin/groups/lab-pcs/members", map[string]any{"member_kind": "principal", "member": labID})
+
+	// The lab PC gets both, in position order (b first), each signed by a CA in its trust bundle.
+	_, trust := h.call(labPC, "GET", "/v1/devices/self/trust", "", nil)
+	var pubs []*ecdsa.PublicKey
+	for _, p := range trust["ca_pems"].([]any) {
+		blk, _ := pem.Decode([]byte(p.(string)))
+		crt, err := x509.ParseCertificate(blk.Bytes)
+		if err != nil {
+			t.Fatal(err)
+		}
+		pubs = append(pubs, crt.PublicKey.(*ecdsa.PublicKey))
+	}
+	verifies := func(sc map[string]any) bool {
+		sig, _ := base64.StdEncoding.DecodeString(sc["signature"].(string))
+		// The contract's signing input: id, version (decimal) and body, newline-separated.
+		sum := sha256.Sum256([]byte(sc["id"].(string) + "\n" + strconv.Itoa(int(sc["version"].(float64))) + "\n" + sc["body"].(string)))
+		for _, pub := range pubs {
+			if ecdsa.VerifyASN1(pub, sum[:], sig) {
+				return true
+			}
+		}
+		return false
+	}
+	_, got := h.call(labPC, "GET", "/v1/devices/self/scripts", "", nil)
+	scripts := got["scripts"].([]any)
+	if len(scripts) != 2 || scripts[0].(map[string]any)["id"] != bID || scripts[0].(map[string]any)["mode"] != "immediate" ||
+		scripts[1].(map[string]any)["id"] != aID || scripts[1].(map[string]any)["mode"] != "signin" || scripts[1].(map[string]any)["version"] != float64(2) {
+		t.Fatalf("lab scripts: %v", scripts)
+	}
+	for _, sc := range scripts {
+		if !verifies(sc.(map[string]any)) {
+			t.Fatalf("signature should verify against the trust bundle: %v", sc)
+		}
+	}
+	tampered := map[string]any{}
+	for k, v := range scripts[0].(map[string]any) {
+		tampered[k] = v
+	}
+	tampered["body"] = tampered["body"].(string) + "; Remove-Item C:\\ -Recurse"
+	if verifies(tampered) {
+		t.Fatal("a tampered body must not verify")
+	}
+	// The office PC only gets the one for every workstation.
+	_, got = h.call(otherPC, "GET", "/v1/devices/self/scripts", "", nil)
+	if scripts := got["scripts"].([]any); len(scripts) != 1 || scripts[0].(map[string]any)["id"] != bID {
+		t.Fatalf("office scripts: %v", scripts)
+	}
+
+	// A run comes back as a record and an audit row.
+	now := time.Now().UTC()
+	if st, out := h.call(labPC, "POST", "/v1/devices/self/scripts/"+aID+"/runs", "", map[string]any{"version": 2, "mode": "signin", "principal_id": "",
+		"started_at": now.Add(-2 * time.Second), "finished_at": now, "exit_code": 1, "status": "failed", "output_tail": "Add-Printer : not found"}); st != 201 {
+		t.Fatalf("run: %d %v", st, out)
+	}
+	if st, out := h.call(labPC, "POST", "/v1/devices/self/scripts/"+aID+"/runs", "", map[string]any{"version": 2, "mode": "signin", "started_at": now, "finished_at": now, "exit_code": 0, "status": "great"}); st != 400 {
+		t.Fatalf("bad status: %d %v", st, out)
+	}
+	runs := must("GET", "/v1/admin/scripts/"+aID+"/runs", nil, 200)["items"].([]any)
+	if len(runs) != 1 || runs[0].(map[string]any)["status"] != "failed" || runs[0].(map[string]any)["device"].(map[string]any)["name"] != "LAB-1" {
+		t.Fatalf("runs: %v", runs)
+	}
+	detail := must("GET", "/v1/admin/scripts/"+aID, nil, 200)
+	if detail["last_run"].(map[string]any)["status"] != "failed" || len(detail["runs"].([]any)) != 1 || len(detail["assignments"].([]any)) != 1 {
+		t.Fatalf("detail: %v", detail)
+	}
+	rows := h.adminCall("GET", "/v1/admin/audit?q=script.run&include_system=1", nil)["items"].([]any)
+	if len(rows) == 0 || rows[0].(map[string]any)["actor"].(map[string]any)["kind"] != "device" {
+		t.Fatalf("script.run should be audited by the device: %v", rows)
+	}
+
+	// Unassign, then delete: the script goes, the run history stays.
+	must("DELETE", "/v1/admin/scripts/"+aID+"/assignments/"+asg["id"].(string), nil, 204)
+	must("DELETE", "/v1/admin/scripts/"+aID, nil, 204)
+	if st, _ := do("GET", "/v1/admin/scripts/"+aID, nil); st != 404 {
+		t.Fatalf("deleted script should be gone: %d", st)
+	}
+	if runs := must("GET", "/v1/admin/scripts/"+aID+"/runs", nil, 200)["items"].([]any); len(runs) != 1 {
+		t.Fatalf("runs should survive the delete: %v", runs)
 	}
 }

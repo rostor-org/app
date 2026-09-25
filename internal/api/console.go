@@ -197,7 +197,7 @@ func (s *Server) permissionsOn(ctx context.Context, p *directory.Principal, assu
 }
 
 var adminActions = []string{"users.read", "users.write", "credentials.write", "groups.read", "groups.write", "resources.write",
-	"roles.write", "grants.read", "grants.write", "devices.read", "devices.write", "authz.read", "audit.read", "updates.read", "updates.write", "system.read", "plugins.read", "agents.own"}
+	"roles.write", "grants.read", "grants.write", "devices.read", "devices.write", "authz.read", "audit.read", "updates.read", "updates.write", "system.read", "plugins.read", "agents.own", "scripts.read", "scripts.write"}
 
 func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 	p, ses, err := s.sessionPrincipal(r.Context(), r)
