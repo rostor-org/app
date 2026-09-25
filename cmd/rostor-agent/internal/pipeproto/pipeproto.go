@@ -47,15 +47,18 @@ type UIStrings struct {
 // Reply is the agent→client message. Exactly one of the shapes in the
 // contract is populated; the omitempty tags keep the wire shape identical to
 // the contract examples. Need is set only with code auth.continue and names
-// what the credential provider must collect next ("pin").
+// what the credential provider must collect next ("pin"). DefaultMethod
+// accompanies Strings on a `ui` reply (§2.1, v0.11.0) and names the sign-in
+// method the effective policy puts first ("password", "passkey", "badge").
 type Reply struct {
-	OK          bool       `json:"ok"`
-	Strings     *UIStrings `json:"strings,omitempty"`
-	LocalUser   string     `json:"local_user,omitempty"`
-	LocalSecret string     `json:"local_secret,omitempty"`
-	Code        string     `json:"code,omitempty"`
-	Message     string     `json:"message,omitempty"`
-	Need        string     `json:"need,omitempty"`
+	OK            bool       `json:"ok"`
+	Strings       *UIStrings `json:"strings,omitempty"`
+	DefaultMethod string     `json:"default_method,omitempty"`
+	LocalUser     string     `json:"local_user,omitempty"`
+	LocalSecret   string     `json:"local_secret,omitempty"`
+	Code          string     `json:"code,omitempty"`
+	Message       string     `json:"message,omitempty"`
+	Need          string     `json:"need,omitempty"`
 }
 
 // ErrLineTooLong is returned when a frame exceeds MaxLine.

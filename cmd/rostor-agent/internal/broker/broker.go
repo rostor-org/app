@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"log"
+	"sync/atomic"
 	"time"
 
 	"rostor.org/app/cmd/rostor-agent/internal/catalog"
@@ -30,6 +31,36 @@ type Broker struct {
 	// id and the local account. It never delays the reply: sign-in scripts
 	// (SPEC-scripts) run behind the lock screen, not in front of it.
 	OnLogon func(identifier, principalID, localAccount string)
+
+	// policy is the last effective auth policy the heartbeat fetched
+	// (§1.5), stored as a core.PolicyResponse value. It is read on every
+	// `ui` request from the pipe goroutines and written from the heartbeat,
+	// hence the atomic; nil until the first successful fetch.
+	policy atomic.Value
+}
+
+// SetPolicy records the effective auth policy for this device. The
+// heartbeat calls it after every successful fetch; a failed fetch leaves
+// the previous value in place, so the lock screen keeps the last known
+// policy rather than falling back to password on a network blip.
+func (b *Broker) SetPolicy(p core.PolicyResponse) {
+	b.policy.Store(p)
+}
+
+// DefaultMethod is the sign-in method the current policy puts first. Before
+// any policy is known it is password (§1.5), and an unrecognised value from
+// core is treated as password too: the credprov must never be handed a
+// method it cannot render.
+func (b *Broker) DefaultMethod() string {
+	p, ok := b.policy.Load().(core.PolicyResponse)
+	if !ok {
+		return core.DefaultMethodPassword
+	}
+	switch p.Login.DefaultMethod {
+	case core.DefaultMethodPasskey, core.DefaultMethodBadge:
+		return p.Login.DefaultMethod
+	}
+	return core.DefaultMethodPassword
 }
 
 // Handle dispatches one request. It never returns an error to the transport:
@@ -49,15 +80,24 @@ func (b *Broker) Handle(ctx context.Context, req pipeproto.Request) pipeproto.Re
 	}
 }
 
+// ui builds the §2.1 reply. When the effective policy puts badges first the
+// tile and identifier labels switch to their badge-first catalog entries;
+// the credprov renders whatever it is given, so a policy change shows at
+// the next lock without a credprov update.
 func (b *Broker) ui(locale string) pipeproto.Reply {
 	m, err := catalog.UI(locale)
 	if err != nil {
 		b.logf("ui: catalog error: %v", err)
 		return pipeproto.Reply{OK: false, Code: "agent.bad_request"}
 	}
-	return pipeproto.Reply{OK: true, Strings: &pipeproto.UIStrings{
-		TileLabel:     m["tile_label"],
-		UsernameLabel: m["username_label"],
+	method := b.DefaultMethod()
+	tileKey, userKey := "tile_label", "username_label"
+	if method == core.DefaultMethodBadge {
+		tileKey, userKey = "tile_label_badge", "username_label_badge"
+	}
+	return pipeproto.Reply{OK: true, DefaultMethod: method, Strings: &pipeproto.UIStrings{
+		TileLabel:     m[tileKey],
+		UsernameLabel: m[userKey],
 		PasswordLabel: m["password_label"],
 		SubmitLabel:   m["submit_label"],
 		Connecting:    m["connecting"],

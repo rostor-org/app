@@ -173,6 +173,24 @@ func (c *Client) Trust(ctx context.Context) (*TrustResponse, error) {
 	return &out, nil
 }
 
+// Policy implements GET /v1/devices/self/policy (§1.5). The caller keeps
+// the last good answer; a failure here never changes what the lock screen
+// shows.
+func (c *Client) Policy(ctx context.Context) (*PolicyResponse, error) {
+	var out PolicyResponse
+	status, err := c.doJSON(ctx, http.MethodGet, "/v1/devices/self/policy", nil, &out)
+	if err != nil {
+		return nil, err
+	}
+	if status != http.StatusOK {
+		return nil, fmt.Errorf("%w: policy returned HTTP %d", ErrUnreachable, status)
+	}
+	if out.Login.DefaultMethod == "" {
+		return nil, fmt.Errorf("%w: policy response missing login.default_method", ErrUnreachable)
+	}
+	return &out, nil
+}
+
 // Renew implements POST /v1/devices/self/renew.
 func (c *Client) Renew(ctx context.Context, csrPEM string) (*RenewResponse, error) {
 	var out RenewResponse

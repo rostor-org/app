@@ -55,6 +55,124 @@ func TestUI(t *testing.T) {
 	}
 }
 
+func TestUIFollowsPolicy(t *testing.T) {
+	b := &Broker{}
+	ui := func() pipeproto.Reply {
+		t.Helper()
+		rep := b.Handle(context.Background(), pipeproto.Request{Op: "ui", Locale: "en-US"})
+		if !rep.OK || rep.Strings == nil {
+			t.Fatalf("bad ui reply: %+v", rep)
+		}
+		return rep
+	}
+	// Before any policy is known the agent behaves as password (§1.5).
+	rep := ui()
+	if rep.DefaultMethod != "password" || rep.Strings.TileLabel != "Rostor" || rep.Strings.UsernameLabel != "Username" {
+		t.Fatalf("no policy: %+v %+v", rep.DefaultMethod, rep.Strings)
+	}
+	password := *rep.Strings
+
+	var pol core.PolicyResponse
+	pol.Login.DefaultMethod = core.DefaultMethodBadge
+	pol.Badge.Format = "wiegand26"
+	b.SetPolicy(pol)
+	rep = ui()
+	if rep.DefaultMethod != "badge" || rep.Strings.TileLabel != "Tap your badge" || rep.Strings.UsernameLabel != "Badge, or username" {
+		t.Fatalf("badge policy: %+v %+v", rep.DefaultMethod, rep.Strings)
+	}
+	// Only the tile and identifier labels change; the rest of the strings
+	// (including badge_hint, which the tile shows on both) are untouched.
+	badge := *rep.Strings
+	badge.TileLabel, badge.UsernameLabel = password.TileLabel, password.UsernameLabel
+	if badge != password {
+		t.Fatalf("badge policy changed more than the two labels: %+v vs %+v", rep.Strings, password)
+	}
+
+	// Passkey is reported as such but rendered with the password strings:
+	// the tile still collects a username and a secret.
+	pol.Login.DefaultMethod = core.DefaultMethodPasskey
+	b.SetPolicy(pol)
+	rep = ui()
+	if rep.DefaultMethod != "passkey" || *rep.Strings != password {
+		t.Fatalf("passkey policy: %+v %+v", rep.DefaultMethod, rep.Strings)
+	}
+
+	// Switching back to password restores the original labels.
+	pol.Login.DefaultMethod = core.DefaultMethodPassword
+	b.SetPolicy(pol)
+	rep = ui()
+	if rep.DefaultMethod != "password" || *rep.Strings != password {
+		t.Fatalf("password policy: %+v %+v", rep.DefaultMethod, rep.Strings)
+	}
+
+	// A method this agent does not know is never forwarded to the credprov.
+	pol.Login.DefaultMethod = "sms"
+	b.SetPolicy(pol)
+	rep = ui()
+	if rep.DefaultMethod != "password" || *rep.Strings != password {
+		t.Fatalf("unknown method: %+v %+v", rep.DefaultMethod, rep.Strings)
+	}
+	pol.Login.DefaultMethod = ""
+	b.SetPolicy(pol)
+	if rep = ui(); rep.DefaultMethod != "password" {
+		t.Fatalf("empty method: %+v", rep)
+	}
+}
+
+func TestUIWithMockPolicy(t *testing.T) {
+	// --mock-core hands the broker the mock's policy: password, no badges.
+	b := &Broker{Verifier: core.Mock{AllowIdentifier: "testuser"}, Accounts: &fakeAccounts{}}
+	pol, err := core.Mock{}.Policy(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	b.SetPolicy(*pol)
+	rep := b.Handle(context.Background(), pipeproto.Request{Op: "ui"})
+	if rep.DefaultMethod != "password" || rep.Strings.TileLabel != "Rostor" {
+		t.Fatalf("got %+v %+v", rep.DefaultMethod, rep.Strings)
+	}
+}
+
+func TestSetPolicyConcurrentWithUI(t *testing.T) {
+	// The heartbeat writes while pipe goroutines read; run under -race.
+	b := &Broker{}
+	var wg sync.WaitGroup
+	for i := 0; i < 4; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < 200; j++ {
+				var pol core.PolicyResponse
+				pol.Login.DefaultMethod = []string{core.DefaultMethodPassword, core.DefaultMethodBadge}[j%2]
+				b.SetPolicy(pol)
+			}
+		}()
+	}
+	for i := 0; i < 4; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < 200; j++ {
+				rep := b.Handle(context.Background(), pipeproto.Request{Op: "ui"})
+				if !rep.OK || (rep.DefaultMethod != "password" && rep.DefaultMethod != "badge") {
+					t.Errorf("got %+v", rep)
+					return
+				}
+				// The labels always match the method in the same reply.
+				wantTile := "Rostor"
+				if rep.DefaultMethod == "badge" {
+					wantTile = "Tap your badge"
+				}
+				if rep.Strings.TileLabel != wantTile {
+					t.Errorf("method %s with tile %q", rep.DefaultMethod, rep.Strings.TileLabel)
+					return
+				}
+			}
+		}()
+	}
+	wg.Wait()
+}
+
 func TestUnknownOp(t *testing.T) {
 	rep := (&Broker{}).Handle(context.Background(), pipeproto.Request{Op: "nope"})
 	if rep.OK || rep.Code != "agent.bad_request" || rep.Message == "" {

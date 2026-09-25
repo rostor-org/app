@@ -6,7 +6,9 @@
     "submit_label": "Sign in",
     "connecting": "Contacting Rostor…",
     "pin_label": "PIN",
-    "badge_hint": "Tap your badge or type your username"
+    "badge_hint": "Tap your badge or type your username",
+    "tile_label_badge": "Tap your badge",
+    "username_label_badge": "Badge, or username"
   },
   "messages": {
     "agent.core_unreachable": "Rostor could not be reached. Try again, or sign in with a local account.",

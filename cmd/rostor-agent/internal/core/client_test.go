@@ -176,3 +176,91 @@ func TestMockScripts(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestPolicy(t *testing.T) {
+	var gotMethod, gotPath string
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/devices/self/policy", func(w http.ResponseWriter, r *http.Request) {
+		gotMethod, gotPath = r.Method, r.URL.Path
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"login":{"default_method":"badge"},"badge":{"format":"wiegand26"}}`))
+	})
+	c := newMTLSServer(t, mux)
+	pol, err := c.Policy(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotMethod != http.MethodGet || gotPath != "/v1/devices/self/policy" {
+		t.Fatalf("request: %s %s", gotMethod, gotPath)
+	}
+	if pol.Login.DefaultMethod != DefaultMethodBadge || pol.Badge.Format != "wiegand26" {
+		t.Fatalf("policy: %+v", pol)
+	}
+}
+
+func TestPolicyErrors(t *testing.T) {
+	status := http.StatusInternalServerError
+	body := ""
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(status)
+		_, _ = w.Write([]byte(body))
+	})
+	c := newMTLSServer(t, mux)
+
+	if _, err := c.Policy(context.Background()); err == nil || !errors.Is(err, ErrUnreachable) {
+		t.Fatalf("HTTP 500: %v", err)
+	}
+	status, body = http.StatusNotFound, `{"error":"not found"}`
+	if _, err := c.Policy(context.Background()); err == nil || !errors.Is(err, ErrUnreachable) {
+		t.Fatalf("HTTP 404 (core older than the contract): %v", err)
+	}
+	status, body = http.StatusOK, `{"login": nope`
+	if _, err := c.Policy(context.Background()); err == nil || !errors.Is(err, ErrUnreachable) {
+		t.Fatalf("bad JSON: %v", err)
+	}
+	// A 200 with no default_method is not a policy the agent can act on.
+	status, body = http.StatusOK, `{"badge":{"format":"none"}}`
+	if _, err := c.Policy(context.Background()); err == nil || !errors.Is(err, ErrUnreachable) {
+		t.Fatalf("missing default_method: %v", err)
+	}
+	status, body = http.StatusOK, ``
+	if _, err := c.Policy(context.Background()); err == nil || !errors.Is(err, ErrUnreachable) {
+		t.Fatalf("empty body: %v", err)
+	}
+	// The agent does not judge the method; the broker does. An unknown
+	// method still comes back so it can be logged.
+	status, body = http.StatusOK, `{"login":{"default_method":"sms"},"badge":{"format":"none"}}`
+	if pol, err := c.Policy(context.Background()); err != nil || pol.Login.DefaultMethod != "sms" {
+		t.Fatalf("unknown method: %+v %v", pol, err)
+	}
+}
+
+func TestPolicyUnreachable(t *testing.T) {
+	c := newMTLSServer(t, http.NotFoundHandler())
+	c.BaseURL = "https://127.0.0.1:1"
+	if _, err := c.Policy(context.Background()); err == nil || !errors.Is(err, ErrUnreachable) {
+		t.Fatalf("connection refused: %v", err)
+	}
+}
+
+func TestMockPolicy(t *testing.T) {
+	pol, err := Mock{AllowIdentifier: "testuser"}.Policy(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pol.Login.DefaultMethod != DefaultMethodPassword || pol.Badge.Format != "none" {
+		t.Fatalf("mock policy: %+v", pol)
+	}
+}
+
+func TestPolicyWireShape(t *testing.T) {
+	// Field names on the wire are the contract's.
+	var pol PolicyResponse
+	pol.Login.DefaultMethod = "badge"
+	pol.Badge.Format = "wiegand26"
+	b, _ := json.Marshal(pol)
+	if string(b) != `{"login":{"default_method":"badge"},"badge":{"format":"wiegand26"}}` {
+		t.Fatalf("wire: %s", b)
+	}
+}

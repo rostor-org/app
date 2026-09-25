@@ -216,3 +216,19 @@ removed afterwards. A script whose signature does not verify is logged
 fixed (logged as `scripts disabled`). Runs are one at a time across
 heartbeat and sign-ins, 10-minute limit each, last 4 KB of output
 reported; a timed-out run reports exit code -1.
+
+## Sign-in policy on the lock screen (v0.11.0)
+
+On every heartbeat (at start and every ten minutes, after posture) the
+agent fetches `GET /v1/devices/self/policy` and keeps the last successful
+answer; a failed fetch is logged and the previous value stays in force,
+and before the first answer the agent behaves as if the default method
+were `password`. The `ui` pipe reply carries `default_method` (`password`,
+`passkey` or `badge`) beside `strings`. When it is `badge`, `tile_label`
+and `username_label` come from the catalog's `tile_label_badge` ("Tap
+your badge") and `username_label_badge` ("Badge, or username") entries;
+every other string, including `badge_hint`, is unchanged. The credential
+provider renders whatever it is given, so a policy change in the console
+shows at the next lock without a DLL update. `--mock-core` reports
+`password` with badge format `none`. A method the agent does not
+recognise is reported and rendered as `password`.

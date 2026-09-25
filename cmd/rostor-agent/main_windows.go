@@ -166,7 +166,7 @@ func buildBroker(logger *log.Logger, mock bool) (*broker.Broker, error) {
 			}
 		}
 	}
-	go heartbeat(mgr, coord, logger)
+	go heartbeat(mgr, coord, b, logger)
 	return b, nil
 }
 
@@ -215,10 +215,12 @@ func newTrustManager(cfg *enroll.Config, res core.Resource, logger *log.Logger) 
 }
 
 // heartbeat runs the trust check (bundle update, renewal), posts posture
-// (§1.3) and runs the due immediate scripts (§1.4) at start and every ten
-// minutes; failures are only logged. Scripts come last so a bundle rotation
-// applied in the same tick is what their signatures are checked against.
-func heartbeat(mgr *trust.Manager, coord *scripts.Coordinator, logger *log.Logger) {
+// (§1.3), refreshes the effective auth policy (§1.5) and runs the due
+// immediate scripts (§1.4) at start and every ten minutes; failures are
+// only logged. A failed policy fetch keeps the broker's last good value.
+// Scripts come last so a bundle rotation applied in the same tick is what
+// their signatures are checked against.
+func heartbeat(mgr *trust.Manager, coord *scripts.Coordinator, b *broker.Broker, logger *log.Logger) {
 	osVersion := windowsVersion()
 	first := true
 	for {
@@ -237,6 +239,16 @@ func heartbeat(mgr *trust.Manager, coord *scripts.Coordinator, logger *log.Logge
 		ctx, cancel = context.WithTimeout(context.Background(), core.Timeout)
 		if err := mgr.Client.Posture(ctx, osVersion); err != nil {
 			logger.Printf("posture: %v", err)
+		}
+		cancel()
+		ctx, cancel = context.WithTimeout(context.Background(), core.Timeout)
+		if pol, err := mgr.Client.Policy(ctx); err != nil {
+			logger.Printf("policy: %v (keeping %s)", err, b.DefaultMethod())
+		} else {
+			if pol.Login.DefaultMethod != b.DefaultMethod() {
+				logger.Printf("policy: default method %s (badge format %s)", pol.Login.DefaultMethod, pol.Badge.Format)
+			}
+			b.SetPolicy(*pol)
 		}
 		cancel()
 		if coord != nil {

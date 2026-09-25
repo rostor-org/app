@@ -7,10 +7,27 @@ func TestUIHasAllContractKeys(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, k := range []string{"tile_label", "username_label", "password_label", "submit_label", "connecting"} {
+	for _, k := range []string{"tile_label", "username_label", "password_label", "submit_label", "connecting", "pin_label", "badge_hint"} {
 		if ui[k] == "" {
 			t.Errorf("missing ui key %q", k)
 		}
+	}
+}
+
+func TestUIHasBadgeFirstKeys(t *testing.T) {
+	// The badge-first strings (§2.1 "ui and the default method") are their
+	// own keys so the broker swaps labels without inventing text.
+	ui, err := UI("en-US")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, k := range []string{"tile_label_badge", "username_label_badge", "badge_hint"} {
+		if ui[k] == "" {
+			t.Errorf("missing ui key %q", k)
+		}
+	}
+	if ui["tile_label_badge"] == ui["tile_label"] || ui["username_label_badge"] == ui["username_label"] {
+		t.Fatalf("badge-first strings must differ from the password ones: %+v", ui)
 	}
 }
 

@@ -154,3 +154,23 @@ const (
 	RunTimeout = "timeout"
 	RunError   = "error"
 )
+
+// PolicyResponse is GET /v1/devices/self/policy (§1.5): the tenant's auth
+// policy as it applies to this device. Login.DefaultMethod is one of the
+// DefaultMethod* constants; Badge.Format names the card format the tenant's
+// readers produce ("none" when badges are not in use).
+type PolicyResponse struct {
+	Login struct {
+		DefaultMethod string `json:"default_method"`
+	} `json:"login"`
+	Badge struct {
+		Format string `json:"format"`
+	} `json:"badge"`
+}
+
+// Default sign-in methods a policy can name (§1.5).
+const (
+	DefaultMethodPassword = "password"
+	DefaultMethodPasskey  = "passkey"
+	DefaultMethodBadge    = "badge"
+)

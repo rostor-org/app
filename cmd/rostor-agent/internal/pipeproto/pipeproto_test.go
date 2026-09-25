@@ -74,3 +74,41 @@ func TestReadRequestTooLong(t *testing.T) {
 		t.Fatalf("got %v want ErrLineTooLong", err)
 	}
 }
+
+func TestUIReplyDefaultMethod(t *testing.T) {
+	// A `ui` reply carries default_method beside strings (§2.1, v0.11.0).
+	var buf bytes.Buffer
+	in := Reply{OK: true, DefaultMethod: "badge", Strings: &UIStrings{TileLabel: "Tap your badge", UsernameLabel: "Badge, or username",
+		PasswordLabel: "Password", SubmitLabel: "Sign in", Connecting: "Contacting Rostor…", PinLabel: "PIN", BadgeHint: "Tap your badge or type your username"}}
+	if err := Write(&buf, in); err != nil {
+		t.Fatal(err)
+	}
+	wire := strings.TrimSpace(buf.String())
+	if !strings.Contains(wire, `"default_method":"badge"`) || !strings.Contains(wire, `"strings":{"tile_label":"Tap your badge","username_label":"Badge, or username"`) {
+		t.Fatalf("wire: %s", wire)
+	}
+	out, err := ReadReply(bufio.NewReader(&buf))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.DefaultMethod != "badge" || out.Strings == nil || *out.Strings != *in.Strings || !out.OK {
+		t.Fatalf("got %+v", out)
+	}
+	// Every other reply shape stays exactly as before: no default_method key.
+	for _, rep := range []Reply{
+		{OK: true, LocalUser: "dan", LocalSecret: "x"},
+		{OK: false, Code: "auth.failed", Message: "Sign-in failed."},
+		{OK: false, Code: "auth.continue", Message: "Enter your PIN.", Need: "pin"},
+	} {
+		buf.Reset()
+		_ = Write(&buf, rep)
+		if strings.Contains(buf.String(), "default_method") {
+			t.Fatalf("default_method leaked into %s", buf.String())
+		}
+	}
+	// A pre-v0.11.0 agent's reply (no default_method) still parses.
+	old, err := ReadReply(bufio.NewReader(strings.NewReader(`{"ok":true,"strings":{"tile_label":"Rostor"}}` + "\n")))
+	if err != nil || old.DefaultMethod != "" || old.Strings == nil || old.Strings.TileLabel != "Rostor" {
+		t.Fatalf("got %+v %v", old, err)
+	}
+}

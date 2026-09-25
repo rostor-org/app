@@ -55,3 +55,11 @@ func (m Mock) Scripts(_ context.Context) ([]Script, error) { return nil, nil }
 
 // ReportRun accepts and discards a run report.
 func (m Mock) ReportRun(_ context.Context, _ string, _ ScriptRun) error { return nil }
+
+// Policy implements the §1.5 fetch for the mock: password first, no badges.
+func (m Mock) Policy(_ context.Context) (*PolicyResponse, error) {
+	var p PolicyResponse
+	p.Login.DefaultMethod = DefaultMethodPassword
+	p.Badge.Format = "none"
+	return &p, nil
+}
