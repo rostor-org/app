@@ -1069,3 +1069,79 @@ func do2(t *testing.T, do func(string, string, any) (int, map[string]any), metho
 	}
 	return out
 }
+
+// SPEC-agents: MCP is the same API under the caller's own identity.
+func TestMCP(t *testing.T) {
+	h := newHarness(t)
+	rpc := func(bearer string, body any) (int, map[string]any) {
+		return h.call(h.client(nil), "POST", "/mcp", bearer, body)
+	}
+	// initialize negotiates a version and names the server.
+	st, out := rpc(h.admin, map[string]any{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": map[string]any{"protocolVersion": "2025-03-26", "capabilities": map[string]any{}, "clientInfo": map[string]any{"name": "test", "version": "0"}}})
+	if st != 200 || out["result"].(map[string]any)["protocolVersion"] != "2025-03-26" || out["result"].(map[string]any)["serverInfo"].(map[string]any)["name"] != "rostor" {
+		t.Fatalf("initialize: %d %v", st, out)
+	}
+	// A notification gets 202 and no body.
+	if st, _ := rpc(h.admin, map[string]any{"jsonrpc": "2.0", "method": "notifications/initialized"}); st != 202 {
+		t.Fatalf("notification: %d", st)
+	}
+	// No credential → 401.
+	if st, _ := rpc("", map[string]any{"jsonrpc": "2.0", "id": 2, "method": "tools/list"}); st != 401 {
+		t.Fatalf("anonymous: %d", st)
+	}
+	_, out = rpc(h.admin, map[string]any{"jsonrpc": "2.0", "id": 3, "method": "tools/list"})
+	tools := out["result"].(map[string]any)["tools"].([]any)
+	names := map[string]bool{}
+	for _, tl := range tools {
+		m := tl.(map[string]any)
+		names[m["name"].(string)] = true
+		if m["description"] == "" || strings.HasPrefix(m["description"].(string), "mcp.tool.") {
+			t.Fatalf("tool description missing from the catalog: %v", m)
+		}
+	}
+	for _, want := range []string{"people_list", "grant_create", "why", "audit_list", "agent_get"} {
+		if !names[want] {
+			t.Fatalf("tool %s missing: %v", want, names)
+		}
+	}
+	// A tool call is the API call: create a person, then list and find them.
+	_, out = rpc(h.admin, map[string]any{"jsonrpc": "2.0", "id": 4, "method": "tools/call", "params": map[string]any{"name": "person_create", "arguments": map[string]any{"username": "mia", "display_name": "Mia"}}})
+	if res := out["result"].(map[string]any); res["isError"] != false {
+		t.Fatalf("person_create: %v", out)
+	}
+	_, out = rpc(h.admin, map[string]any{"jsonrpc": "2.0", "id": 5, "method": "tools/call", "params": map[string]any{"name": "people_list", "arguments": map[string]any{"q": "mia"}}})
+	res := out["result"].(map[string]any)
+	if !strings.Contains(res["content"].([]any)[0].(map[string]any)["text"].(string), `"username":"mia"`) {
+		t.Fatalf("people_list: %v", res)
+	}
+	// Unknown tool → JSON-RPC error, not an HTTP error.
+	if st, out := rpc(h.admin, map[string]any{"jsonrpc": "2.0", "id": 6, "method": "tools/call", "params": map[string]any{"name": "nope"}}); st != 200 || out["error"] == nil {
+		t.Fatalf("unknown tool: %d %v", st, out)
+	}
+
+	// An agent with no rights: reads its own resource, is refused a grant, and both are audited under it with its owner.
+	h.adminCall("POST", "/v1/admin/agents", map[string]any{"username": "helper", "display_name": map[string]string{"en": "Helper"}, "owner": "mia"})
+	tok := h.adminCall("POST", "/v1/admin/agents/helper/token", nil)["token"].(string)
+	_, out = rpc(tok, map[string]any{"jsonrpc": "2.0", "id": 7, "method": "resources/read", "params": map[string]any{"uri": "rostor://me"}})
+	if !strings.Contains(out["result"].(map[string]any)["contents"].([]any)[0].(map[string]any)["text"].(string), `"username":"helper"`) {
+		t.Fatalf("me: %v", out)
+	}
+	_, out = rpc(tok, map[string]any{"jsonrpc": "2.0", "id": 8, "method": "tools/call", "params": map[string]any{"name": "grant_create", "arguments": map[string]any{
+		"subject_kind": "principal", "subject": "helper", "role": "admin", "resource_type": "directory", "resource_id": "root"}}})
+	res = out["result"].(map[string]any)
+	if res["isError"] != true || !strings.Contains(res["content"].([]any)[0].(map[string]any)["text"].(string), "request.forbidden") {
+		t.Fatalf("agent grant_create should be refused: %v", res)
+	}
+	rows := h.adminCall("GET", "/v1/admin/audit?q=mcp.call", nil)["items"].([]any)
+	var seen int
+	for _, it := range rows {
+		m := it.(map[string]any)
+		actor := m["actor"].(map[string]any)
+		if actor["kind"] == "agent" && actor["owner_name"] == "Mia" && m["target"].(map[string]any)["id"] == "grant_create" && m["outcome"] == "deny" {
+			seen++
+		}
+	}
+	if seen == 0 {
+		t.Fatalf("agent's denied call should be audited with its owner: %v", rows)
+	}
+}

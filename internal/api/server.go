@@ -56,6 +56,8 @@ type Server struct {
 	// actions collects every permission the admin API checks, as routes are
 	// registered; the grant form offers them when defining a directory role.
 	actions map[string]struct{}
+	// mux is the API router; the MCP endpoint dispatches tool calls through it.
+	mux *http.ServeMux
 }
 
 // baseCtx is a context for work not tied to a request (trust reloads).
@@ -131,9 +133,12 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/admin/updates", s.adminAuth("updates.read", s.handleUpdateStatus))
 	mux.HandleFunc("POST /v1/admin/updates/apply", s.adminAuth("updates.write", s.handleUpdateApply))
 	mux.HandleFunc("POST /v1/admin/updates/check", s.adminAuth("updates.read", s.handleUpdateCheck))
+	// SPEC-agents: MCP on the same listener, tools dispatched through this mux.
+	mux.HandleFunc("/mcp", s.handleMCP)
 	if s.Static != nil {
 		mux.Handle("/", s.Static)
 	}
+	s.mux = mux
 	return s.logging(mux)
 }
 

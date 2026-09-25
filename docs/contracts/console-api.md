@@ -159,6 +159,15 @@ plugin registry, key rotation, policy counts on groups.
   People rows of kind `agent` carry `owner {id,name}`; audit rows by an
   agent carry `actor.owner_id` and `actor.owner_name`. A bearer principal
   may read its own `/v1/admin/users/{id}`.
+- MCP (v0.7.0, SPEC-agents): `POST /mcp` speaks MCP over streamable HTTP
+  with JSON responses (no server stream yet; `GET /mcp` is 405). The bearer
+  token is the caller's identity, an agent's typically. `initialize`,
+  `ping`, `tools/list`, `tools/call`, `resources/list`, `resources/read`
+  (`rostor://me`, `rostor://catalog`). Every tool is one API call
+  dispatched through the same router under that credential, so it meets
+  the same Check, attenuation and audit; each call also writes `mcp.call`
+  (target `tool:<name>`, outcome ok/deny/error). Tool descriptions are
+  catalog strings `mcp.tool.<name>`.
 - Audit default view (v0.6.0): rows whose actor kind is `system` or `device`
   are omitted unless `include_system=1`; the console's "Show system activity"
   tick sets it.
