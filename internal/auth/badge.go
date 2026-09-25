@@ -84,11 +84,28 @@ var (
 // wiegand26 ("facility:card" decimal), printed (decimal). A bare "number"
 // field is classified by shape: hex-looking → uid, decimal → printed.
 func badgeForms(in StepInput, format string, presenting bool) map[string]string {
-	f := rawBadgeForms(in)
 	if format == "wiegand26" {
-		return reduceToWiegand(f, presenting)
+		// Readers set to Wiegand output type the pair run together, eight
+		// digits: three of facility, five of card ("02622915" = 26:22915).
+		// A ten-digit reading is the padded 24-bit value instead, which the
+		// generic path handles. Eight digits is taken as the pair; at
+		// presentation the plain-number reading is tried as well.
+		if v := strings.TrimSpace(in.Fields["number"]); len(v) == 8 && decRe.MatchString(v) {
+			fc, _ := strconv.ParseUint(v[:3], 10, 32)
+			cn, _ := strconv.ParseUint(v[3:], 10, 32)
+			if fc <= 255 && cn <= 65535 {
+				out := map[string]string{"badge.wiegand26": strconv.FormatUint(fc, 10) + ":" + strconv.FormatUint(cn, 10)}
+				if n, err := strconv.ParseUint(v, 10, 64); presenting && err == nil {
+					if w := wiegand26Of(n); w != out["badge.wiegand26"] {
+						out["badge.wiegand26_alt"] = w
+					}
+				}
+				return out
+			}
+		}
+		return reduceToWiegand(rawBadgeForms(in), presenting)
 	}
-	return f
+	return rawBadgeForms(in)
 }
 
 func rawBadgeForms(in StepInput) map[string]string {
@@ -192,8 +209,8 @@ func (m *BadgeMethod) Enroll(ctx context.Context, in StepInput) ([]byte, []Ident
 func (m *BadgeMethod) Identify(in StepInput) []Identifier {
 	var ids []Identifier
 	for k, v := range badgeForms(in, m.format(context.Background()), true) {
-		// The reversed reading is looked up under the kind that is stored.
-		if k == "badge.wiegand26_rev" {
+		// Alternate readings (reversed bytes, plain-number) are looked up under the kind that is stored.
+		if strings.HasPrefix(k, "badge.wiegand26_") {
 			k = "badge.wiegand26"
 		}
 		ids = append(ids, Identifier{Kind: k, Value: v})
@@ -225,7 +242,7 @@ func (m *BadgeMethod) Authenticate(ctx context.Context, bindingID string, sm Sea
 			match = true
 			break
 		}
-		if (k == "badge.wiegand26" || k == "badge.wiegand26_rev") && (mat.Forms["badge.wiegand26"] == v || mat.Forms["badge.wiegand26_rev"] == v) {
+		if strings.HasPrefix(k, "badge.wiegand26") && mat.Forms["badge.wiegand26"] == v {
 			match = true
 			break
 		}

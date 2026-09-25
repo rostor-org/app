@@ -1242,4 +1242,18 @@ func TestBadgeFormatWiegand(t *testing.T) {
 	if st, out := h.call(h.client(nil), "POST", "/v1/auth/login", "", map[string]any{"method": "badge", "fields": map[string]string{"number": "4857726"}}); st != 200 || out["assurance"] != "AL1" {
 		t.Fatalf("badge login: %d %v", st, out)
 	}
+	// Dan's fob from two readers: padded 24-bit decimal, and the Wiegand pair
+	// run together. Enrolled from either, accepted from the other.
+	h.adminCall("POST", "/v1/admin/users", map[string]any{"username": "kim"})
+	h.adminCall("POST", "/v1/admin/groups/members/members", map[string]any{"member_kind": "principal", "member": "kim"})
+	h.adminCall("POST", "/v1/admin/users/kim/bindings", map[string]any{"method": "badge", "fields": map[string]string{"number": "0001726851"}})
+	if d := verify(map[string]string{"type": "badge", "number": "02622915"}); d != "ALLOW" {
+		t.Fatalf("concatenated wiegand reader should match the padded-decimal enrolment: %s", d)
+	}
+	h.adminCall("POST", "/v1/admin/users", map[string]any{"username": "lee"})
+	h.adminCall("POST", "/v1/admin/groups/members/members", map[string]any{"member_kind": "principal", "member": "lee"})
+	h.adminCall("POST", "/v1/admin/users/lee/bindings", map[string]any{"method": "badge", "fields": map[string]string{"number": "02733001"}})
+	if d := verify(map[string]string{"type": "badge", "number": "0001802473"}); d != "ALLOW" { // 27<<16 | 33001
+		t.Fatalf("padded-decimal reader should match the concatenated-wiegand enrolment: %s", d)
+	}
 }

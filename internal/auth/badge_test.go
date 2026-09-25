@@ -41,3 +41,24 @@ func TestBadgeFormsWiegand(t *testing.T) {
 		}
 	}
 }
+
+// Dan's two readers on one fob (2026-09-25): a padded ten-digit 24-bit value
+// and the Wiegand pair run together as eight digits. Both must name the card
+// 26:22915, and the eight-digit reading must not be taken as a plain number
+// at enrolment.
+func TestBadgeFormsConcatenatedWiegand(t *testing.T) {
+	for _, c := range []map[string]string{{"number": "0001726851"}, {"number": "02622915"}} {
+		if f := badgeForms(StepInput{Fields: c}, "wiegand26", false); f["badge.wiegand26"] != "26:22915" || len(f) != 1 {
+			t.Errorf("enrol %v → %v, want only 26:22915", c, f)
+		}
+	}
+	// At presentation the plain-number reading of the eight digits is tried too.
+	f := badgeForms(StepInput{Fields: map[string]string{"number": "02622915"}}, "wiegand26", true)
+	if f["badge.wiegand26"] != "26:22915" || f["badge.wiegand26_alt"] != "40:1475" {
+		t.Errorf("present 02622915 → %v", f)
+	}
+	// Digits that cannot be a pair (facility > 255) stay a plain number.
+	if f := badgeForms(StepInput{Fields: map[string]string{"number": "99912345"}}, "wiegand26", false); f["badge.wiegand26"] == "999:12345" {
+		t.Errorf("impossible pair should not be split: %v", f)
+	}
+}
