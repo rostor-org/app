@@ -1177,3 +1177,69 @@ func TestMCP(t *testing.T) {
 		t.Fatalf("agent's denied call should be audited with its owner: %v", rows)
 	}
 }
+
+// badge.format = wiegand26: any reader names the same card, and the card is
+// saved as facility:card. A card enrolled by its full UID is accepted from a
+// Wiegand reader, a printed-number reader and a byte-reversed reader, and
+// one enrolled from a Wiegand reader is accepted from a UID reader.
+func TestBadgeFormatWiegand(t *testing.T) {
+	h := newHarness(t)
+	h.adminCall("PUT", "/v1/admin/settings/auth", map[string]any{"webauthn": map[string]any{"rp_id": "", "display_name": "", "origins": []string{}},
+		"login": map[string]any{"default_method": "badge"}, "badge": map[string]any{"format": "wiegand26"}})
+	if got := h.adminCall("GET", "/v1/admin/settings/auth", nil)["badge"].(map[string]any)["format"]; got != "wiegand26" {
+		t.Fatalf("setting not saved: %v", got)
+	}
+	if st, out := h.call(h.client(nil), "PUT", "/v1/admin/settings/auth", h.admin, map[string]any{"webauthn": map[string]any{"origins": []string{}}, "badge": map[string]any{"format": "wiegand-24"}}); st != 400 {
+		t.Fatalf("unknown format should be refused: %d %v", st, out)
+	}
+	h.adminCall("POST", "/v1/admin/users", map[string]any{"username": "dana", "display_name": map[string]string{"en": "Dana"}})
+	h.adminCall("POST", "/v1/admin/groups", map[string]any{"name": "members"})
+	h.adminCall("POST", "/v1/admin/groups/members/members", map[string]any{"member_kind": "principal", "member": "dana"})
+	h.adminCall("POST", "/v1/admin/grants", map[string]any{"subject_kind": "group", "subject": "members", "role": "user", "resource_type": "workstations", "resource_id": "all"})
+	// Enrolled from a reader that types the full UID.
+	h.adminCall("POST", "/v1/admin/users/dana/bindings", map[string]any{"method": "badge", "fields": map[string]string{"number": "0a004a1f7e"}})
+	forms := h.adminCall("GET", "/v1/admin/users/dana", nil)["bindings"].([]any)[0].(map[string]any)["forms"].([]any)
+	if len(forms) != 1 || forms[0].(map[string]any)["kind"] != "wiegand26" || forms[0].(map[string]any)["value"] != "74:8062" {
+		t.Fatalf("saved as wiegand only: %v", forms)
+	}
+	tok := h.adminCall("POST", "/v1/admin/enrollment-tokens", map[string]any{"resource_type": "workstation"})["enrollment_token"].(string)
+	key, csrPEM := csr(t)
+	st, out := h.call(h.client(nil), "POST", "/v1/devices/enroll", "", map[string]any{"enrollment_token": tok, "csr_pem": csrPEM, "posture": map[string]any{"hostname": "WS-W26"}})
+	if st != 201 {
+		t.Fatalf("enroll: %d %v", st, out)
+	}
+	certBlock, _ := pem.Decode([]byte(out["certificate_pem"].(string)))
+	keyDER, _ := x509.MarshalECPrivateKey(key)
+	cert, _ := tls.X509KeyPair(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certBlock.Bytes}), pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER}))
+	dev := h.client(&cert)
+	verify := func(cred map[string]string) string {
+		_, out := h.call(dev, "POST", "/v1/verify", "", map[string]any{"credential": cred, "action": "logon", "resource": map[string]string{"type": "workstation", "id": "WS-W26"}})
+		d, _ := out["decision"].(string)
+		return d
+	}
+	for _, cred := range []map[string]string{
+		{"type": "badge", "facility": "74", "card": "8062"}, // Wiegand reader
+		{"type": "badge", "number": "74:8062"},              // Wiegand reader keeping the split
+		{"type": "badge", "number": "4857726"},              // printed-number reader (low 24 bits, decimal)
+		{"type": "badge", "number": "42954530686"},          // full UID typed in decimal
+		{"type": "badge", "uid": "7e1f4a000a"},              // byte-reversed reader
+	} {
+		if d := verify(cred); d != "ALLOW" {
+			t.Fatalf("%v should match the card: %s", cred, d)
+		}
+	}
+	if d := verify(map[string]string{"type": "badge", "number": "74:8063"}); d != "DENY" {
+		t.Fatalf("a different card must not match: %s", d)
+	}
+	// The other way round: enrolled from a Wiegand reader, presented by a UID reader.
+	h.adminCall("POST", "/v1/admin/users", map[string]any{"username": "sam"})
+	h.adminCall("POST", "/v1/admin/groups/members/members", map[string]any{"member_kind": "principal", "member": "sam"})
+	h.adminCall("POST", "/v1/admin/users/sam/bindings", map[string]any{"method": "badge", "fields": map[string]string{"number": "12:345"}})
+	if d := verify(map[string]string{"type": "badge", "uid": "ff0c0159"}); d != "ALLOW" { // 0x0c0159 = 12:345 under any high byte
+		t.Fatalf("uid reader should match a card enrolled by wiegand: %s", d)
+	}
+	// Console sign-in by badge with the printed form.
+	if st, out := h.call(h.client(nil), "POST", "/v1/auth/login", "", map[string]any{"method": "badge", "fields": map[string]string{"number": "4857726"}}); st != 200 || out["assurance"] != "AL1" {
+		t.Fatalf("badge login: %d %v", st, out)
+	}
+}

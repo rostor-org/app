@@ -83,13 +83,17 @@ export interface WebAuthnSettings {
   origins: string[]
 }
 export type LoginMethod = 'password' | 'passkey' | 'badge'
+/** Badge number format (auth policy badge.format): keep every form, or reduce every reading to Wiegand-26 facility:card. */
+export type BadgeFormat = 'none' | 'wiegand26'
 export interface AuthSettings {
   webauthn: WebAuthnSettings & { enrolled_passkeys: number }
   login: { default_method: LoginMethod }
+  badge: { format: BadgeFormat }
 }
 export interface AuthSettingsUpdate {
   webauthn: WebAuthnSettings
   login?: { default_method: LoginMethod }
+  badge?: { format: BadgeFormat }
 }
 
 export interface Session {
@@ -166,6 +170,8 @@ export interface Binding {
   created_at: string
   last_used_at: string | null
   state: string
+  /** Badges: the forms the card is known by (uid, printed, wiegand26 as facility:card). */
+  forms?: { kind: string; value: string }[]
 }
 
 export interface EffectiveSecurity {

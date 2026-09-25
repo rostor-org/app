@@ -142,6 +142,12 @@ plugin registry, key rotation, policy counts on groups.
   type, whatever existing roles already use. `POST /v1/admin/roles`
   `{resource_type,name,permissions}` defines a role (roles.write) and is what
   the form's "New role…" calls before creating the grant.
+- Badge number format (v0.8.0): `GET/PUT /v1/admin/settings/auth` carry
+  `badge.format`: `none` (default; every form a card is seen in is kept and
+  matched) or `wiegand26` (every reading, whether full UID hex/decimal,
+  printed 24-bit number, or facility:card, is reduced to facility:card and
+  the badge is saved as that one form; a byte-reversed UID is tried at
+  presentation). Person detail badge bindings carry `forms: [{kind,value}]`.
 - Agents (v0.7.0, SPEC-agents). A principal of kind `agent` with an owner
   (`attributes.owner_id`, a person). Check ANDs the agent's decision with the
   owner's; a denial for that reason is `owner.denied` with the owner's own

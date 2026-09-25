@@ -81,7 +81,22 @@ func (s *Server) handleGetAuthSettings(w http.ResponseWriter, r *http.Request) {
 	var enrolled int
 	_ = s.DB.QueryRow(r.Context(), `SELECT count(*) FROM authenticator_bindings WHERE tenant_id=$1 AND method='webauthn' AND state='active'`, s.TenantID).Scan(&enrolled)
 	s.writeJSON(w, 200, map[string]any{"webauthn": map[string]any{"rp_id": rp.ID, "display_name": rp.DisplayName, "origins": rp.Origins, "enrolled_passkeys": enrolled},
-		"login": map[string]any{"default_method": s.defaultLoginMethod(r.Context())}})
+		"login": map[string]any{"default_method": s.defaultLoginMethod(r.Context())},
+		"badge": map[string]any{"format": s.badgeFormat(r.Context())}})
+}
+
+// badgeFormat is the tenant's badge number format (auth policy
+// `badge.format`): none, or wiegand26 to reduce every reading to
+// facility:card so any reader matches any other. None when unset.
+func (s *Server) badgeFormat(ctx context.Context) string {
+	pol, _, err := directory.EffectivePolicy(ctx, s.DB, s.TenantID, "auth", "")
+	if err != nil {
+		return "none"
+	}
+	if f, _ := pol["badge.format"].(string); f == "wiegand26" {
+		return f
+	}
+	return "none"
 }
 
 // defaultLoginMethod is the method the sign-in page opens on (auth policy
@@ -111,10 +126,22 @@ func (s *Server) handlePutAuthSettings(w http.ResponseWriter, r *http.Request) {
 		Login struct {
 			DefaultMethod string `json:"default_method"`
 		} `json:"login"`
+		Badge struct {
+			Format string `json:"format"`
+		} `json:"badge"`
 	}
 	if err := decode(r, &req); err != nil {
 		s.fail(w, r, err)
 		return
+	}
+	switch req.Badge.Format {
+	case "", "none", "wiegand26":
+	default:
+		s.fail(w, r, directory.Err("request.malformed", "field", "badge.format"))
+		return
+	}
+	if req.Badge.Format == "" {
+		req.Badge.Format = "none"
 	}
 	rpID := strings.ToLower(strings.TrimSpace(req.WebAuthn.RPID))
 	if rpID != "" && (strings.Contains(rpID, "/") || strings.Contains(rpID, ":")) {
@@ -140,7 +167,7 @@ func (s *Server) handlePutAuthSettings(w http.ResponseWriter, r *http.Request) {
 		req.WebAuthn.Origins = []string{}
 	}
 	doc := map[string]any{"webauthn.rp_id": rpID, "webauthn.display_name": req.WebAuthn.DisplayName, "webauthn.origins": req.WebAuthn.Origins,
-		"login.default_method": req.Login.DefaultMethod}
+		"login.default_method": req.Login.DefaultMethod, "badge.format": req.Badge.Format}
 	err := s.tx(r, func(tx pgx.Tx) error {
 		// Replace the tenant-wide auth policy in place so there is exactly one.
 		raw, _ := json.Marshal(doc)

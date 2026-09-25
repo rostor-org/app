@@ -64,6 +64,12 @@ type Server struct {
 func (s *Server) baseCtx() context.Context { return context.Background() }
 
 func (s *Server) Handler() http.Handler {
+	// The badge method reads the tenant's number format from policy.
+	if bm, ok := s.Auth.Method("badge"); ok {
+		if badge, ok := bm.(*auth.BadgeMethod); ok {
+			badge.Format = s.badgeFormat
+		}
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("ok\n")) })
 	mux.HandleFunc("GET /v1/catalog", s.handleCatalog)

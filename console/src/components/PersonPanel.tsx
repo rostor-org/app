@@ -220,7 +220,8 @@ export function PersonPanel({ id, page = false }: { id: string; page?: boolean }
                       <span className="method">
                         <MethodGlyph method={b.method} />
                         <span><b>{b.label || methodName(t, b.method)}</b><br />
-                          <span className="muted">{t('ui.person.binding_meta', { properties: methodName(t, b.method), created: f.relDay(b.created_at), used: f.relDay(b.last_used_at) })}</span></span>
+                          <span className="muted">{t('ui.person.binding_meta', { properties: methodName(t, b.method), created: f.relDay(b.created_at), used: f.relDay(b.last_used_at) })}</span>
+                          {b.forms && b.forms.length > 0 && <><br /><span className="muted mono">{b.forms.map((x) => `${t(`ui.badge.form.${x.kind}`)} ${x.value}`).join(' · ')}</span></>}</span>
                       </span>
                       <span className="actions">
                         <span className="al">{b.state === 'active' ? (b.assurance ?? u.effective_security.assurance) : t(`ui.state.${b.state}`)}</span>

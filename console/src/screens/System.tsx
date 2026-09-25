@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useId, useRef, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { api, type AuthSettings, type CA, type LoginMethod, type SystemInfo } from '../api'
+import { api, type AuthSettings, type BadgeFormat, type CA, type LoginMethod, type SystemInfo } from '../api'
 import { useT } from '../i18n/catalog'
 import { useSession } from '../auth/session'
 import { useFormat } from '../lib/format'
@@ -168,31 +168,31 @@ function SignInSettings({ canWrite }: { canWrite: boolean }) {
   const f = useFormat()
   const qc = useQueryClient()
   const toast = useToast()
-  const ids = { rp: useId(), name: useId(), origins: useId(), confirm: useId(), method: useId() }
+  const ids = { rp: useId(), name: useId(), origins: useId(), confirm: useId(), method: useId(), badge: useId() }
   const q = useQuery({ queryKey: ['auth-settings'], queryFn: () => api.authSettings() })
-  const [form, setForm] = useState<{ rp_id: string; display_name: string; origins: string; default_method: LoginMethod } | null>(null)
+  const [form, setForm] = useState<{ rp_id: string; display_name: string; origins: string; default_method: LoginMethod; badge_format: BadgeFormat } | null>(null)
   const [confirm, setConfirm] = useState('')
   const saved = q.data?.webauthn
   // Edit a copy; the query stays the source of truth until save.
-  const cur = form ?? (saved ? { rp_id: saved.rp_id, display_name: saved.display_name, origins: (saved.origins ?? []).join('\n'), default_method: q.data?.login?.default_method ?? 'password' } : null)
+  const cur = form ?? (saved ? { rp_id: saved.rp_id, display_name: saved.display_name, origins: (saved.origins ?? []).join('\n'), default_method: q.data?.login?.default_method ?? 'password', badge_format: q.data?.badge?.format ?? 'none' } : null)
   const enrolled = saved?.enrolled_passkeys ?? 0
   const rpChanged = !!saved && !!cur && cur.rp_id.trim().toLowerCase() !== saved.rp_id
   const needConfirm = rpChanged && enrolled > 0
-  const dirty = !!saved && !!cur && (rpChanged || cur.display_name !== saved.display_name || cur.origins !== (saved.origins ?? []).join('\n') || cur.default_method !== (q.data?.login?.default_method ?? 'password'))
+  const dirty = !!saved && !!cur && (rpChanged || cur.display_name !== saved.display_name || cur.origins !== (saved.origins ?? []).join('\n') || cur.default_method !== (q.data?.login?.default_method ?? 'password') || cur.badge_format !== (q.data?.badge?.format ?? 'none'))
   // Type the new domain back; when the domain is being cleared, the old one.
   const confirmWord = (cur?.rp_id.trim().toLowerCase() || saved?.rp_id) ?? ''
   const confirmed = !needConfirm || confirm.trim().toLowerCase() === confirmWord
 
   const save = useMutation({
-    mutationFn: (body: AuthSettings['webauthn'] & { default_method: LoginMethod }) => api.setAuthSettings({ webauthn: { rp_id: body.rp_id, display_name: body.display_name, origins: body.origins }, login: { default_method: body.default_method } }),
+    mutationFn: (body: AuthSettings['webauthn'] & { default_method: LoginMethod; badge_format: BadgeFormat }) => api.setAuthSettings({ webauthn: { rp_id: body.rp_id, display_name: body.display_name, origins: body.origins }, login: { default_method: body.default_method }, badge: { format: body.badge_format } }),
     onSuccess: (s) => { qc.setQueryData(['auth-settings'], s); setForm(null); setConfirm(''); toast(t('ui.signin.saved_toast')) },
   })
   const submit = (e: FormEvent) => {
     e.preventDefault()
     if (!cur || !confirmed) return
-    save.mutate({ rp_id: cur.rp_id.trim().toLowerCase(), display_name: cur.display_name.trim(), origins: cur.origins.split(/\r?\n/).map((o) => o.trim()).filter(Boolean), enrolled_passkeys: enrolled, default_method: cur.default_method })
+    save.mutate({ rp_id: cur.rp_id.trim().toLowerCase(), display_name: cur.display_name.trim(), origins: cur.origins.split(/\r?\n/).map((o) => o.trim()).filter(Boolean), enrolled_passkeys: enrolled, default_method: cur.default_method, badge_format: cur.badge_format })
   }
-  const set = (k: 'rp_id' | 'display_name' | 'origins' | 'default_method') => (e: { target: { value: string } }) => { if (cur) setForm({ ...cur, [k]: e.target.value }) }
+  const set = (k: 'rp_id' | 'display_name' | 'origins' | 'default_method' | 'badge_format') => (e: { target: { value: string } }) => { if (cur) setForm({ ...cur, [k]: e.target.value }) }
 
   return (
     <div className="card">
@@ -223,6 +223,14 @@ function SignInSettings({ canWrite }: { canWrite: boolean }) {
               <option value="badge">{t('ui.method.badge')}</option>
             </select>
             <small className="muted">{t('ui.signin.default_method_hint')}</small>
+          </div>
+          <div className="field">
+            <label htmlFor={ids.badge}>{t('ui.signin.badge_format')}</label>
+            <select id={ids.badge} className="input" value={cur.badge_format} onChange={set('badge_format')} disabled={!canWrite}>
+              <option value="none">{t('ui.signin.badge_format.none')}</option>
+              <option value="wiegand26">{t('ui.signin.badge_format.wiegand26')}</option>
+            </select>
+            <small className="muted">{t('ui.signin.badge_format_hint')}</small>
           </div>
           {needConfirm && (
             <div className="field">

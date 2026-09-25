@@ -222,6 +222,25 @@ func (s *Server) handleGetUser(w http.ResponseWriter, r *http.Request) {
 			"state": b.State, "assurance": a, "created_at": b.CreatedAt, "last_used_at": last})
 	}
 	brows.Close()
+	// The forms a badge is known by (uid, printed, facility:card), so the
+	// number on screen can be compared with a door controller's list.
+	for _, b := range bindings {
+		if b["method"] != "badge" {
+			continue
+		}
+		forms := []map[string]string{}
+		irows, err := s.DB.Query(ctx, `SELECT kind, value FROM credential_identifiers WHERE tenant_id=$1 AND binding_id=$2 ORDER BY kind`, s.TenantID, b["id"])
+		if err == nil {
+			for irows.Next() {
+				var k, v string
+				if irows.Scan(&k, &v) == nil {
+					forms = append(forms, map[string]string{"kind": strings.TrimPrefix(k, "badge."), "value": v})
+				}
+			}
+			irows.Close()
+		}
+		b["forms"] = forms
+	}
 	out["bindings"] = bindings
 	// D26: effective security = min over bindings and recovery paths; with no
 	// recovery bindings yet, that is simply the strongest active binding and

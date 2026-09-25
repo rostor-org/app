@@ -19,6 +19,51 @@ import (
 // and matches on any of them (see project memory "badge-login-plan").
 type BadgeMethod struct {
 	Provider crypto.Provider
+	// Format is the tenant's badge number format (auth policy `badge.format`):
+	// "none" keeps every form a card is seen in; "wiegand26" reduces every
+	// presentation to facility:card so any reader matches any other and the
+	// card is saved as Wiegand. Nil means "none".
+	Format func(ctx context.Context) string
+}
+
+// BadgeFormats are the accepted values of the badge.format policy.
+var BadgeFormats = []string{"none", "wiegand26"}
+
+func (m *BadgeMethod) format(ctx context.Context) string {
+	if m.Format == nil {
+		return "none"
+	}
+	if f := m.Format(ctx); f == "wiegand26" {
+		return f
+	}
+	return "none"
+}
+
+// wiegand26Of reduces a 24-bit (or longer) value to "facility:card".
+func wiegand26Of(n uint64) string {
+	n &= 0xffffff
+	return strconv.FormatUint(n>>16, 10) + ":" + strconv.FormatUint(n&0xffff, 10)
+}
+
+// reduceToWiegand keeps only the Wiegand-26 reading of every form seen, so a
+// full-UID reader, a printed-number reader and a Wiegand reader all name the
+// same card. Enrolment stores that one reading. A presentation also carries
+// the reading of the byte-reversed UID (wiegand26_rev), so a reversed reader
+// matches a card enrolled the other way round without a phantom identifier
+// ever being stored.
+func reduceToWiegand(f map[string]string, presenting bool) map[string]string {
+	out := map[string]string{}
+	if v, ok := f["badge.wiegand26"]; ok {
+		out["badge.wiegand26"] = v
+	}
+	if uid, ok := f["badge.uid_rev"]; ok && presenting && len(uid) >= 6 {
+		if n, err := strconv.ParseUint(uid[len(uid)-6:], 16, 32); err == nil {
+			if w := wiegand26Of(n); w != out["badge.wiegand26"] {
+				out["badge.wiegand26_rev"] = w
+			}
+		}
+	}
+	return out
 }
 
 type badgeMaterial struct {
@@ -38,7 +83,15 @@ var (
 // canonical forms from a presentation: uid (hex, lower, no separators),
 // wiegand26 ("facility:card" decimal), printed (decimal). A bare "number"
 // field is classified by shape: hex-looking → uid, decimal → printed.
-func badgeForms(in StepInput) map[string]string {
+func badgeForms(in StepInput, format string, presenting bool) map[string]string {
+	f := rawBadgeForms(in)
+	if format == "wiegand26" {
+		return reduceToWiegand(f, presenting)
+	}
+	return f
+}
+
+func rawBadgeForms(in StepInput) map[string]string {
 	f := map[string]string{}
 	norm := func(v string) string {
 		return strings.ToLower(strings.NewReplacer(" ", "", ":", "", "-", "").Replace(strings.TrimSpace(v)))
@@ -53,7 +106,12 @@ func badgeForms(in StepInput) map[string]string {
 		f["badge.wiegand26"] = strings.TrimLeft(fc, "0") + ":" + strings.TrimLeft(cn, "0")
 	}
 	if v := strings.TrimSpace(in.Fields["number"]); v != "" {
-		if decRe.MatchString(v) {
+		// "74:8062", "74,8062" or "74-8062": a Wiegand reader that keeps the split.
+		if parts := strings.FieldsFunc(v, func(r rune) bool { return r == ':' || r == ',' || r == '-' || r == ' ' }); len(parts) == 2 && decRe.MatchString(parts[0]) && decRe.MatchString(parts[1]) {
+			if _, ok := f["badge.wiegand26"]; !ok {
+				f["badge.wiegand26"] = strings.TrimLeft(parts[0], "0") + ":" + strings.TrimLeft(parts[1], "0")
+			}
+		} else if decRe.MatchString(v) {
 			n, err := strconv.ParseUint(v, 10, 64)
 			if err == nil && n >= 1<<24 {
 				// Too large for a printed number: a reader that types the
@@ -105,7 +163,7 @@ func badgeForms(in StepInput) map[string]string {
 }
 
 func (m *BadgeMethod) Enroll(ctx context.Context, in StepInput) ([]byte, []Identifier, error) {
-	forms := badgeForms(in)
+	forms := badgeForms(in, m.format(ctx), false)
 	if len(forms) == 0 {
 		return nil, nil, errors.New("no card number")
 	}
@@ -133,7 +191,11 @@ func (m *BadgeMethod) Enroll(ctx context.Context, in StepInput) ([]byte, []Ident
 
 func (m *BadgeMethod) Identify(in StepInput) []Identifier {
 	var ids []Identifier
-	for k, v := range badgeForms(in) {
+	for k, v := range badgeForms(in, m.format(context.Background()), true) {
+		// The reversed reading is looked up under the kind that is stored.
+		if k == "badge.wiegand26_rev" {
+			k = "badge.wiegand26"
+		}
 		ids = append(ids, Identifier{Kind: k, Value: v})
 	}
 	return ids
@@ -151,7 +213,7 @@ func (m *BadgeMethod) Authenticate(ctx context.Context, bindingID string, sm Sea
 	// The presented card must match one of the stored forms; the core's
 	// identifier lookup already guaranteed this, but the method re-checks so
 	// it never trusts the caller's routing.
-	presented := badgeForms(in)
+	presented := badgeForms(in, m.format(ctx), true)
 	match := false
 	for k, v := range presented {
 		if mat.Forms[k] == v {
@@ -160,6 +222,10 @@ func (m *BadgeMethod) Authenticate(ctx context.Context, bindingID string, sm Sea
 		}
 		// A reversed-order reader presenting a card enrolled the other way.
 		if k == "badge.uid" && mat.Forms["badge.uid_rev"] == v || k == "badge.uid_rev" && mat.Forms["badge.uid"] == v {
+			match = true
+			break
+		}
+		if (k == "badge.wiegand26" || k == "badge.wiegand26_rev") && (mat.Forms["badge.wiegand26"] == v || mat.Forms["badge.wiegand26_rev"] == v) {
 			match = true
 			break
 		}
