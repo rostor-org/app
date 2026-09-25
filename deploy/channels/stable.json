@@ -1,24 +1,24 @@
 {
   "channel": "stable",
-  "version": "v0.8.1",
-  "published": "2026-09-25T15:06:15.123666Z",
-  "notes": "Wiegand readers that type the pair as eight digits (026 22915 → 02622915) are recognised; a card registered from such a reader or from a plain-number reader signs in from the other.",
+  "version": "v0.8.2",
+  "published": "2026-09-25T15:11:07.76496Z",
+  "notes": "Register badge shows how the reader's output was understood (facility, card, card value, and what will be saved) before you save it.",
   "files": {
     "agent-windows-amd64": {
-      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/588602925",
-      "sha256": "54045610fd426570c0eff79c0c5d41f22ea1183a89154a2da1418253b9f73ba1",
+      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/588612491",
+      "sha256": "14a4349e94dd9e8bd738b9bace6f454146271c59637d2d814d7b165fb191a60b",
       "size": 7870464
     },
     "linux-amd64": {
-      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/588602935",
-      "sha256": "389a3190c9c26ee280c8e5c3b8b394c85fe053fee6a7021109f4c13ab8d0c6be",
-      "size": 24146080
+      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/588612493",
+      "sha256": "584242ae04a0dbd584ea03ac7ab1e0066a06e6c4bdd5f0c513190a36f69a3007",
+      "size": 24150176
     },
     "linux-arm64": {
-      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/588602924",
-      "sha256": "056baf2c4de13e4795f1f4b4d4aba959de70d3dc6ecf4cba4d644adfb8452692",
+      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/588612488",
+      "sha256": "7ef0c9e788399f2c4e84e5fc67b1c1c06e662e88ffb282ff6e0725c3706373c7",
       "size": 22675616
     }
   },
-  "signature": "K+SkO6i6XxZUP2MovqY63CDnwOzxFC7d7btx+oMscUsrOiS1qGg2HERBVITOuJfxHdzhmUdAYRf9re7v1R5MCw=="
+  "signature": "xzoe1YT6HkPaan98HSVKe7nTuI/Nd+3STqOiCjcE6TIeD7CTxLKjptgyzC4p3IsaOj4buJCA9LDK13Ub++hSDQ=="
 }
