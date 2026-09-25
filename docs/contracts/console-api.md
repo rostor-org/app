@@ -142,6 +142,23 @@ plugin registry, key rotation, policy counts on groups.
   type, whatever existing roles already use. `POST /v1/admin/roles`
   `{resource_type,name,permissions}` defines a role (roles.write) and is what
   the form's "New role…" calls before creating the grant.
+- Agents (v0.7.0, SPEC-agents). A principal of kind `agent` with an owner
+  (`attributes.owner_id`, a person). Check ANDs the agent's decision with the
+  owner's; a denial for that reason is `owner.denied` with the owner's own
+  reason in `params.reason`, and Why carries the owner's leg as `owner`.
+  An agent's assurance is its credential's, capped at the strongest its
+  owner has enrolled. Routes admit an admin or the agent's owner:
+  `POST /v1/admin/agents {username, display_name, owner?}` (non-admins own
+  what they create), `GET /v1/admin/agents[?owner=]` (non-admins see their
+  own), `GET /v1/admin/agents/{id}` → row + `grants` + `grantable` (the
+  owner's held rights), `POST|DELETE /v1/admin/agents/{id}/token` (issue or
+  rotate, shown once / revoke), `POST /v1/admin/agents/{id}/state`,
+  `POST /v1/admin/agents/{id}/grants {role, resource_type, resource_id,
+  condition?, expires_at?}` (owners only for rights they hold:
+  `agent.grant_not_held`), `DELETE /v1/admin/agents/{id}/grants/{gid}`.
+  People rows of kind `agent` carry `owner {id,name}`; audit rows by an
+  agent carry `actor.owner_id` and `actor.owner_name`. A bearer principal
+  may read its own `/v1/admin/users/{id}`.
 - Audit default view (v0.6.0): rows whose actor kind is `system` or `device`
   are omitted unless `include_system=1`; the console's "Show system activity"
   tick sets it.

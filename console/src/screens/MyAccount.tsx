@@ -1,6 +1,7 @@
 import { useSession } from '../auth/session'
 import { Head } from '../components/bits'
 import { PersonPanel } from '../components/PersonPanel'
+import { AgentsPanel } from '../components/AgentsPanel'
 
 /**
  * My account: the signed-in person's own record as a page (SPEC-admin-group).
@@ -16,6 +17,11 @@ export function MyAccount() {
       <div className="panel">
         <PersonPanel id={session.principal.id} page />
       </div>
+      {session.principal.kind !== 'agent' && (
+        <div className="panel" style={{ marginTop: 16 }}>
+          <AgentsPanel owner={session.principal.id} />
+        </div>
+      )}
     </section>
   )
 }

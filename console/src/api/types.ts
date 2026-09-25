@@ -154,6 +154,7 @@ export interface User {
   groups: GroupRef[]
   methods: MethodRef[]
   last_sign_in: LastSignIn | null
+  owner?: { id: string; name: string } // agents only
 }
 
 export interface Binding {
@@ -280,7 +281,7 @@ export interface Downloads {
 export interface AuditRow {
   seq: number
   ts: string
-  actor: { kind: string; id: string; name?: string } // name when a known principal, group or device
+  actor: { kind: string; id: string; name?: string; owner_id?: string; owner_name?: string } // name when known; owner for agents
   action: string
   target: { type: string; id: string; name?: string }
   credential_type: string
@@ -421,6 +422,42 @@ export interface ResourceCatalog {
   permissions: Record<string, string[]>
 }
 
+// ---- agents (SPEC-agents) ------------------------------------------------------
+export interface Agent {
+  id: string
+  username: string
+  kind: 'agent'
+  display_name: string
+  state: string
+  owner: { id: string; name: string } | null
+  token: { active: boolean; issued_at?: string }
+  grant_count: number
+  created_at: string
+}
+export interface HeldRight {
+  resource_type: string
+  resource_id: string
+  role: string
+  via: string
+}
+export interface AgentDetail extends Agent {
+  grants: Grant[]
+  /** What the owner holds, so exactly what may be handed to this agent. */
+  grantable: HeldRight[]
+}
+export interface CreateAgent {
+  username: string
+  display_name?: Record<string, string>
+  owner?: string
+}
+export interface AgentGrant {
+  role: string
+  resource_type: string
+  resource_id: string
+  condition?: string
+  expires_at?: string | null
+}
+
 export interface CreateGrant {
   subject_kind: 'principal' | 'group'
   subject: string
@@ -505,6 +542,16 @@ export interface Api {
   resources(): Promise<ResourceCatalog>
   /** Defines or redefines a role (roles.write). */
   upsertRole(body: Role): Promise<Role>
+  /** Agents: admins see all (or one owner's); everyone else their own. */
+  agents(owner?: string): Promise<List<Agent>>
+  agent(id: string): Promise<AgentDetail>
+  createAgent(body: CreateAgent): Promise<Agent>
+  /** Issues a fresh token (shown once); any earlier token stops working. */
+  agentToken(id: string): Promise<{ token: string; issued_at: string }>
+  agentTokenRevoke(id: string): Promise<void>
+  agentState(id: string, state: 'active' | 'suspended'): Promise<void>
+  agentGrant(id: string, body: AgentGrant): Promise<Grant>
+  agentGrantRevoke(id: string, gid: string): Promise<void>
   createGrant(body: CreateGrant): Promise<Grant>
   revokeGrant(id: string): Promise<void>
   devices(q?: string): Promise<List<Device>>

@@ -116,6 +116,15 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/admin/grants", s.adminAuth("grants.read", s.handleListGrants))
 	mux.HandleFunc("GET /v1/admin/roles", s.adminAuth("grants.read", s.handleListRoles))
 	mux.HandleFunc("GET /v1/admin/resources", s.adminAuth("grants.read", s.handleListResources))
+	// SPEC-agents: owners manage their own agents; admins manage all.
+	mux.HandleFunc("POST /v1/admin/agents", s.ownerOrAdmin("users.write", s.handleCreateAgent))
+	mux.HandleFunc("GET /v1/admin/agents", s.ownerOrAdmin("users.read", s.handleListAgents))
+	mux.HandleFunc("GET /v1/admin/agents/{id}", s.ownerOrAdmin("users.read", s.handleGetAgent))
+	mux.HandleFunc("POST /v1/admin/agents/{id}/token", s.ownerOrAdmin("users.write", s.handleAgentToken))
+	mux.HandleFunc("DELETE /v1/admin/agents/{id}/token", s.ownerOrAdmin("users.write", s.handleAgentTokenRevoke))
+	mux.HandleFunc("POST /v1/admin/agents/{id}/state", s.ownerOrAdmin("users.write", s.handleAgentState))
+	mux.HandleFunc("POST /v1/admin/agents/{id}/grants", s.ownerOrAdmin("grants.write", s.handleAgentGrant))
+	mux.HandleFunc("DELETE /v1/admin/agents/{id}/grants/{gid}", s.ownerOrAdmin("grants.write", s.handleAgentGrantRevoke))
 	mux.HandleFunc("GET /v1/admin/devices", s.adminAuth("devices.read", s.handleListDevices))
 	mux.HandleFunc("GET /v1/admin/system", s.adminAuth("system.read", s.handleSystem))
 	mux.HandleFunc("GET /v1/admin/plugins", s.adminAuth("plugins.read", s.handlePlugins))
@@ -137,6 +146,8 @@ const (
 	ctxDevice
 	ctxCorr
 	ctxFullStream
+	ctxAgentAdmin // ownerOrAdmin: the caller passed the admin check (vs. owns the agent)
+	ctxCaller     // ownerOrAdmin: the signed-in principal
 )
 
 func (s *Server) logging(next http.Handler) http.Handler {
@@ -255,6 +266,9 @@ func (s *Server) adminAuth(action string, next http.HandlerFunc) http.HandlerFun
 				s.fail(w, r, err)
 				return
 			}
+			pres := authz.Presented{Assurance: assurance, Properties: props}
+			s.capAgentAssurance(r.Context(), p, &pres)
+			assurance = pres.Assurance
 		} else {
 			// Console session cookie. Mutations must carry the CSRF marker.
 			sp, ses, err := s.sessionPrincipal(r.Context(), r)
@@ -359,6 +373,19 @@ func (s *Server) selfOrAdmin(action string, next http.HandlerFunc) http.HandlerF
 	s.noteAction(action)
 	admin := s.adminAuth(action, next)
 	return func(w http.ResponseWriter, r *http.Request) {
+		if tok := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "); tok != "" && tok != r.Header.Get("Authorization") {
+			// A bearer principal (an agent, typically) may read and change its own record.
+			if tenantID, pid, err := auth.ResolveAPIToken(r.Context(), s.DB, tok); err == nil && pid != "" && tenantID == s.TenantID {
+				if p, err := directory.GetPrincipal(r.Context(), s.DB, tenantID, pid); err == nil {
+					id := r.PathValue("id")
+					if id == p.ID || strings.EqualFold(id, p.Username) {
+						actor := directory.Actor{Kind: p.Kind, ID: p.ID, CorrelationID: corrOf(r)}
+						next(w, r.WithContext(context.WithValue(r.Context(), ctxActor, actor)))
+						return
+					}
+				}
+			}
+		}
 		if r.Header.Get("Authorization") == "" {
 			if p, ses, err := s.sessionPrincipal(r.Context(), r); err == nil && p != nil {
 				id := r.PathValue("id")
@@ -392,6 +419,11 @@ func (s *Server) anySession(next http.HandlerFunc) http.HandlerFunc {
 			}
 			if pid != "" && tenantID == s.TenantID {
 				p, _ = directory.GetPrincipal(r.Context(), s.DB, tenantID, pid)
+				if p != nil {
+					pres := authz.Presented{Assurance: assurance}
+					s.capAgentAssurance(r.Context(), p, &pres)
+					assurance = pres.Assurance
+				}
 			}
 		} else if sp, ses, err := s.sessionPrincipal(r.Context(), r); err == nil && sp != nil {
 			p, assurance = sp, ses.Assurance

@@ -2,7 +2,7 @@
 // backend (VITE_MOCK=1 or ?mock=1). Data mirrors the approved mockup.
 import type { LoginMethod,
   Api, AuditRow, AuthSettings, CA, CAList, Device, Downloads, Explanation, Grant, Group, GroupDetail, LiveEvent, LiveHandlers, LoginOK, LoginResponse,
-  LiveState, Member, Plugin, Role, Session, Summary, SystemInfo, UpdateState, User, UserDetail, Binding, Reason, ResourceNode,
+  LiveState, Member, Plugin, Role, Session, Summary, SystemInfo, UpdateState, User, UserDetail, Binding, Reason, ResourceNode, Agent, AgentDetail, HeldRight,
 } from './types'
 import catalogEn from '../../catalog.en.json'
 
@@ -127,6 +127,26 @@ const grants: Grant[] = [
   { id: 'grt_c4d5e6f7', subject: { kind: 'group', id: 'grp_admins', name: 'directory-admins' }, role: 'admin', resource: { type: 'directory', id: 'root' }, condition: '', condition_class: 'offline', not_before: null, expires_at: null },
   { id: 'grt_1a2b3c4d', subject: { kind: 'group', id: 'grp_board', name: 'board' }, role: 'auditor', resource: { type: 'directory', id: 'root' }, condition: '', condition_class: 'offline', not_before: null, expires_at: null },
 ]
+
+// SPEC-agents: owned principals. dan owns one; the audit shows it acting for him.
+const agents: Agent[] = [
+  { id: 'agt_5e1f0c2a', username: 'inventory-bot', kind: 'agent', display_name: 'Inventory bot', state: 'active',
+    owner: { id: 'usr_f40101ae', name: 'Dan Evans' }, token: { active: true, issued_at: iso(Date.now() - 2 * 24 * 3600 * 1000) }, grant_count: 0, created_at: iso(Date.now() - 3 * 24 * 3600 * 1000) },
+]
+/** The (resource, role) pairs a person holds directly or through groups. */
+function heldBy(ownerId: string): HeldRight[] {
+  const u = users.find((x) => x.id === ownerId)
+  if (!u) return []
+  const groupIds = new Set(u.groups.map((g) => g.id))
+  const out: HeldRight[] = []
+  for (const g of grants) {
+    const mine = (g.subject.kind === 'principal' && g.subject.id === u.id) || (g.subject.kind === 'group' && groupIds.has(g.subject.id))
+    if (mine && !out.some((h) => h.role === g.role && h.resource_type === g.resource.type && h.resource_id === g.resource.id)) {
+      out.push({ resource_type: g.resource.type, resource_id: g.resource.id, role: g.role, via: g.subject.kind === 'group' ? `group:${g.subject.name}` : 'direct' })
+    }
+  }
+  return out
+}
 
 const roles: Role[] = [
   { resource_type: 'directory', name: 'admin', permissions: ['*'] },
@@ -584,6 +604,83 @@ export function createMockApi(_opts: { onUnauthorized?: () => void } = {}): Api 
       for (const r of roles) permissions[r.resource_type] = [...new Set([...(permissions[r.resource_type] ?? []), ...r.permissions])].sort()
       for (const it of items) permissions[it.type] ??= []
       return { items, total: items.length, permissions }
+    },
+    async agents(owner) {
+      await delay()
+      const me = session?.principal.id ?? ''
+      const admin = session?.permissions.includes('*')
+      const items = agents.filter((a) => admin ? (!owner || a.owner?.id === owner || a.owner?.name === owner) : a.owner?.id === me)
+      return { items: clone(items), total: items.length }
+    },
+    async agent(id) {
+      await delay()
+      const a = agents.find((x) => x.id === id || x.username === id)
+      if (!a) throw mockErr(404, 'principal.not_found')
+      const detail: AgentDetail = { ...clone(a), grants: clone(grants.filter((g) => g.subject.kind === 'principal' && g.subject.id === a.id)), grantable: heldBy(a.owner?.id ?? '') }
+      return detail
+    },
+    async createAgent(body) {
+      await delay(250)
+      if (!/^[a-z][a-z0-9._-]{1,31}$/.test(body.username)) throw mockErr(400, 'request.malformed', { field: 'username' })
+      if (users.some((u) => u.username === body.username) || agents.some((a) => a.username === body.username)) throw mockErr(409, 'request.conflict', { field: 'username' })
+      const admin = session?.permissions.includes('*')
+      const ownerRef = body.owner ? byId(body.owner) : byId(session?.principal.id ?? '')
+      if (body.owner && !admin && ownerRef?.id !== session?.principal.id) throw mockErr(403, 'agent.not_owned')
+      if (!ownerRef) throw mockErr(400, 'agent.owner_invalid', { owner: body.owner ?? '' })
+      const a: Agent = { id: 'agt_' + Math.random().toString(16).slice(2, 10), username: body.username, kind: 'agent', display_name: body.display_name?.en || body.username,
+        state: 'active', owner: { id: ownerRef.id, name: ownerRef.display_name }, token: { active: false }, grant_count: 0, created_at: iso(Date.now()) }
+      agents.push(a)
+      append(`user:${session?.principal.id ?? ''}`, 'principal.create', `principal:${a.id}`, 'session', 'AL1', 'ok', { username: a.username, kind: 'agent', owner_id: ownerRef.id })
+      emit('user.created')
+      return clone(a)
+    },
+    async agentToken(id) {
+      await delay(250)
+      const a = agents.find((x) => x.id === id || x.username === id)
+      if (!a) throw mockErr(404, 'principal.not_found')
+      const issued_at = iso(Date.now())
+      a.token = { active: true, issued_at }
+      append(`user:${session?.principal.id ?? ''}`, 'api_token.create', `principal:${a.id}`, 'session', 'AL1', 'ok', { principal_id: a.id })
+      return { token: 'rst_' + Math.random().toString(16).slice(2).padEnd(48, 'a'), issued_at }
+    },
+    async agentTokenRevoke(id) {
+      await delay(200)
+      const a = agents.find((x) => x.id === id || x.username === id)
+      if (!a) throw mockErr(404, 'principal.not_found')
+      a.token = { active: false }
+      append(`user:${session?.principal.id ?? ''}`, 'api_token.revoke', `principal:${a.id}`, 'session', 'AL1', 'ok', { principal_id: a.id })
+    },
+    async agentState(id, state) {
+      await delay(200)
+      const a = agents.find((x) => x.id === id || x.username === id)
+      if (!a) throw mockErr(404, 'principal.not_found')
+      a.state = state
+      append(`user:${session?.principal.id ?? ''}`, 'principal.state', `principal:${a.id}`, 'session', 'AL1', 'ok', { state })
+      emit('user.updated')
+    },
+    async agentGrant(id, body) {
+      await delay(250)
+      const a = agents.find((x) => x.id === id || x.username === id)
+      if (!a) throw mockErr(404, 'principal.not_found')
+      const admin = session?.permissions.includes('*')
+      if (!admin && !heldBy(a.owner?.id ?? '').some((h) => h.role === body.role && h.resource_type === body.resource_type && h.resource_id === body.resource_id)) {
+        throw mockErr(403, 'agent.grant_not_held', { role: body.role, resource: `${body.resource_type}:${body.resource_id}` })
+      }
+      const g: Grant = { id: 'grt_' + Math.random().toString(16).slice(2, 10), subject: { kind: 'principal', id: a.id, name: a.username }, role: body.role,
+        resource: { type: body.resource_type, id: body.resource_id }, condition: body.condition ?? '', condition_class: 'offline', not_before: null, expires_at: body.expires_at ?? null }
+      grants.push(g); a.grant_count++
+      append(`user:${session?.principal.id ?? ''}`, 'grant.create', `grant:${g.id}`, 'session', 'AL1', 'ok', { subject: a.username, role: g.role, resource: `${g.resource.type}:${g.resource.id}` })
+      emit('grant.created')
+      return clone(g)
+    },
+    async agentGrantRevoke(id, gid) {
+      await delay(200)
+      const a = agents.find((x) => x.id === id || x.username === id)
+      const i = grants.findIndex((g) => g.id === gid && g.subject.id === a?.id)
+      if (!a || i < 0) throw mockErr(404, 'request.not_found')
+      grants.splice(i, 1); a.grant_count--
+      append(`user:${session?.principal.id ?? ''}`, 'grant.revoke', `grant:${gid}`, 'session', 'AL1', 'ok', { subject: a.username })
+      emit('grant.revoked')
     },
     async upsertRole(body) {
       await delay(200)

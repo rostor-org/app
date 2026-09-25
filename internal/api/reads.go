@@ -83,6 +83,7 @@ type userRow struct {
 	Methods     []methodRef    `json:"methods"`
 	LastSignIn  *lastSignIn    `json:"last_sign_in"`
 	Attributes  map[string]any `json:"attributes,omitempty"`
+	Owner       *ownerRef      `json:"owner,omitempty"` // agents only (SPEC-agents)
 }
 type nameRef struct {
 	ID   string `json:"id"`
@@ -108,7 +109,7 @@ func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {
 			FROM audit_events a WHERE a.tenant_id=p.tenant_id AND a.outcome='allow' AND a.action IN ('verify','session.create')
 			AND a.detail->>'principal_id' = p.id ORDER BY a.seq DESC LIMIT 1),
 		count(*) OVER()
-		FROM principals p WHERE p.tenant_id=$1 AND p.kind IN ('user','service')
+		FROM principals p WHERE p.tenant_id=$1 AND p.kind IN ('user','service','agent')
 		AND ($2 = '' OR lower(coalesce(p.username,'')) LIKE $3 OR lower(p.display_name::text) LIKE $3)
 		ORDER BY p.kind, lower(coalesce(p.username,'')) LIMIT $4 OFFSET $5`, s.TenantID, pg.Q, like(pg.Q), pg.Limit, pg.Offset)
 	if err != nil {
@@ -126,6 +127,12 @@ func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		u.DisplayName = displayFrom(dn, u.Username, locale(r))
+		if u.Kind == "agent" {
+			var a map[string]any
+			_ = json.Unmarshal(attrs, &a)
+			ownerID, _ := a["owner_id"].(string)
+			u.Owner = s.ownerRef(ctx, ownerID)
+		}
 		_ = json.Unmarshal(groups, &u.Groups)
 		var ms []string
 		_ = json.Unmarshal(methods, &ms)
@@ -269,7 +276,7 @@ func (s *Server) nameAudit(ctx context.Context, items []map[string]any) {
 		}
 		var name string
 		switch kind {
-		case "principal", "user", "service", "device":
+		case "principal", "user", "service", "device", "agent":
 			_ = s.DB.QueryRow(ctx, `SELECT coalesce(nullif(display_name->>'en',''), username, '') FROM principals WHERE tenant_id=$1 AND id=$2`, s.TenantID, id).Scan(&name)
 		case "group":
 			_ = s.DB.QueryRow(ctx, `SELECT name FROM groups WHERE tenant_id=$1 AND id=$2`, s.TenantID, id).Scan(&name)
@@ -281,6 +288,15 @@ func (s *Server) nameAudit(ctx context.Context, items []map[string]any) {
 		if a, ok := it["actor"].(map[string]string); ok {
 			if n := lookup(a["kind"], a["id"]); n != "" {
 				a["name"] = n
+			}
+			if a["kind"] == "agent" {
+				// An agent acts for its owner: show who answers for it.
+				var ownerID string
+				_ = s.DB.QueryRow(ctx, `SELECT coalesce(attributes->>'owner_id','') FROM principals WHERE tenant_id=$1 AND id=$2`, s.TenantID, a["id"]).Scan(&ownerID)
+				if ownerID != "" {
+					a["owner_id"] = ownerID
+					a["owner_name"] = lookup("principal", ownerID)
+				}
 			}
 		}
 		if t, ok := it["target"].(map[string]string); ok {

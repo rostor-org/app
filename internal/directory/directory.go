@@ -85,15 +85,36 @@ var usernameRe = regexp.MustCompile(`^[a-z0-9._-]{1,64}$`)
 
 func ValidUsername(u string) bool { return usernameRe.MatchString(u) }
 
+// OwnerID is the person an agent belongs to (SPEC-agents); empty for every
+// other kind.
+func OwnerID(p *Principal) string {
+	if p == nil || p.Kind != "agent" {
+		return ""
+	}
+	id, _ := p.Attributes["owner_id"].(string)
+	return id
+}
+
 func CreatePrincipal(ctx context.Context, tx pgx.Tx, tenantID string, actor Actor, p Principal) (*Principal, error) {
 	switch p.Kind {
-	case "user", "service", "device":
+	case "user", "service", "device", "agent":
 	default:
 		return nil, Err("request.malformed", "field", "kind")
 	}
 	p.Username = strings.ToLower(strings.TrimSpace(p.Username))
-	if p.Kind == "user" && !ValidUsername(p.Username) {
+	if (p.Kind == "user" || p.Kind == "agent") && !ValidUsername(p.Username) {
 		return nil, Err("request.malformed", "field", "username")
+	}
+	if p.Kind == "agent" {
+		// One level only: the owner is a person, never another agent.
+		ownerID, _ := p.Attributes["owner_id"].(string)
+		owner, err := GetPrincipal(ctx, tx, tenantID, ownerID)
+		if code, _ := CodeOf(err); code == "principal.not_found" || (err == nil && owner.Kind != "user") {
+			return nil, Err("agent.owner_invalid", "owner", ownerID)
+		}
+		if err != nil {
+			return nil, err
+		}
 	}
 	if p.State == "" {
 		p.State = "active"
@@ -104,7 +125,7 @@ func CreatePrincipal(ctx context.Context, tx pgx.Tx, tenantID string, actor Acto
 	if p.Attributes == nil {
 		p.Attributes = map[string]any{}
 	}
-	p.ID = ids.New(map[string]string{"user": "usr", "service": "svc", "device": "dev"}[p.Kind])
+	p.ID = ids.New(map[string]string{"user": "usr", "service": "svc", "device": "dev", "agent": "agt"}[p.Kind])
 	dn, _ := json.Marshal(p.DisplayName)
 	attrs, _ := json.Marshal(p.Attributes)
 	err := tx.QueryRow(ctx, `INSERT INTO principals (tenant_id, id, kind, username, display_name, state, attributes)

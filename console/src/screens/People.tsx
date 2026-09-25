@@ -66,7 +66,7 @@ function PersonRow({ u, onOpen }: { u: User; onOpen: () => void }) {
   const f = useFormat()
   return (
     <tr className="row" onClick={onOpen}>
-      <td><RowButton onClick={onOpen}>{f.name(u.display_name, u.username)}</RowButton>{u.kind === 'service' && <> <span className="muted">{t('ui.common.service')}</span></>}</td>
+      <td><RowButton onClick={onOpen}>{f.name(u.display_name, u.username)}</RowButton>{u.kind === 'service' && <> <span className="muted">{t('ui.common.service')}</span></>}{u.kind === 'agent' && <> <span className="muted">{t('ui.agents.chip', { owner: u.owner?.name ?? '' })}</span></>}</td>
       <td className="mono">{u.username}</td>
       <td><Chips items={u.groups.map((g) => g.name)} /></td>
       <td>{u.methods.length === 0 ? <span className="muted">{t('ui.people.methods_none')}</span>

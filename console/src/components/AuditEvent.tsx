@@ -41,6 +41,7 @@ export function Actor({ r }: { r: AuditRow }) {
   return (
     <>
       <b title={`${r.actor.kind}:${r.actor.id}`}>{actorName(r)}</b>
+      {r.actor.kind === 'agent' && r.actor.owner_name && <span className="muted"> · {t('ui.audit.agent_of', { name: r.actor.owner_name })}</span>}
       {subject && <span className="muted"> · {t('ui.audit.for', { name: subject })}</span>}
     </>
   )

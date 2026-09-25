@@ -111,7 +111,11 @@ tr.row td .rowlink{all:unset;cursor:pointer;font-weight:600}
 .kv dt{color:var(--muted)} .kv dd{margin:0;min-width:0;overflow-wrap:anywhere}
 .section{margin-top:20px}
 .section h3{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:0 0 8px;font-weight:600}
-.list{border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.list{border:1px solid var(--line);border-radius:8px;overflow:hidden;list-style:none;margin:0;padding:0}
+.list li{padding:8px 12px;border-top:1px solid var(--line);justify-content:space-between}
+.list li:first-child{border-top:0}
+.row-head{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.row-head h3{margin:0}
 .list > div{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid var(--line)}
 .list > div:last-child{border-bottom:0}
 .list .method{display:flex;align-items:center;gap:10px;min-width:0}

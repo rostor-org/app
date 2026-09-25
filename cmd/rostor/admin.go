@@ -113,6 +113,10 @@ func runAdmin(ctx context.Context, args []string) error {
   group add --group G --user U | group remove --group G --user U
   grant create --group G|--user U --role R --resource-type T --resource-id ID [--condition CEL] [--expires RFC3339]
   grant revoke --id GRANT_ID
+  agent create --username U --display "Name" [--user OWNER]   (owner defaults to the caller)
+  agent list | agent token --user AGENT | agent revoke-token --user AGENT
+  agent grant --user AGENT --role R --resource-type T --resource-id ID [--condition CEL]
+  agent suspend --user AGENT | agent activate --user AGENT
   device token [--resource-type workstation] [--ttl 3600]
   why --user U --action A --resource-type T --resource-id ID
   audit [--limit N] | audit verify
@@ -183,6 +187,23 @@ func runAdmin(ctx context.Context, args []string) error {
 		out, err = c.do(ctx, "POST", "/v1/admin/grants", body)
 	case "grant revoke":
 		out, err = c.do(ctx, "DELETE", "/v1/admin/grants/"+url.PathEscape(*id), nil)
+	case "agent create":
+		body := map[string]any{"username": *username, "display_name": map[string]string{"en": *display}}
+		if *user != "" {
+			body["owner"] = *user
+		}
+		out, err = c.do(ctx, "POST", "/v1/admin/agents", body)
+	case "agent list":
+		out, err = c.do(ctx, "GET", "/v1/admin/agents", nil)
+	case "agent token":
+		out, err = c.do(ctx, "POST", "/v1/admin/agents/"+url.PathEscape(*user)+"/token", nil)
+	case "agent revoke-token":
+		out, err = c.do(ctx, "DELETE", "/v1/admin/agents/"+url.PathEscape(*user)+"/token", nil)
+	case "agent grant":
+		out, err = c.do(ctx, "POST", "/v1/admin/agents/"+url.PathEscape(*user)+"/grants", map[string]any{"role": *role, "resource_type": *rtype, "resource_id": *rid, "condition": *cond})
+	case "agent suspend", "agent activate":
+		state := map[string]string{"suspend": "suspended", "activate": "active"}[verb]
+		out, err = c.do(ctx, "POST", "/v1/admin/agents/"+url.PathEscape(*user)+"/state", map[string]any{"state": state})
 	case "device token":
 		out, err = c.do(ctx, "POST", "/v1/admin/enrollment-tokens", map[string]any{"resource_type": *rtype, "ttl_seconds": *ttl})
 	case "setup-admin ":

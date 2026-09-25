@@ -113,6 +113,9 @@ type Explanation struct {
 	Resource   string              `json:"resource"`
 	Groups     map[string][]string `json:"groups"`     // group → membership path
 	Candidates []Candidate         `json:"candidates"` // every grant considered
+	// Owner is the second leg for an agent (SPEC-agents): the same question
+	// asked of the person who owns it. Both legs must allow.
+	Owner *Explanation `json:"owner,omitempty"`
 }
 
 type Candidate struct {
@@ -137,7 +140,40 @@ type decided struct {
 	explanation *Explanation
 }
 
+// decide answers for the principal itself and, for an agent, ANDs in the
+// owner's answer: an agent can never do more than the person it belongs to,
+// and loses rights the instant the owner does (SPEC-agents).
 func (e *Engine) decide(ctx context.Context, q directory.Querier, tenantID string, p *directory.Principal, action, resourceType, resourceID string, pres Presented, explain bool) (*decided, error) {
+	res, err := e.decideOne(ctx, q, tenantID, p, action, resourceType, resourceID, pres, explain)
+	if err != nil || p.Kind != "agent" {
+		return res, err
+	}
+	deny := func(reason string, params map[string]any) {
+		res.Allow, res.Decision.Decision, res.GrantID = false, "DENY", ""
+		params["owner_id"] = directory.OwnerID(p)
+		res.Reasons = []Reason{{Code: "owner.denied", Params: params}}
+		res.explanation.Decision = *res.Decision
+	}
+	owner, err := directory.GetPrincipal(ctx, q, tenantID, directory.OwnerID(p))
+	if code, _ := directory.CodeOf(err); code == "principal.not_found" {
+		deny("principal.not_found", map[string]any{"reason": "principal.not_found"})
+		return res, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	ownerRes, err := e.decideOne(ctx, q, tenantID, owner, action, resourceType, resourceID, pres, explain)
+	if err != nil {
+		return nil, err
+	}
+	res.explanation.Owner = ownerRes.explanation
+	if res.Allow && !ownerRes.Allow {
+		deny(ownerRes.Reasons[0].Code, map[string]any{"reason": ownerRes.Reasons[0].Code})
+	}
+	return res, nil
+}
+
+func (e *Engine) decideOne(ctx context.Context, q directory.Querier, tenantID string, p *directory.Principal, action, resourceType, resourceID string, pres Presented, explain bool) (*decided, error) {
 	now := time.Now().UTC()
 	d := &Decision{AsOf: now, Decision: "DENY"}
 	// Empty, never nil: an early DENY (suspension) must still serialise as

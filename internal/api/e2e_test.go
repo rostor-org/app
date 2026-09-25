@@ -900,3 +900,172 @@ func TestAuditHidesSystemByDefault(t *testing.T) {
 		t.Fatalf("include_system should show the built-ins the harness created: %v", all)
 	}
 }
+
+// SPEC-agents acceptance: an agent is an owned principal that can never do
+// more than its owner; owners manage their own agents without being admins.
+func TestAgents(t *testing.T) {
+	h := newHarness(t)
+	// dana: a member with logon on every workstation through the members group.
+	h.adminCall("POST", "/v1/admin/users", map[string]any{"username": "dana", "display_name": map[string]string{"en": "Dana"}})
+	h.adminCall("POST", "/v1/admin/users/dana/bindings", map[string]any{"method": "password", "fields": map[string]string{"password": "hunter2hunter2"}})
+	h.adminCall("POST", "/v1/admin/groups", map[string]any{"name": "members"})
+	h.adminCall("POST", "/v1/admin/groups/members/members", map[string]any{"member_kind": "principal", "member": "dana"})
+	h.adminCall("POST", "/v1/admin/grants", map[string]any{"subject_kind": "group", "subject": "members", "role": "user", "resource_type": "workstations", "resource_id": "all"})
+	h.adminCall("POST", "/v1/admin/resources", map[string]any{"type": "workstation", "id": "WS-1", "parent_type": "workstations", "parent_id": "all"})
+
+	// An admin creates an agent owned by dana.
+	ag := h.adminCall("POST", "/v1/admin/agents", map[string]any{"username": "helper", "display_name": map[string]string{"en": "Helper"}, "owner": "dana"})
+	agentID, _ := ag["id"].(string)
+	if agentID == "" || ag["kind"] != "agent" || ag["owner"].(map[string]any)["name"] != "Dana" {
+		t.Fatalf("create agent: %v", ag)
+	}
+	// An agent can never own an agent.
+	if st, out := h.call(h.client(nil), "POST", "/v1/admin/agents", h.admin, map[string]any{"username": "bot2", "owner": "helper"}); st != 400 || out["code"] != "agent.owner_invalid" {
+		t.Fatalf("agent as owner should be refused: %d %v", st, out)
+	}
+	// Grant the agent what its owner holds.
+	h.adminCall("POST", "/v1/admin/agents/"+agentID+"/grants", map[string]any{"role": "user", "resource_type": "workstations", "resource_id": "all"})
+	why := func() map[string]any {
+		return h.adminCall("GET", "/v1/admin/why?principal=helper&action=logon&resource_type=workstation&resource_id=WS-1", nil)
+	}
+	ex := why()
+	if ex["decision"] != "ALLOW" || ex["owner"].(map[string]any)["decision"] != "ALLOW" {
+		t.Fatalf("both legs should allow: %v", ex)
+	}
+	reason := func(ex map[string]any) (string, string) {
+		rs := ex["reason"].([]any)[0].(map[string]any)
+		inner, _ := rs["params"].(map[string]any)["reason"].(string)
+		return rs["code"].(string), inner
+	}
+	// Owner loses the group → agent loses the right, with the owner's reason.
+	h.adminCall("DELETE", "/v1/admin/groups/members/members", map[string]any{"member_kind": "principal", "member": "dana"})
+	if ex := why(); ex["decision"] != "DENY" {
+		t.Fatalf("agent should be denied once the owner is: %v", ex)
+	} else if code, inner := reason(ex); code != "owner.denied" || inner != "grant.none" {
+		t.Fatalf("reason: %s/%s", code, inner)
+	}
+	h.adminCall("POST", "/v1/admin/groups/members/members", map[string]any{"member_kind": "principal", "member": "dana"})
+	// Owner suspended → agent denied.
+	h.adminCall("POST", "/v1/admin/users/dana/state", map[string]any{"state": "suspended"})
+	if ex := why(); ex["decision"] != "DENY" {
+		t.Fatalf("suspended owner: %v", ex)
+	} else if code, inner := reason(ex); code != "owner.denied" || inner != "principal.suspended" {
+		t.Fatalf("reason: %s/%s", code, inner)
+	}
+	h.adminCall("POST", "/v1/admin/users/dana/state", map[string]any{"state": "active"})
+	// A wider grant exists but never fires: admin on the directory while dana is no admin.
+	h.adminCall("POST", "/v1/admin/agents/"+agentID+"/grants", map[string]any{"role": "admin", "resource_type": "directory", "resource_id": "root"})
+	if ex := h.adminCall("GET", "/v1/admin/why?principal=helper&action=grants.write&resource_type=directory&resource_id=root", nil); ex["decision"] != "DENY" {
+		t.Fatalf("agent must not exceed owner: %v", ex)
+	} else if code, _ := reason(ex); code != "owner.denied" {
+		t.Fatalf("reason: %s", code)
+	}
+
+	// Tokens: issue, use, rotate, revoke.
+	tok1 := h.adminCall("POST", "/v1/admin/agents/"+agentID+"/token", nil)["token"].(string)
+	if st, _ := h.call(h.client(nil), "GET", "/v1/admin/users", tok1, nil); st != 403 {
+		t.Fatalf("agent with no admin rights listing users: %d", st)
+	}
+	if st, out := h.call(h.client(nil), "GET", "/v1/admin/users/helper", tok1, nil); st != 200 || out["kind"] != "agent" {
+		t.Fatalf("agent reading its own record: %d %v", st, out)
+	}
+	tok2 := h.adminCall("POST", "/v1/admin/agents/"+agentID+"/token", nil)["token"].(string)
+	if st, _ := h.call(h.client(nil), "GET", "/v1/admin/users/helper", tok1, nil); st != 401 {
+		t.Fatalf("rotated token should be dead: %d", st)
+	}
+	if st, _ := h.call(h.client(nil), "GET", "/v1/admin/users/helper", tok2, nil); st != 200 {
+		t.Fatalf("new token should work: %d", st)
+	}
+	h.adminCall("DELETE", "/v1/admin/agents/"+agentID+"/token", nil)
+	if st, _ := h.call(h.client(nil), "GET", "/v1/admin/users/helper", tok2, nil); st != 401 {
+		t.Fatalf("revoked token should be dead: %d", st)
+	}
+	// The agent's acts are audited under its identity with its owner named.
+	if tok3 := h.adminCall("POST", "/v1/admin/agents/"+agentID+"/token", nil)["token"].(string); tok3 != "" {
+		h.call(h.client(nil), "GET", "/v1/admin/users/helper", tok3, nil)
+	}
+	rows := h.adminCall("GET", "/v1/admin/audit?q=api_token", nil)["items"].([]any)
+	if len(rows) == 0 {
+		t.Fatal("token events should be audited")
+	}
+
+	// Self-service: dana signs in with a cookie and manages her own agents.
+	c := h.client(nil)
+	var cookie string
+	do := func(method, path string, body any) (int, map[string]any) {
+		var rd io.Reader
+		if body != nil {
+			b, _ := json.Marshal(body)
+			rd = bytes.NewReader(b)
+		}
+		req, _ := http.NewRequest(method, h.ts.URL+path, rd)
+		if cookie != "" {
+			req.AddCookie(&http.Cookie{Name: "rostor_session", Value: cookie})
+		}
+		req.Header.Set("X-Requested-With", "rostor-console")
+		resp, err := c.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		out := map[string]any{}
+		raw, _ := io.ReadAll(resp.Body)
+		if len(raw) > 0 && raw[0] == '{' {
+			_ = json.Unmarshal(raw, &out)
+		}
+		for _, ck := range resp.Cookies() {
+			if ck.Name == "rostor_session" {
+				cookie = ck.Value
+			}
+		}
+		return resp.StatusCode, out
+	}
+	if st, out := do("POST", "/v1/auth/login", map[string]any{"identifier": "dana", "fields": map[string]string{"password": "hunter2hunter2"}}); st != 200 || cookie == "" {
+		t.Fatalf("dana login: %d %v", st, out)
+	}
+	st, mine := do("POST", "/v1/admin/agents", map[string]any{"username": "dbot", "display_name": map[string]string{"en": "Dana's bot"}})
+	if st != 201 || mine["owner"].(map[string]any)["name"] != "Dana" {
+		t.Fatalf("owner creating own agent: %d %v", st, mine)
+	}
+	dbot := mine["id"].(string)
+	if st, out := do("POST", "/v1/admin/agents", map[string]any{"username": "notmine", "owner": "admin"}); st != 403 || out["code"] != "agent.not_owned" {
+		t.Fatalf("non-admin naming another owner: %d %v", st, out)
+	}
+	// dana owns both helper (created for her by the admin) and dbot; nothing else shows.
+	if st, out := do("GET", "/v1/admin/agents", nil); st != 200 || out["total"] != float64(2) {
+		t.Fatalf("owner list should be own agents only: %d %v", st, out)
+	}
+	if st, out := do("GET", "/v1/admin/agents/"+agentID, nil); st != 200 || out["id"] != agentID {
+		t.Fatalf("owner reading own agent: %d %v", st, out)
+	}
+	// Handing over a held right works; a right she does not hold is refused.
+	if st, out := do("POST", "/v1/admin/agents/"+dbot+"/grants", map[string]any{"role": "user", "resource_type": "workstations", "resource_id": "all"}); st != 201 {
+		t.Fatalf("held right: %d %v", st, out)
+	}
+	if st, out := do("POST", "/v1/admin/agents/"+dbot+"/grants", map[string]any{"role": "admin", "resource_type": "directory", "resource_id": "root"}); st != 403 || out["code"] != "agent.grant_not_held" {
+		t.Fatalf("unheld right should be refused: %d %v", st, out)
+	}
+	if st, out := do("GET", "/v1/admin/agents/"+dbot, nil); st != 200 || len(out["grantable"].([]any)) != 1 || len(out["grants"].([]any)) != 1 {
+		t.Fatalf("agent detail: %v", out)
+	}
+	gid := do2(t, do, "GET", "/v1/admin/agents/"+dbot)["grants"].([]any)[0].(map[string]any)["id"].(string)
+	if st, _ := do("DELETE", "/v1/admin/agents/"+dbot+"/grants/"+gid, nil); st != 204 {
+		t.Fatalf("owner revoking own agent's grant: %d", st)
+	}
+	if st, _ := do("POST", "/v1/admin/agents/"+dbot+"/state", map[string]any{"state": "suspended"}); st != 204 {
+		t.Fatalf("owner suspending own agent: %d", st)
+	}
+	// Agents appear among people with their owner.
+	people := h.adminCall("GET", "/v1/admin/users?q=dbot", nil)["items"].([]any)
+	if len(people) != 1 || people[0].(map[string]any)["owner"].(map[string]any)["name"] != "Dana" {
+		t.Fatalf("people list should carry the owner: %v", people)
+	}
+}
+
+func do2(t *testing.T, do func(string, string, any) (int, map[string]any), method, path string) map[string]any {
+	st, out := do(method, path, nil)
+	if st != 200 {
+		t.Fatalf("%s %s: %d %v", method, path, st, out)
+	}
+	return out
+}

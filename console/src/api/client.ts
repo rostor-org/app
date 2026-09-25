@@ -2,7 +2,7 @@ import type {
   Api, ApiErrorBody, AuditPage, AuditQuery, AuditVerify, AuthSettings, Binding, Brand, CA, CAList, Catalog, CreationOptionsJSON, Device, Downloads,
   EnrollmentToken, Explanation, Grant, Group, GroupDetail, List, LiveHandlers, LoginOK,
   LoginRequest, LoginResponse, PasskeyCeremony, Plugin, Principal, RequestOptionsJSON, Role, Session, SetupStatus, Summary, SystemInfo, UpdateState,
-  User, UserDetail, WhyQuery, ResourceCatalog,
+  User, UserDetail, WhyQuery, ResourceCatalog, Agent, AgentDetail,
 } from './types'
 
 export class ApiError extends Error {
@@ -86,6 +86,14 @@ export function createHttpApi(opts: ClientOptions = {}): Api {
     roles: () => call<List<Role>>('GET', '/v1/admin/roles'),
     resources: () => call<ResourceCatalog>('GET', '/v1/admin/resources'),
     upsertRole: (body) => call<Role>('POST', '/v1/admin/roles', body),
+    agents: (owner) => call<List<Agent>>('GET', `/v1/admin/agents${qs({ owner })}`),
+    agent: (id) => call<AgentDetail>('GET', `/v1/admin/agents/${encodeURIComponent(id)}`),
+    createAgent: (body) => call<Agent>('POST', '/v1/admin/agents', body),
+    agentToken: (id) => call<{ token: string; issued_at: string }>('POST', `/v1/admin/agents/${encodeURIComponent(id)}/token`),
+    agentTokenRevoke: (id) => call<void>('DELETE', `/v1/admin/agents/${encodeURIComponent(id)}/token`),
+    agentState: (id, state) => call<void>('POST', `/v1/admin/agents/${encodeURIComponent(id)}/state`, { state }),
+    agentGrant: (id, body) => call<Grant>('POST', `/v1/admin/agents/${encodeURIComponent(id)}/grants`, body),
+    agentGrantRevoke: (id, gid) => call<void>('DELETE', `/v1/admin/agents/${encodeURIComponent(id)}/grants/${encodeURIComponent(gid)}`),
     createGrant: (body) => call<Grant>('POST', '/v1/admin/grants', body),
     revokeGrant: (id) => call<void>('DELETE', `/v1/admin/grants/${encodeURIComponent(id)}`),
     devices: (q) => call<List<Device>>('GET', `/v1/admin/devices${qs({ q })}`),
