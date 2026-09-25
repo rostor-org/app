@@ -1552,3 +1552,76 @@ func TestPortal(t *testing.T) {
 		t.Fatalf("delete link: %d", st)
 	}
 }
+
+// Sign-in policy applies to devices: a group override reaches the
+// workstations in that group and no others; the tenant default otherwise.
+func TestAuthPolicyForDevices(t *testing.T) {
+	h := newHarness(t)
+	h.adminCall("PUT", "/v1/admin/settings/auth", map[string]any{"webauthn": map[string]any{"rp_id": "", "display_name": "", "origins": []string{}}, "login": map[string]any{"default_method": "password"}, "badge": map[string]any{"format": "wiegand26"}})
+	h.adminCall("POST", "/v1/admin/groups", map[string]any{"name": "lab-pcs"})
+	enrol := func(host string) (*http.Client, string) {
+		tok := h.adminCall("POST", "/v1/admin/enrollment-tokens", map[string]any{"resource_type": "workstation"})["enrollment_token"].(string)
+		key, csrPEM := csr(t)
+		st, out := h.call(h.client(nil), "POST", "/v1/devices/enroll", "", map[string]any{"enrollment_token": tok, "csr_pem": csrPEM, "posture": map[string]any{"hostname": host}})
+		if st != 201 {
+			t.Fatalf("enroll %s: %d %v", host, st, out)
+		}
+		certBlock, _ := pem.Decode([]byte(out["certificate_pem"].(string)))
+		keyDER, _ := x509.MarshalECPrivateKey(key)
+		cert, _ := tls.X509KeyPair(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certBlock.Bytes}), pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER}))
+		return h.client(&cert), out["device_id"].(string)
+	}
+	lab, labID := enrol("LAB-1")
+	office, _ := enrol("OFFICE-1")
+	h.adminCall("POST", "/v1/admin/groups/lab-pcs/members", map[string]any{"member_kind": "principal", "member": labID})
+	policy := func(c *http.Client) (string, string) {
+		st, out := h.call(c, "GET", "/v1/devices/self/policy", "", nil)
+		if st != 200 {
+			t.Fatalf("policy: %d %v", st, out)
+		}
+		return out["login"].(map[string]any)["default_method"].(string), out["badge"].(map[string]any)["format"].(string)
+	}
+	if m, f := policy(lab); m != "password" || f != "wiegand26" {
+		t.Fatalf("tenant default should reach the lab PC: %s %s", m, f)
+	}
+	// Override the lab group to badge.
+	ov := h.adminCall("PUT", "/v1/admin/settings/auth/overrides/lab-pcs", map[string]any{"login": map[string]any{"default_method": "badge"}})
+	if ov["group"].(map[string]any)["name"] != "lab-pcs" || ov["login"].(map[string]any)["default_method"] != "badge" {
+		t.Fatalf("override: %v", ov)
+	}
+	if st, out := h.call(h.client(nil), "PUT", "/v1/admin/settings/auth/overrides/lab-pcs", h.admin, map[string]any{"login": map[string]any{"default_method": "carrier-pigeon"}}); st != 400 {
+		t.Fatalf("bad method: %d %v", st, out)
+	}
+	if st, out := h.call(h.client(nil), "PUT", "/v1/admin/settings/auth/overrides/nope", h.admin, map[string]any{"login": map[string]any{"default_method": "badge"}}); st != 404 {
+		t.Fatalf("unknown group: %d %v", st, out)
+	}
+	if m, _ := policy(lab); m != "badge" {
+		t.Fatalf("lab PC should follow its group: %s", m)
+	}
+	if m, _ := policy(office); m != "password" {
+		t.Fatalf("office PC should keep the tenant default: %s", m)
+	}
+	// A second, newer override on a group the lab PC is also in wins.
+	h.adminCall("POST", "/v1/admin/groups", map[string]any{"name": "kiosks"})
+	h.adminCall("POST", "/v1/admin/groups/kiosks/members", map[string]any{"member_kind": "principal", "member": labID})
+	h.adminCall("PUT", "/v1/admin/settings/auth/overrides/kiosks", map[string]any{"login": map[string]any{"default_method": "passkey"}})
+	if m, _ := policy(lab); m != "passkey" {
+		t.Fatalf("newest override should win: %s", m)
+	}
+	items := h.adminCall("GET", "/v1/admin/settings/auth/overrides", nil)["items"].([]any)
+	if len(items) != 2 {
+		t.Fatalf("overrides list: %v", items)
+	}
+	// Removing overrides restores the tenant default; the tenant setting is untouched.
+	h.adminCall("DELETE", "/v1/admin/settings/auth/overrides/kiosks", nil)
+	h.adminCall("DELETE", "/v1/admin/settings/auth/overrides/lab-pcs", nil)
+	if st, _ := h.call(h.client(nil), "DELETE", "/v1/admin/settings/auth/overrides/lab-pcs", h.admin, nil); st != 404 {
+		t.Fatalf("double delete: %d", st)
+	}
+	if m, _ := policy(lab); m != "password" {
+		t.Fatalf("after removal: %s", m)
+	}
+	if got := h.adminCall("GET", "/v1/admin/settings/auth", nil)["login"].(map[string]any)["default_method"]; got != "password" {
+		t.Fatalf("tenant setting changed: %v", got)
+	}
+}

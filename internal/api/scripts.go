@@ -25,6 +25,11 @@ import (
 	"rostor.org/app/internal/ids"
 )
 
+// scriptLanguages is the registry of languages an agent can run. PowerShell
+// is the Windows agent's; shell languages arrive with the macOS and Linux
+// agents (SPEC-scripts). Adding one is a code change, never a migration.
+var scriptLanguages = map[string]bool{"powershell": true}
+
 // requireAL2 is the floor for anything that changes what runs on every
 // workstation as SYSTEM: whatever the grant says, the session must have
 // presented two factors.
@@ -202,7 +207,7 @@ func (s *Server) handleCreateScript(w http.ResponseWriter, r *http.Request) {
 	if req.Language != nil && *req.Language != "" {
 		lang = *req.Language
 	}
-	if lang != "powershell" {
+	if !scriptLanguages[lang] {
 		s.writeErr(w, r, 400, "request.malformed", map[string]any{"field": "language"})
 		return
 	}
