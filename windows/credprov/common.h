@@ -1,9 +1,9 @@
 // Shared declarations for the Rostor credential provider.
 //
 // The provider exposes one tile with an identifier field, a secret field, a
-// PIN field (hidden until the agent asks for a PIN after a badge tap) and a
+// PIN field (hidden until the deputy asks for a PIN after a badge tap) and a
 // submit button. It contains no user-facing text: every label comes from the
-// agent's `ui` reply over the named pipe (contract §2.1).
+// deputy's `ui` reply over the named pipe (contract §2.1).
 #pragma once
 
 #ifndef WIN32_NO_STATUS
@@ -28,7 +28,7 @@ enum FIELD_ID
     SFI_LABEL     = 0,   // CPFT_LARGE_TEXT: tile_label (or `connecting` during submit)
     SFI_USERNAME  = 1,   // CPFT_EDIT_TEXT: identifier, or a badge reader burst (digits)
     SFI_PASSWORD  = 2,   // CPFT_PASSWORD_TEXT: secret
-    SFI_PIN       = 3,   // CPFT_PASSWORD_TEXT: badge PIN; hidden unless the agent asked for it
+    SFI_PIN       = 3,   // CPFT_PASSWORD_TEXT: badge PIN; hidden unless the deputy asked for it
     SFI_SUBMIT    = 4,   // CPFT_SUBMIT_BUTTON
     SFI_TILEIMAGE = 5,   // CPFT_TILE_IMAGE: tile.bmp from the install dir
     SFI_NUM_FIELDS = 6,
@@ -61,7 +61,7 @@ static const CREDENTIAL_PROVIDER_FIELD_DESCRIPTOR s_rgFieldDescriptors[] =
     { SFI_TILEIMAGE, CPFT_TILE_IMAGE,   const_cast<PWSTR>(L""), GUID_NULL },
 };
 
-// UI strings from the agent, keyed as in contract §2.1.
+// UI strings from the deputy, keyed as in contract §2.1.
 struct UiStrings
 {
     std::wstring tile_label;
@@ -75,7 +75,7 @@ struct UiStrings
 
 // Field labels by field ID, from the `ui` strings. LogonUI renders an edit
 // field's label as its cue banner, so the identifier field carries the
-// badge hint (falling back to the plain username label from an older agent).
+// badge hint (falling back to the plain username label from an older deputy).
 inline PCWSTR FieldLabel(const UiStrings& ui, DWORD fieldID)
 {
     switch (fieldID)
@@ -119,10 +119,10 @@ HRESULT ProtectIfNecessaryAndCopyPassword(PCWSTR pwzPassword, CREDENTIAL_PROVIDE
 // log.cpp — diagnostic log for Dan, never shown to users.
 void LogLine(const char* fmt, ...);
 
-// pipeclient.cpp — one request/reply over \\.\pipe\rostor-agent.
+// pipeclient.cpp — one request/reply over \\.\pipe\rostor-deputy.
 // Returns a flat map of the reply (nested keys joined with '.').
-// On transport failure returns false and fills `code` with the agent-local
-// code the credprov must report (agent.unreachable / agent.timeout).
+// On transport failure returns false and fills `code` with the deputy-local
+// code the credprov must report (deputy.unreachable / deputy.timeout).
 bool PipeCall(const std::string& requestJson, std::map<std::string, std::string>& reply, std::string& code);
 bool PipeFetchUi(UiStrings& out);
 

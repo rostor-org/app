@@ -85,7 +85,7 @@ func loadKey(path string) (ed25519.PrivateKey, error) {
 }
 
 // manifest expects files named rostor-<os>-<arch> (and optionally
-// rostor-agent-windows-amd64.exe) in --dir and publishes them at --base-url/<name>.
+// rostor-deputy-windows-amd64.exe) in --dir and publishes them at --base-url/<name>.
 func manifest(args []string) error {
 	fs := flag.NewFlagSet("manifest", flag.ExitOnError)
 	key := fs.String("key", "", "private key file")
@@ -130,7 +130,7 @@ func manifest(args []string) error {
 		if err != nil {
 			return err
 		}
-		// key: strip the "rostor-" prefix and any extension → "linux-amd64", "agent-windows-amd64"
+		// key: strip the "rostor-" prefix and any extension → "linux-amd64", "deputy-windows-amd64"
 		k := strings.TrimSuffix(strings.TrimPrefix(name, "rostor-"), filepath.Ext(name))
 		u := strings.TrimRight(*base, "/") + "/" + name
 		if o, ok := overrides[name]; ok {

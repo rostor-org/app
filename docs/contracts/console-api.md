@@ -252,7 +252,7 @@ plugin registry, key rotation, policy counts on groups.
 
 Device side (mutual TLS):
 - `GET /v1/devices/self/trust` → `{"version","ca_pems":[…],"renew":bool,"cert_not_after"}`.
-  The agent replaces its pinned `ca.crt` with all `ca_pems` when `version`
+  The deputy replaces its pinned `ca.crt` with all `ca_pems` when `version`
   changes, and renews when `renew` is true (expiry within 30 days, issuing CA
   no longer newest, or presenting a superseded certificate).
 - `POST /v1/devices/self/renew` `{"csr_pem"}` → `{"certificate_pem","not_after","ca_pems","trust_version"}`.

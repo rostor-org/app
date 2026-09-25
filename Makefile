@@ -1,7 +1,7 @@
 GO ?= go
 export PATH := /opt/homebrew/opt/postgresql@17/bin:/opt/homebrew/bin:$(PATH)
 
-.PHONY: build test vet agent lint-strings lint-ui-strings console
+.PHONY: build test vet deputy lint-strings lint-ui-strings console
 
 # Build the React console and stage it for embedding.
 console:
@@ -11,8 +11,8 @@ console:
 build:
 	$(GO) build -o bin/rostor ./cmd/rostor
 
-agent:
-	GOOS=windows GOARCH=amd64 $(GO) build -o bin/rostor-agent.exe ./cmd/rostor-agent
+deputy:
+	GOOS=windows GOARCH=amd64 $(GO) build -o bin/rostor-deputy.exe ./cmd/rostor-deputy
 
 vet:
 	$(GO) vet ./...
@@ -53,13 +53,13 @@ dist: console lint-ui-strings
 	rm -rf dist && mkdir -p dist
 	GOOS=linux  GOARCH=amd64 CGO_ENABLED=0 $(GO) build -trimpath -ldflags '$(LDFLAGS)' -o dist/rostor-linux-amd64 ./cmd/rostor
 	GOOS=linux  GOARCH=arm64 CGO_ENABLED=0 $(GO) build -trimpath -ldflags '$(LDFLAGS)' -o dist/rostor-linux-arm64 ./cmd/rostor
-	GOOS=windows GOARCH=amd64 CGO_ENABLED=0 $(GO) build -trimpath -ldflags '$(LDFLAGS)' -o dist/rostor-agent-windows-amd64.exe ./cmd/rostor-agent
+	GOOS=windows GOARCH=amd64 CGO_ENABLED=0 $(GO) build -trimpath -ldflags '$(LDFLAGS)' -o dist/rostor-deputy-windows-amd64.exe ./cmd/rostor-deputy
 	$(GO) build -o bin/rostor-release ./cmd/rostor-release
 	@ls -la dist
 
 release: dist
 	git pull --rebase --quiet
-	gh release create $(VERSION) --repo $(REPO) --title "Rostor $(VERSION)" --notes "$(NOTES)" dist/rostor-linux-amd64 dist/rostor-linux-arm64 dist/rostor-agent-windows-amd64.exe
+	gh release create $(VERSION) --repo $(REPO) --title "Rostor $(VERSION)" --notes "$(NOTES)" dist/rostor-linux-amd64 dist/rostor-linux-arm64 dist/rostor-deputy-windows-amd64.exe
 	rm -f dist/*.zip
 	URLMAP="$$(gh api repos/$(REPO)/releases/tags/$(VERSION) --jq '[.assets[] | "\(.name)=\(.url)"] | join(",")')"; \
 	  bin/rostor-release manifest --key $(SIGNKEY) --channel $(CHANNEL) --version $(VERSION) --dir dist --url-map "$$URLMAP" --notes "$(NOTES)" $(if $(MIN_UPGRADE_FROM),--min-upgrade-from $(MIN_UPGRADE_FROM),) > dist/manifest-$(CHANNEL).json

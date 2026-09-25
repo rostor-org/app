@@ -46,7 +46,7 @@ void CRostorCredential::SetFieldValue(DWORD fieldID, PCWSTR value)
         _pCredProvCredentialEvents->SetFieldString(this, fieldID, _rgFieldStrings[fieldID]);
 }
 
-// The agent answered auth.continue for a badge tap: keep the number, swap the
+// The deputy answered auth.continue for a badge tap: keep the number, swap the
 // secret field for the PIN field, move the submit button next to it and put
 // the caret there so the person just types the PIN and presses Enter. LogonUI
 // cannot relabel a live field, which is why the PIN field is a separate
@@ -69,7 +69,7 @@ void CRostorCredential::EnterPinMode(PCWSTR badgeNumber, const std::wstring& pro
         ev->SetFieldInteractiveState(this, SFI_USERNAME, CPFIS_READONLY);
         ev->SetFieldInteractiveState(this, SFI_PIN, CPFIS_FOCUSED);
         ev->SetFieldSubmitButton(this, SFI_SUBMIT, SFI_PIN);
-        // The large text carries the agent's prompt while the PIN is pending.
+        // The large text carries the deputy's prompt while the PIN is pending.
         if (!prompt.empty()) ev->SetFieldString(this, SFI_LABEL, prompt.c_str());
     }
 }
@@ -199,7 +199,7 @@ IFACEMETHODIMP CRostorCredential::GetBitmapValue(DWORD dwFieldID, HBITMAP* phbmp
     if (!phbmp) return E_INVALIDARG;
     *phbmp = nullptr;
     if (dwFieldID != SFI_TILEIMAGE) return E_INVALIDARG;
-    // The tile image ships beside the agent (install.ps1 copies it). A
+    // The tile image ships beside the deputy (install.ps1 copies it). A
     // missing file just leaves LogonUI's generic glyph; never a failure.
     HBITMAP h = static_cast<HBITMAP>(LoadImageW(nullptr, L"C:\\Program Files\\Rostor\\tile.bmp",
         IMAGE_BITMAP, 0, 0, LR_LOADFROMFILE | LR_CREATEDIBSECTION));
@@ -233,7 +233,7 @@ IFACEMETHODIMP CRostorCredential::SetCheckboxValue(DWORD, BOOL) { return E_INVAL
 IFACEMETHODIMP CRostorCredential::SetComboBoxSelectedValue(DWORD, DWORD) { return E_INVALIDARG; }
 IFACEMETHODIMP CRostorCredential::CommandLinkClicked(DWORD) { return E_INVALIDARG; }
 
-// Submit: ask the agent; on ok serialize the *local* credential it returned.
+// Submit: ask the deputy; on ok serialize the *local* credential it returned.
 //
 // Three presentations share this one entry point (contract §2.2/§2.3):
 //   password  identifier + secret, as before;
@@ -253,7 +253,7 @@ IFACEMETHODIMP CRostorCredential::GetSerialization(CREDENTIAL_PROVIDER_GET_SERIA
     ZeroMemory(pcpcs, sizeof(*pcpcs));
     _lastMessage.clear();
 
-    // Show "connecting" while the agent works, then restore the label.
+    // Show "connecting" while the deputy works, then restore the label.
     if (_pCredProvCredentialEvents && !_ui.connecting.empty())
         _pCredProvCredentialEvents->SetFieldString(this, SFI_LABEL, _ui.connecting.c_str());
 
@@ -279,8 +279,8 @@ IFACEMETHODIMP CRostorCredential::GetSerialization(CREDENTIAL_PROVIDER_GET_SERIA
 
     if (!ok || reply["ok"] != "true")
     {
-        // The agent renders text; the credprov never invents any. When the
-        // agent itself is unreachable there is no text at all — only a code
+        // The deputy renders text; the credprov never invents any. When the
+        // deputy itself is unreachable there is no text at all — only a code
         // in the log — and LogonUI shows a generic failure.
         if (ok) code = reply["code"];
         _lastMessage = Utf8ToWide(reply["message"]);
@@ -314,7 +314,7 @@ IFACEMETHODIMP CRostorCredential::GetSerialization(CREDENTIAL_PROVIDER_GET_SERIA
     for (auto& kv : reply) if (!kv.second.empty()) SecureZeroMemory(&kv.second[0], kv.second.size());
     LogLine("logon: ok, local user '%s'%s", WideToUtf8(localUser).c_str(), badge ? " [badge]" : "");
     // The badge number and PIN have done their job; the packed credential
-    // below is the local one the agent minted, exactly as on the password path.
+    // below is the local one the deputy minted, exactly as on the password path.
     ResetToInitial(badge);
 
     HRESULT hr = E_FAIL;
@@ -364,8 +364,8 @@ IFACEMETHODIMP CRostorCredential::ReportResult(NTSTATUS ntsStatus, NTSTATUS ntsS
     LogLine("report: status 0x%08lx substatus 0x%08lx", ntsStatus, ntsSubstatus);
     if (ntsStatus != STATUS_SUCCESS)
     {
-        // Surface the agent's rendered text; if LSA itself failed after an
-        // ALLOW there is no agent text and LogonUI shows its own.
+        // Surface the deputy's rendered text; if LSA itself failed after an
+        // ALLOW there is no deputy text and LogonUI shows its own.
         if (!_lastMessage.empty()) SHStrDupW(_lastMessage.c_str(), ppwszOptionalStatusText);
         *pcpsiOptionalStatusIcon = CPSI_ERROR;
         // Clear the secrets (and leave any PIN mode) so a retry starts clean.

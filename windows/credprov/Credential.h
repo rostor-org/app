@@ -58,9 +58,9 @@ private:
     PWSTR _rgFieldStrings[SFI_NUM_FIELDS];
     ICredentialProviderCredentialEvents* _pCredProvCredentialEvents;
     UiStrings _ui;
-    std::wstring _lastMessage; // rendered text from the agent for ReportResult
+    std::wstring _lastMessage; // rendered text from the deputy for ReportResult
 
-    // Badge + PIN (contract §2.3): after a tap the agent may answer
+    // Badge + PIN (contract §2.3): after a tap the deputy may answer
     // auth.continue; the tile then hides the secret field, shows the PIN
     // field and resends the same badge number with the PIN on the next submit.
     bool _pinMode;

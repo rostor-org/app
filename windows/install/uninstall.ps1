@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-  Removes the Rostor credential provider and agent service. Order matters:
+  Removes the Rostor credential provider and deputy service. Order matters:
   registry keys first (so LogonUI stops loading the DLL), then the DLL, then
   the service. Enrollment and the account ledger under C:\ProgramData\Rostor
   are kept unless -Purge.
@@ -8,7 +8,7 @@
 .PARAMETER Purge
   Also delete C:\ProgramData\Rostor (enrollment, ledger, logs). After a
   purge the machine is stock; a later install.ps1 -CoreUrl/-Token enrolls
-  it afresh with a new token. Local accounts the agent created are never
+  it afresh with a new token. Local accounts the deputy created are never
   deleted (contract §3).
 
   Bundle usage, elevated:
@@ -23,7 +23,7 @@ $ErrorActionPreference = 'Stop'
 
 $InstallDir  = 'C:\Program Files\Rostor'
 $ProgramData = 'C:\ProgramData\Rostor'
-$ServiceName = 'RostorAgent'
+$ServiceName = 'RostorDeputy'
 $Clsid       = '{7A4C2E10-5B0D-4F4E-9C1B-3E2D7F1A6B01}'
 $CpKey       = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Authentication\Credential Providers\$Clsid"
 $PolKey      = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System'
@@ -65,17 +65,20 @@ if (Test-Path $DllTarget) {
     }
 }
 
-# 3. service
-$agent = Join-Path $InstallDir 'rostor-agent.exe'
-if (Get-Service -Name $ServiceName -ErrorAction SilentlyContinue) {
-    if (Test-Path $agent) {
-        & $agent uninstall-service
+# 3. service (either name: RostorDeputy, or RostorAgent from before the rename)
+foreach ($pair in @(@('RostorDeputy', 'rostor-deputy.exe'), @('RostorAgent', 'rostor-agent.exe'))) {
+    $name = $pair[0]
+    $exe = Join-Path $InstallDir $pair[1]
+    if (Get-Service -Name $name -ErrorAction SilentlyContinue) {
+        if (Test-Path $exe) {
+            & $exe uninstall-service 2>$null
+        }
+        if (Get-Service -Name $name -ErrorAction SilentlyContinue) {
+            Stop-Service $name -Force -ErrorAction SilentlyContinue
+            & sc.exe delete $name | Out-Null
+        }
+        Write-Host "removed service $name"
     }
-    if (Get-Service -Name $ServiceName -ErrorAction SilentlyContinue) {
-        Stop-Service $ServiceName -Force -ErrorAction SilentlyContinue
-        & sc.exe delete $ServiceName | Out-Null
-    }
-    Write-Host "removed service $ServiceName"
 }
 if (Test-Path $InstallDir) {
     Remove-Item -Recurse -Force $InstallDir
@@ -91,7 +94,7 @@ if ($Purge) {
 } else {
     Write-Host "kept $ProgramData (enrollment, ledger, logs); use -Purge to remove"
 }
-Write-Host 'Local accounts created by the agent are left in place by design.'
+Write-Host 'Local accounts created by the deputy are left in place by design.'
 
 Write-Host ''
 Write-Host '==> Rostor uninstall summary'

@@ -1,5 +1,5 @@
 // Console harness: drives RostorCredProv.dll through the same COM calls
-// LogonUI makes, against the running agent, without registering the DLL.
+// LogonUI makes, against the running deputy, without registering the DLL.
 // Run elevated (the pipe DACL admits Administrators). Built by test.cmd.
 //
 //   cp_test <dll> <identifier> <secret> [expect-ok|expect-deny]

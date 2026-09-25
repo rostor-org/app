@@ -62,7 +62,7 @@ IFACEMETHODIMP CRostorProvider::SetUsageScenario(CREDENTIAL_PROVIDER_USAGE_SCENA
 
     UiStrings ui;
     if (!PipeFetchUi(ui))
-        ui = UiStrings(); // agent down: empty labels, never invented text
+        ui = UiStrings(); // deputy down: empty labels, never invented text
     _ui = ui;
     LogLine("provider: scenario %d, tile label '%s'", (int)cpus, WideToUtf8(_ui.tile_label).c_str());
 

@@ -65,7 +65,7 @@ bin/rostor-release keygen --out ~/.rostor/release-signing.key > deploy/release.p
 make release VERSION=v0.1.1 NOTES="what changed"
 ```
 
-`make release` builds `linux-amd64`, `linux-arm64` and the Windows agent,
+`make release` builds `linux-amd64`, `linux-arm64` and the Windows deputy,
 creates the GitHub release, uploads the binaries, signs a manifest whose file
 URLs are the GitHub asset API URLs (they work for private and public repos),
 uploads it, and commits the manifest as `deploy/channels/stable.json`, which is

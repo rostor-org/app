@@ -13,8 +13,8 @@ Ubuntu with signed in-product updates.
 
 - [docs/core-dev.md](docs/core-dev.md) — run the core locally, admin CLI
 - [docs/appliance.md](docs/appliance.md) — one-line install, updates, releasing
-- [docs/windows-logon-build.md](docs/windows-logon-build.md) — the Windows agent and credential provider
-- [docs/contracts/windows-logon.md](docs/contracts/windows-logon.md) — the wire contract between core, agent and provider
+- [docs/windows-logon-build.md](docs/windows-logon-build.md) — the Windows deputy (the service on each workstation) and credential provider
+- [docs/contracts/windows-logon.md](docs/contracts/windows-logon.md) — the wire contract between core, deputy and provider
 
 The design authority is the Agent Build Spec in the separate `project`
 repository; code follows it, and where they disagree the spec wins.

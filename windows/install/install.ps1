@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-  Installs the Rostor Windows logon slice: agent service + credential provider.
+  Installs the Rostor Windows logon slice: deputy service + credential provider.
   Layout and registry keys are from docs/contracts/windows-logon.md §4.
 
   One-command install from the release bundle (rostor-windows-amd64.zip),
@@ -11,24 +11,24 @@
 .PARAMETER CoreUrl
   Core base URL, e.g. https://core.example:8443. With -Token, enrolls this
   workstation before the service is installed. Skipped (with a note) when
-  C:\ProgramData\Rostor\agent.json already exists, so re-running is safe.
+  C:\ProgramData\Rostor\deputy.json already exists, so re-running is safe.
 .PARAMETER Token
   Single-use enrollment token minted by an admin (console → Devices).
 .PARAMETER CaFile
   PEM file with the core CA, to verify the enrollment call itself. Without
-  it the enrollment call skips TLS verification (the agent's --insecure);
+  it the enrollment call skips TLS verification (the deputy's --insecure);
   the CA returned in the enrollment response is pinned for everything after.
-.PARAMETER AgentExe
-  Path to rostor-agent.exe (default: .\rostor-agent.exe next to this script).
+.PARAMETER DeputyExe
+  Path to rostor-deputy.exe (default: .\rostor-deputy.exe next to this script).
 .PARAMETER CredProvDll
   Path to RostorCredProv.dll. If omitted or missing, the credential provider
-  step is skipped and only the agent is installed.
+  step is skipped and only the deputy is installed.
 .PARAMETER MockCore
   Run the service with `run --mock-core` (no core needed; identifier
   "testuser" is allowed with any secret). Development only; cannot be
   combined with -CoreUrl/-Token.
 .PARAMETER SkipCredProv
-  Install the agent only; do not touch System32 or the CP registry keys.
+  Install the deputy only; do not touch System32 or the CP registry keys.
 .PARAMETER ExcludeMicrosoftAccount
   Hide the "Microsoft account" tile from Sign-in options. The local
   password tile is deliberately left in place as the fallback.
@@ -41,7 +41,7 @@ param(
     [string]$CoreUrl = '',
     [string]$Token = '',
     [string]$CaFile = '',
-    [string]$AgentExe = '',
+    [string]$DeputyExe = '',
     [string]$CredProvDll = '',
     [switch]$MockCore,
     [switch]$SkipCredProv,
@@ -53,13 +53,13 @@ Set-StrictMode -Version 2
 
 # $PSScriptRoot is not usable in parameter defaults under PowerShell 5.1.
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-if (-not $AgentExe)    { $AgentExe    = Join-Path $scriptDir 'rostor-agent.exe' }
+if (-not $DeputyExe)    { $DeputyExe    = Join-Path $scriptDir 'rostor-deputy.exe' }
 if (-not $CredProvDll) { $CredProvDll = Join-Path $scriptDir 'RostorCredProv.dll' }
 
 $InstallDir  = 'C:\Program Files\Rostor'
 $ProgramData = 'C:\ProgramData\Rostor'
-$AgentJson   = Join-Path $ProgramData 'agent.json'
-$ServiceName = 'RostorAgent'
+$DeputyJson   = Join-Path $ProgramData 'deputy.json'
+$ServiceName = 'RostorDeputy'
 $Clsid       = '{7A4C2E10-5B0D-4F4E-9C1B-3E2D7F1A6B01}'
 $CpKey       = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Authentication\Credential Providers\$Clsid"
 $ClsidKey    = "HKLM:\SOFTWARE\Classes\CLSID\$Clsid"
@@ -72,7 +72,7 @@ $principal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.
 if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
     throw 'install.ps1 must run elevated.'
 }
-if (-not (Test-Path $AgentExe)) { throw "agent binary not found: $AgentExe" }
+if (-not (Test-Path $DeputyExe)) { throw "deputy binary not found: $DeputyExe" }
 
 # --- argument checks (before touching anything) --------------------------
 if ($MockCore -and ($CoreUrl -or $Token)) {
@@ -89,16 +89,37 @@ if ($CaFile -and -not (Test-Path $CaFile)) { throw "CA file not found: $CaFile" 
 # --- state directory with the §4 ACLs -------------------------------------
 # SYSTEM: full; Administrators: full on the directory (they run enroll and
 # pipe-test); everyone else: nothing. device.key gets its own tighter ACL
-# from the agent when it is written.
+# from the deputy when it is written.
 New-Item -ItemType Directory -Force -Path $ProgramData, (Join-Path $ProgramData 'logs') | Out-Null
 & icacls $ProgramData /inheritance:r /grant:r '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' | Out-Null
 if ($LASTEXITCODE -ne 0) { throw "icacls on $ProgramData failed ($LASTEXITCODE)" }
 
-# --- agent binary + service ----------------------------------------------
+# --- migration from the old name (the service was RostorAgent, the binary
+# rostor-agent.exe, the enrollment agent.json) so an upgrade keeps its
+# enrollment, ledger and accounts without re-enrolling -----------------------
+$oldService = Get-Service -Name 'RostorAgent' -ErrorAction SilentlyContinue
+if ($oldService) {
+    Write-Host 'renaming: removing the RostorAgent service (enrollment and accounts are kept)'
+    $oldExe = Join-Path $InstallDir 'rostor-agent.exe'
+    if (Test-Path $oldExe) { & $oldExe uninstall-service 2>$null }
+    if (Get-Service -Name 'RostorAgent' -ErrorAction SilentlyContinue) {
+        Stop-Service 'RostorAgent' -Force -ErrorAction SilentlyContinue
+        & sc.exe delete 'RostorAgent' | Out-Null
+    }
+    Start-Sleep -Seconds 1
+    Remove-Item -Force $oldExe -ErrorAction SilentlyContinue
+}
+$oldJson = Join-Path $ProgramData 'agent.json'
+if ((Test-Path $oldJson) -and -not (Test-Path $DeputyJson)) {
+    Rename-Item $oldJson $DeputyJson
+    Write-Host "renamed $oldJson to $DeputyJson"
+}
+
+# --- deputy binary + service ----------------------------------------------
 $existing = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
 if ($existing) {
     Write-Host "service $ServiceName already present; removing it first"
-    & (Join-Path $InstallDir 'rostor-agent.exe') uninstall-service 2>$null
+    & (Join-Path $InstallDir 'rostor-deputy.exe') uninstall-service 2>$null
     if (Get-Service -Name $ServiceName -ErrorAction SilentlyContinue) {
         Stop-Service $ServiceName -Force -ErrorAction SilentlyContinue
         & sc.exe delete $ServiceName | Out-Null
@@ -106,20 +127,20 @@ if ($existing) {
     Start-Sleep -Seconds 1
 }
 New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
-Copy-Item -Force $AgentExe (Join-Path $InstallDir 'rostor-agent.exe')
-$agent = Join-Path $InstallDir 'rostor-agent.exe'
+Copy-Item -Force $DeputyExe (Join-Path $InstallDir 'rostor-deputy.exe')
+$deputy = Join-Path $InstallDir 'rostor-deputy.exe'
 $tile = Join-Path (Split-Path -Parent $PSCommandPath) 'tile.bmp'
 if (Test-Path $tile) { Copy-Item -Force $tile (Join-Path $InstallDir 'tile.bmp') }
 
 # --- enrollment (before the service starts, so it comes up enrolled) -------
-# The agent refuses to overwrite an existing enrollment; we check first so a
+# The deputy refuses to overwrite an existing enrollment; we check first so a
 # re-run with the same flags is a no-op rather than an error.
 if ($MockCore) {
     [void]$summary.Add('core:      mock (development only; identifier "testuser" is allowed with any secret)')
-} elseif (Test-Path $AgentJson) {
-    $cfg = Get-Content -Raw $AgentJson | ConvertFrom-Json
+} elseif (Test-Path $DeputyJson) {
+    $cfg = Get-Content -Raw $DeputyJson | ConvertFrom-Json
     if ($CoreUrl) {
-        Write-Host "already enrolled ($AgentJson exists, core $($cfg.core_url)); skipping enrollment"
+        Write-Host "already enrolled ($DeputyJson exists, core $($cfg.core_url)); skipping enrollment"
         if ($cfg.core_url.TrimEnd('/') -ne $CoreUrl.TrimEnd('/')) {
             Write-Warning "existing enrollment points at $($cfg.core_url), not $CoreUrl. To re-enroll: .\uninstall.ps1 -Purge, then run install.ps1 again."
         }
@@ -135,24 +156,24 @@ if ($MockCore) {
         # response and is pinned from then on. The token is single-use.
         $enrollArgs += ' --insecure'
     }
-    # The agent reports failures on stderr; capture both streams to files so
+    # The deputy reports failures on stderr; capture both streams to files so
     # $ErrorActionPreference = 'Stop' does not turn stderr into an exception
     # before we can show the message (and so no cmd.exe quoting is involved).
     $outFile = Join-Path $env:TEMP 'rostor-enroll.out'
     $errFile = Join-Path $env:TEMP 'rostor-enroll.err'
-    $p = Start-Process -FilePath $agent -ArgumentList $enrollArgs -Wait -PassThru -NoNewWindow `
+    $p = Start-Process -FilePath $deputy -ArgumentList $enrollArgs -Wait -PassThru -NoNewWindow `
         -RedirectStandardOutput $outFile -RedirectStandardError $errFile
     $out = ((Get-Content -Raw $outFile -ErrorAction SilentlyContinue) + (Get-Content -Raw $errFile -ErrorAction SilentlyContinue))
     Remove-Item $outFile, $errFile -Force -ErrorAction SilentlyContinue
     if ($null -eq $out) { $out = '' }
-    if ($p.ExitCode -ne 0 -or -not (Test-Path $AgentJson)) {
+    if ($p.ExitCode -ne 0 -or -not (Test-Path $DeputyJson)) {
         throw "enrollment failed (exit $($p.ExitCode)); nothing installed yet beyond the binary.`n$($out.Trim())"
     }
     Write-Host $out.Trim()
-    $cfg = Get-Content -Raw $AgentJson | ConvertFrom-Json
+    $cfg = Get-Content -Raw $DeputyJson | ConvertFrom-Json
     [void]$summary.Add("core:      $($cfg.core_url) (enrolled as $($cfg.device_id))")
 } else {
-    Write-Warning "not enrolled: no $AgentJson and no -CoreUrl/-Token. The service will answer agent.not_enrolled at logon until you enroll."
+    Write-Warning "not enrolled: no $DeputyJson and no -CoreUrl/-Token. The service will answer deputy.not_enrolled at logon until you enroll."
     [void]$summary.Add('core:      NOT ENROLLED - run install.ps1 -CoreUrl https://core:8443 -Token <token>')
 }
 
@@ -170,28 +191,28 @@ if ($ExcludeMicrosoftAccount) {
 
 $svcArgs = @('install-service')
 if ($MockCore) { $svcArgs += '--mock-core' }
-& $agent @svcArgs
+& $deputy @svcArgs
 if ($LASTEXITCODE -ne 0) { throw "install-service failed ($LASTEXITCODE)" }
 
 $svc = Get-Service -Name $ServiceName
 $svc.WaitForStatus('Running', [TimeSpan]::FromSeconds(15))
 Write-Host "service $ServiceName is $($svc.Status)"
-[void]$summary.Add("service:   $ServiceName $($svc.Status) ($agent)")
+[void]$summary.Add("service:   $ServiceName $($svc.Status) ($deputy)")
 
 # Prove the pipe answers before registering anything into LogonUI.
 # pipe-test prints its timing on stderr, which PowerShell would otherwise
 # turn into a terminating error under $ErrorActionPreference = 'Stop'.
-$ui = & cmd.exe /c "`"$agent`" pipe-test --op ui 2>nul" | Out-String
+$ui = & cmd.exe /c "`"$deputy`" pipe-test --op ui 2>nul" | Out-String
 if ($LASTEXITCODE -ne 0 -or $ui -notmatch '"ok":\s*true') {
-    throw "agent pipe did not answer the ui op; not registering the credential provider.`n$ui"
+    throw "deputy pipe did not answer the ui op; not registering the credential provider.`n$ui"
 }
-Write-Host 'agent pipe answers ui op'
+Write-Host 'deputy pipe answers ui op'
 
 function Write-Summary {
     Write-Host ''
     Write-Host '==> Rostor install summary'
     foreach ($line in $summary) { Write-Host "  $line" }
-    Write-Host "  logs:      $ProgramData\logs\agent.log, credprov.log"
+    Write-Host "  logs:      $ProgramData\logs\deputy.log, credprov.log"
     Write-Host '  uninstall: .\uninstall.ps1 [-Purge]'
 }
 
@@ -203,7 +224,7 @@ if ($SkipCredProv) {
     return
 }
 if (-not (Test-Path $CredProvDll)) {
-    Write-Host "credential provider DLL not found at $CredProvDll; agent-only install"
+    Write-Host "credential provider DLL not found at $CredProvDll; deputy-only install"
     [void]$summary.Add("tile:      not installed (no DLL at $CredProvDll)")
     Write-Summary
     return

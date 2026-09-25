@@ -1,11 +1,11 @@
-// Client side of contract §2: connect to \\.\pipe\rostor-agent, write one
+// Client side of contract §2: connect to \\.\pipe\rostor-deputy, write one
 // newline-terminated JSON request, read one newline-terminated reply, close.
-// The 30 s deadline is the contract's (§2); on expiry the result is agent.timeout.
+// The 30 s deadline is the contract's (§2); on expiry the result is deputy.timeout.
 #include "common.h"
 
 namespace {
 
-const wchar_t* kPipePath = L"\\\\.\\pipe\\rostor-agent";
+const wchar_t* kPipePath = L"\\\\.\\pipe\\rostor-deputy";
 const DWORD kTimeoutMs = 30000;
 
 // Overlapped I/O lets us enforce the deadline without a worker thread.
@@ -40,7 +40,7 @@ bool PipeCall(const std::string& requestJson, std::map<std::string, std::string>
         if (err == ERROR_PIPE_BUSY && WaitNamedPipeW(kPipePath, 2000))
             continue;
         LogLine("pipe: connect failed (%lu)", err);
-        code = "agent.unreachable";
+        code = "deputy.unreachable";
         return false;
     }
 
@@ -49,7 +49,7 @@ bool PipeCall(const std::string& requestJson, std::map<std::string, std::string>
     if (!ov.hEvent)
     {
         CloseHandle(h);
-        code = "agent.unreachable";
+        code = "deputy.unreachable";
         return false;
     }
 
@@ -59,12 +59,12 @@ bool PipeCall(const std::string& requestJson, std::map<std::string, std::string>
     if (!WriteFile(h, line.data(), (DWORD)line.size(), nullptr, &ov) && GetLastError() != ERROR_IO_PENDING)
     {
         LogLine("pipe: write failed (%lu)", GetLastError());
-        code = "agent.unreachable";
+        code = "deputy.unreachable";
     }
     else if (!WaitIo(h, ov, transferred, deadline))
     {
         LogLine("pipe: write timed out");
-        code = "agent.timeout";
+        code = "deputy.timeout";
     }
     else
     {
@@ -78,7 +78,7 @@ bool PipeCall(const std::string& requestJson, std::map<std::string, std::string>
                 DWORD err = GetLastError();
                 if (err == ERROR_BROKEN_PIPE || err == ERROR_HANDLE_EOF) break;
                 LogLine("pipe: read failed (%lu)", err);
-                code = "agent.unreachable";
+                code = "deputy.unreachable";
                 break;
             }
             if (!WaitIo(h, ov, transferred, deadline))
@@ -86,12 +86,12 @@ bool PipeCall(const std::string& requestJson, std::map<std::string, std::string>
                 DWORD err = GetLastError();
                 if (err == ERROR_BROKEN_PIPE || err == ERROR_HANDLE_EOF) break;
                 LogLine("pipe: read timed out");
-                code = "agent.timeout";
+                code = "deputy.timeout";
                 break;
             }
             buf.append(chunk, transferred);
             if (buf.find('\n') != std::string::npos) break;
-            if (buf.size() > 64 * 1024) { code = "agent.unreachable"; break; }
+            if (buf.size() > 64 * 1024) { code = "deputy.unreachable"; break; }
         }
         if (code.empty())
         {
@@ -100,7 +100,7 @@ bool PipeCall(const std::string& requestJson, std::map<std::string, std::string>
             if (one.empty() || !JsonParseFlat(one, reply))
             {
                 LogLine("pipe: unparseable reply (%u bytes)", (unsigned)one.size());
-                code = "agent.unreachable";
+                code = "deputy.unreachable";
             }
             else ok = true;
         }
@@ -118,7 +118,7 @@ bool PipeFetchUi(UiStrings& out)
     std::string code;
     if (!PipeCall("{\"op\":\"ui\",\"locale\":\"en-US\"}", reply, code) || reply["ok"] != "true")
     {
-        LogLine("ui: no strings from agent (%s)", code.empty() ? reply["code"].c_str() : code.c_str());
+        LogLine("ui: no strings from deputy (%s)", code.empty() ? reply["code"].c_str() : code.c_str());
         return false;
     }
     out.tile_label     = Utf8ToWide(reply["strings.tile_label"]);

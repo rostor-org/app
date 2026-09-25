@@ -1,0 +1,22 @@
+{
+  "ui": {
+    "tile_label": "Rostor",
+    "username_label": "Username",
+    "password_label": "Password",
+    "submit_label": "Sign in",
+    "connecting": "Contacting Rostor…",
+    "pin_label": "PIN",
+    "badge_hint": "Tap your badge or type your username",
+    "tile_label_badge": "Tap your badge",
+    "username_label_badge": "Badge, or username"
+  },
+  "messages": {
+    "deputy.core_unreachable": "Rostor could not be reached. Try again, or sign in with a local account.",
+    "deputy.not_enrolled": "This computer is not enrolled with Rostor.",
+    "deputy.local_account_failed": "Rostor could not prepare your account on this computer.",
+    "deputy.timeout": "Rostor did not respond in time.",
+    "deputy.bad_request": "The sign-in request was not understood.",
+    "auth.failed": "Sign-in failed.",
+    "auth.continue": "Enter your PIN."
+  }
+}
