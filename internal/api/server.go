@@ -74,6 +74,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("ok\n")) })
 	mux.HandleFunc("GET /v1/catalog", s.handleCatalog)
 	mux.HandleFunc("GET /v1/brand", s.handleBrand)
+	mux.HandleFunc("GET /v1/portal", s.handlePortal) // public: anonymous visitors see public tiles
+	mux.HandleFunc("GET /v1/admin/portal/tiles", s.adminAuth("system.read", s.handleListTiles))
+	mux.HandleFunc("POST /v1/admin/portal/tiles", s.adminAuth("system.write", s.handleCreateTile))
+	mux.HandleFunc("PUT /v1/admin/portal/tiles/{id}", s.adminAuth("system.write", s.handleUpdateTile))
+	mux.HandleFunc("DELETE /v1/admin/portal/tiles/{id}", s.adminAuth("system.write", s.handleDeleteTile))
 	mux.HandleFunc("POST /v1/auth/login", s.handleLogin)
 	mux.HandleFunc("GET /v1/auth/session", s.handleSession)
 	mux.HandleFunc("POST /v1/auth/logout", s.handleLogout)

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useId, useRef, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, type AuthSettings, type BadgeFormat, type CA, type LoginMethod, type SystemInfo } from '../api'
+import { TilesCard } from '../components/TilesCard'
 import { useT } from '../i18n/catalog'
 import { useSession } from '../auth/session'
 import { useFormat } from '../lib/format'
@@ -133,6 +134,7 @@ export function System() {
         </div>
         {can('system.read') && <SignInSettings canWrite={can('policies.write')} />}
         <AppearanceCard />
+        <TilesCard canWrite={can('system.write')} />
       </div>
     </section>
   )

@@ -6,11 +6,12 @@ import { useSession } from '../auth/session'
 import { useLive } from '../live/LiveProvider'
 import { useFormat } from '../lib/format'
 import { reloadApp, useVersion } from '../lib/version'
-import { IconAccess, IconAudit, IconDevices, IconGroups, IconMe, IconPeople, IconPlugins, IconScripts, IconSystem, Mark } from './Icons'
+import { IconAccess, IconAudit, IconDevices, IconGroups, IconMe, IconPeople, IconPlugins, IconPortal, IconScripts, IconSystem, Mark } from './Icons'
 import { ToastHost } from './Toast'
 
 // `perm` hides an entry from admins who lack that permission; the others are open to any admin.
 const NAV: Array<{ to: string; code: string; Icon: () => JSX.Element; perm?: string }> = [
+  { to: '/portal', code: 'ui.nav.portal', Icon: IconPortal },
   { to: '/me', code: 'ui.nav.me', Icon: IconMe },
   { to: '/people', code: 'ui.nav.people', Icon: IconPeople },
   { to: '/groups', code: 'ui.nav.groups', Icon: IconGroups },
@@ -66,8 +67,12 @@ export function Shell() {
     return (
       <div className="app member">
         <header className="topbar">
-          <NavLink to="/me" className="wordmark"><Mark />ROSTOR</NavLink>
+          <NavLink to="/portal" className="wordmark"><Mark />ROSTOR</NavLink>
           <div className="tenant">{tenant}</div>
+          <nav className="topnav" aria-label={t('ui.nav.sections')}>
+            <NavLink to="/portal">{t('ui.nav.portal')}</NavLink>
+            <NavLink to="/me">{t('ui.nav.me')}</NavLink>
+          </nav>
           <div className="spacer" />
           {liveDot}
           {me}
@@ -84,7 +89,7 @@ export function Shell() {
   return (
     <div className="app">
       <aside className="rail">
-        <NavLink to="/me" className="wordmark"><Mark />ROSTOR</NavLink>
+        <NavLink to="/portal" className="wordmark"><Mark />ROSTOR</NavLink>
         <div className="tenant">{tenant}</div>
         <nav className="nav" aria-label={t('ui.nav.sections')}>
           {NAV.filter(({ perm }) => !perm || can(perm)).map(({ to, code, Icon }) => (

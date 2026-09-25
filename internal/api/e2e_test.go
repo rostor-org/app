@@ -1454,3 +1454,101 @@ func TestScripts(t *testing.T) {
 		t.Fatalf("runs should survive the delete: %v", runs)
 	}
 }
+
+// SPEC-portal: anonymous visitors see public tiles; a member sees My account
+// and what a grant lets them view; an admin sees the administration tiles;
+// Why explains a tile grant like any other decision.
+func TestPortal(t *testing.T) {
+	h := newHarness(t)
+	c := h.client(nil)
+	// Anonymous, nothing public yet.
+	st, out := h.call(c, "GET", "/v1/portal", "", nil)
+	if st != 200 || out["signed_in"] != false || len(out["tiles"].([]any)) != 0 {
+		t.Fatalf("anonymous portal: %d %v", st, out)
+	}
+	// Admin creates a public link, a private link, and grants the private one to members.
+	pub := h.adminCall("POST", "/v1/admin/portal/tiles", map[string]any{"title": "Wiki", "href": "https://wiki.example.org", "icon": "W", "public": true})
+	if pub["id"] != "wiki" || pub["public"] != true || pub["kind"] != "link" {
+		t.Fatalf("public tile: %v", pub)
+	}
+	h.adminCall("POST", "/v1/admin/portal/tiles", map[string]any{"id": "booking", "title": "Booking", "href": "https://book.example.org"})
+	h.adminCall("POST", "/v1/admin/groups", map[string]any{"name": "members"})
+	h.adminCall("POST", "/v1/admin/grants", map[string]any{"subject_kind": "group", "subject": "members", "role": "viewer", "resource_type": "portal.tile", "resource_id": "booking"})
+	if st, out := h.call(c, "POST", "/v1/admin/portal/tiles", h.admin, map[string]any{"title": "Bad", "href": "javascript:alert(1)"}); st != 400 {
+		t.Fatalf("bad href: %d %v", st, out)
+	}
+	ids := func(out map[string]any) []string {
+		var got []string
+		for _, tl := range out["tiles"].([]any) {
+			got = append(got, tl.(map[string]any)["id"].(string))
+		}
+		return got
+	}
+	// Anonymous sees the public link only.
+	_, out = h.call(c, "GET", "/v1/portal", "", nil)
+	if got := ids(out); len(got) != 1 || got[0] != "wiki" {
+		t.Fatalf("anonymous should see wiki only: %v", got)
+	}
+	// The admin token sees every administration screen plus both links.
+	_, out = h.call(c, "GET", "/v1/portal", h.admin, nil)
+	admin := ids(out)
+	want := map[string]bool{"people": true, "system": true, "wiki": true, "booking": true}
+	for _, id := range admin {
+		delete(want, id)
+	}
+	if len(want) != 0 {
+		t.Fatalf("admin missing tiles %v in %v", want, admin)
+	}
+	// A member (cookie) sees My account, the public link, and the granted link; not People.
+	h.adminCall("POST", "/v1/admin/users", map[string]any{"username": "dana"})
+	h.adminCall("POST", "/v1/admin/users/dana/bindings", map[string]any{"method": "password", "fields": map[string]string{"password": "hunter2hunter2"}})
+	h.adminCall("POST", "/v1/admin/groups/members/members", map[string]any{"member_kind": "principal", "member": "dana"})
+	req, _ := jsonReq("POST", h.ts.URL+"/v1/auth/login", map[string]any{"identifier": "dana", "fields": map[string]string{"password": "hunter2hunter2"}})
+	resp, err := c.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cookie *http.Cookie
+	for _, ck := range resp.Cookies() {
+		if ck.Name == "rostor_session" {
+			cookie = ck
+		}
+	}
+	resp.Body.Close()
+	if cookie == nil {
+		t.Fatal("no session cookie")
+	}
+	req, _ = jsonReq("GET", h.ts.URL+"/v1/portal", nil)
+	req.AddCookie(cookie)
+	resp, err = c.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out = map[string]any{}
+	_ = json.NewDecoder(resp.Body).Decode(&out)
+	resp.Body.Close()
+	member := map[string]bool{}
+	for _, id := range ids(out) {
+		member[id] = true
+	}
+	if !member["my-account"] || !member["wiki"] || !member["booking"] || member["people"] || member["system"] {
+		t.Fatalf("member tiles: %v", member)
+	}
+	// Why explains the booking tile through the members grant.
+	ex := h.adminCall("GET", "/v1/admin/why?principal=dana&action=view&resource_type=portal.tile&resource_id=booking", nil)
+	if ex["decision"] != "ALLOW" {
+		t.Fatalf("why: %v", ex)
+	}
+	// Unpublish the wiki: anonymous sees nothing again; built-ins cannot be deleted.
+	h.adminCall("PUT", "/v1/admin/portal/tiles/wiki", map[string]any{"public": false})
+	_, out = h.call(c, "GET", "/v1/portal", "", nil)
+	if len(out["tiles"].([]any)) != 0 {
+		t.Fatalf("unpublished: %v", out)
+	}
+	if st, _ := h.call(c, "DELETE", "/v1/admin/portal/tiles/people", h.admin, nil); st != 403 {
+		t.Fatalf("built-in delete should be refused: %d", st)
+	}
+	if st, _ := h.call(c, "DELETE", "/v1/admin/portal/tiles/wiki", h.admin, nil); st != 204 {
+		t.Fatalf("delete link: %d", st)
+	}
+}

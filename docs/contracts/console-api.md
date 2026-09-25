@@ -142,6 +142,22 @@ plugin registry, key rotation, policy counts on groups.
   type, whatever existing roles already use. `POST /v1/admin/roles`
   `{resource_type,name,permissions}` defines a role (roles.write) and is what
   the form's "New role…" calls before creating the grant.
+- Portal (v0.10.0, SPEC-portal). `GET /v1/portal` (no session needed) →
+  `{signed_in, tiles:[{id, kind:"screen"|"link", href, category, order,
+  icon, title, description, public, builtin, requires, grants}]}`: the
+  tiles the caller may see. A built-in screen tile shows to whoever holds
+  its `requires` permission on the directory (`session` = any signed-in
+  principal; a directory admin sees all); a link tile shows to whoever a
+  grant of role `viewer` on `portal.tile:<id>` (or on `portal:root`)
+  allows. The built-in group `everyone` is implicit for every principal
+  and stands for anonymous visitors: a `viewer` grant to it makes a tile
+  public. Admin: `GET /v1/admin/portal/tiles` (system.read); `POST
+  /v1/admin/portal/tiles {id?, title, description?, href, category?,
+  icon?, order?, public?}` (system.write; href must be http(s) or a
+  console path; id defaults to a slug of the title); `PUT …/{id}` (built-in
+  tiles accept only category, order, public); `DELETE …/{id}` (links only;
+  revokes their grants). Audit: `tile.create|update|delete`. Titles of
+  built-in tiles are catalog strings `ui.tile.<id>`.
 - Scripts (v0.9.0, SPEC-scripts). Permissions `scripts.read` and
   `scripts.write`; every write additionally needs an AL2 session
   (403 `request.assurance_required` `{required:"AL2"}` otherwise).

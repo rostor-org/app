@@ -543,6 +543,36 @@ export interface AssignScript {
   mode: ScriptMode
 }
 
+// ---- portal (SPEC-portal) ------------------------------------------------------
+export interface Tile {
+  id: string
+  kind: 'screen' | 'link'
+  href: string
+  category: string
+  order: number
+  icon: string
+  title: string
+  description: string
+  public: boolean
+  builtin: boolean
+  requires: string
+  grants: number
+}
+export interface Portal {
+  signed_in: boolean
+  tiles: Tile[]
+}
+export interface TileInput {
+  id?: string
+  title?: string
+  description?: string
+  href?: string
+  category?: string
+  icon?: string
+  order?: number
+  public?: boolean
+}
+
 export interface CreateGrant {
   subject_kind: 'principal' | 'group'
   subject: string
@@ -611,6 +641,12 @@ export interface Api {
   createUser(body: CreateUser): Promise<Principal>
   setUserState(id: string, state: string): Promise<void>
   enrollBinding(id: string, body: EnrollBinding): Promise<Binding>
+  /** The tiles the caller may see; works without a session (public tiles only). */
+  portal(): Promise<Portal>
+  tiles(): Promise<List<Tile>>
+  createTile(body: TileInput): Promise<Tile>
+  updateTile(id: string, body: TileInput): Promise<Tile>
+  deleteTile(id: string): Promise<void>
   /** Explains a badge reading without storing it (any signed-in principal). */
   badgeRead(fields: Record<string, string>): Promise<BadgeReading>
   revokeBinding(id: string, bid: string): Promise<void>

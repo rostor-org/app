@@ -45,7 +45,7 @@ export function Login() {
   const conditional = useRef<AbortController | null>(null)
   const passkeys = passkeysSupported()
 
-  useEffect(() => { if (session) nav('/me', { replace: true }) }, [session, nav])
+  useEffect(() => { if (session) nav('/portal', { replace: true }) }, [session, nav])
   // The offer disappears once setup is done (or was never needed).
   useEffect(() => { if (mode === 'setup' && setupStatus.data && !setupStatus.data.needed) setMode('password') }, [mode, setupStatus.data])
   // Open on the tenant's default method (Sign-in settings) until the person
@@ -58,7 +58,7 @@ export function Login() {
   useEffect(() => { if (step === 'password') pw.current?.focus() }, [step])
   useEffect(() => { if (mode === 'badge') (needPin ? pinRef : num).current?.focus() }, [mode, needPin])
 
-  const done = useCallback(async () => { await refresh(); nav('/me', { replace: true }) }, [refresh, nav])
+  const done = useCallback(async () => { await refresh(); nav('/portal', { replace: true }) }, [refresh, nav])
   const message = useCallback((r: { code: string; params?: Record<string, unknown>; message?: string }) =>
     r.message ?? t(r.code, r.params as Record<string, string>), [t])
   // Server errors (HTTP client or mock) carry a body with a rendered message; anything else shows as is.

@@ -2,7 +2,7 @@ import type {
   Api, ApiErrorBody, AuditPage, AuditQuery, AuditVerify, AuthSettings, Binding, Brand, CA, CAList, Catalog, CreationOptionsJSON, Device, Downloads,
   EnrollmentToken, Explanation, Grant, Group, GroupDetail, List, LiveHandlers, LoginOK,
   LoginRequest, LoginResponse, PasskeyCeremony, Plugin, Principal, RequestOptionsJSON, Role, Session, SetupStatus, Summary, SystemInfo, UpdateState,
-  User, UserDetail, WhyQuery, ResourceCatalog, Agent, AgentDetail, BadgeReading, Script, ScriptDetail, ScriptAssignment, ScriptRun,
+  User, UserDetail, WhyQuery, ResourceCatalog, Agent, AgentDetail, BadgeReading, Script, ScriptDetail, ScriptAssignment, ScriptRun, Portal, Tile,
 } from './types'
 
 export class ApiError extends Error {
@@ -75,6 +75,11 @@ export function createHttpApi(opts: ClientOptions = {}): Api {
     setUserState: (id, state) => call<void>('POST', `/v1/admin/users/${encodeURIComponent(id)}/state`, { state }),
     enrollBinding: (id, body) => call<Binding>('POST', `/v1/admin/users/${encodeURIComponent(id)}/bindings`, body),
     badgeRead: (fields) => call<BadgeReading>('POST', '/v1/admin/badges/read', fields),
+    portal: () => call<Portal>('GET', '/v1/portal', undefined, true),
+    tiles: () => call<List<Tile>>('GET', '/v1/admin/portal/tiles'),
+    createTile: (body) => call<Tile>('POST', '/v1/admin/portal/tiles', body),
+    updateTile: (id, body) => call<Tile>('PUT', `/v1/admin/portal/tiles/${encodeURIComponent(id)}`, body),
+    deleteTile: (id) => call<void>('DELETE', `/v1/admin/portal/tiles/${encodeURIComponent(id)}`),
     revokeBinding: (id, bid) => call<void>('DELETE', `/v1/admin/users/${encodeURIComponent(id)}/bindings/${encodeURIComponent(bid)}`),
     changePassword: (id, body) => call<void>('POST', `/v1/admin/users/${encodeURIComponent(id)}/password`, body),
     setPin: (id, bid, pin) => call<void>('POST', `/v1/admin/users/${encodeURIComponent(id)}/bindings/${encodeURIComponent(bid)}/pin`, { pin }),

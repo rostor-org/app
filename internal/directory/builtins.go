@@ -35,12 +35,35 @@ func EnsureBuiltins(ctx context.Context, tx pgx.Tx, tenantID string, cv Conditio
 	if err := ensureResource("workstations", "all"); err != nil {
 		return err
 	}
+	// SPEC-portal: the portal and its built-in tiles. A tile is a resource
+	// whose visibility is either a permission the caller holds (screens)
+	// or a grant of the viewer role (links, public tiles).
+	if err := ensureResource("portal", "root"); err != nil {
+		return err
+	}
+	for _, t := range BuiltinTiles {
+		var exists bool
+		if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM resources WHERE tenant_id=$1 AND type='portal.tile' AND id=$2)`, tenantID, t.ID).Scan(&exists); err != nil {
+			return err
+		}
+		if exists {
+			continue
+		}
+		if err := CreateResource(ctx, tx, tenantID, sys, Resource{Type: "portal.tile", ID: t.ID, ParentType: "portal", ParentID: "root",
+			Attributes: map[string]any{"kind": "screen", "href": t.Href, "category": t.Category, "order": t.Order, "icon": t.Icon,
+				"title_code": "ui.tile." + t.ID, "description_code": "ui.tile." + t.ID + ".desc", "requires": t.Requires, "builtin": true}}); err != nil {
+			return err
+		}
+	}
 	for _, r := range []Role{
 		{ResourceType: "directory", Name: "admin", Permissions: []string{"*"}},
 		// SPEC-agents: who may have agents is a grant of this role; closed by default.
 		{ResourceType: "directory", Name: "agent-owner", Permissions: []string{"agents.own"}},
 		{ResourceType: "workstation", Name: "user", Permissions: []string{"logon"}},
 		{ResourceType: "workstations", Name: "user", Permissions: []string{"logon"}},
+		// SPEC-portal: who may see a tile (or every tile, on portal:root).
+		{ResourceType: "portal.tile", Name: "viewer", Permissions: []string{"view"}},
+		{ResourceType: "portal", Name: "viewer", Permissions: []string{"view"}},
 	} {
 		if err := UpsertRole(ctx, tx, tenantID, sys, r); err != nil {
 			return err
@@ -62,6 +85,17 @@ func EnsureBuiltins(ctx context.Context, tx pgx.Tx, tenantID string, cv Conditio
 	}
 	if n == 0 {
 		if _, err := CreateGrant(ctx, tx, tenantID, sys, Grant{SubjectKind: "group", SubjectID: g.ID, Role: "admin", ResourceType: "directory", ResourceID: "root"}, cv); err != nil {
+			return err
+		}
+	}
+	// everyone (SPEC-portal): the implicit group of every principal, and of
+	// anonymous visitors for the portal. Membership is never stored; the
+	// engine adds it to every principal's paths.
+	if _, err := GetGroupByName(ctx, tx, tenantID, EveryoneGroup); err != nil {
+		if code, _ := CodeOf(err); code != "request.not_found" {
+			return err
+		}
+		if _, err := CreateGroup(ctx, tx, tenantID, sys, EveryoneGroup, map[string]string{"en": "Everyone"}); err != nil {
 			return err
 		}
 	}
@@ -91,6 +125,31 @@ const AdminsGroup = "directory-admins"
 
 // AgentOwnersGroup is the built-in group whose members may have agents.
 const AgentOwnersGroup = "agent-owners"
+
+// EveryoneGroup is the built-in group every principal is implicitly in, and
+// that anonymous portal visitors count as (SPEC-portal).
+const EveryoneGroup = "everyone"
+
+// BuiltinTile describes a console screen as a portal tile. Titles and
+// descriptions are catalog codes ui.tile.<id> and ui.tile.<id>.desc.
+type BuiltinTile struct {
+	ID, Href, Category, Icon, Requires string
+	Order                              int
+}
+
+// BuiltinTiles are the console's screens. Requires is the permission on the
+// directory that shows the tile ("session" = any signed-in principal).
+var BuiltinTiles = []BuiltinTile{
+	{ID: "my-account", Href: "/me", Category: "you", Icon: "me", Requires: "session", Order: 10},
+	{ID: "people", Href: "/people", Category: "admin", Icon: "people", Requires: "users.read", Order: 10},
+	{ID: "groups", Href: "/groups", Category: "admin", Icon: "groups", Requires: "groups.read", Order: 20},
+	{ID: "access", Href: "/access", Category: "admin", Icon: "access", Requires: "grants.read", Order: 30},
+	{ID: "devices", Href: "/devices", Category: "admin", Icon: "devices", Requires: "devices.read", Order: 40},
+	{ID: "scripts", Href: "/scripts", Category: "admin", Icon: "scripts", Requires: "scripts.read", Order: 50},
+	{ID: "audit", Href: "/audit", Category: "admin", Icon: "audit", Requires: "audit.read", Order: 60},
+	{ID: "plugins", Href: "/plugins", Category: "admin", Icon: "plugins", Requires: "plugins.read", Order: 70},
+	{ID: "system", Href: "/system", Category: "admin", Icon: "system", Requires: "system.read", Order: 80},
+}
 
 // HumanAdminExists reports whether any active *user* is in directory-admins
 // (directly or through nesting). Service accounts do not count: the first

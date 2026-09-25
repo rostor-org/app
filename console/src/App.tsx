@@ -16,6 +16,7 @@ import { Audit } from './screens/Audit'
 import { Plugins } from './screens/Plugins'
 import { System } from './screens/System'
 import { Login } from './screens/Login'
+import { Portal, PublicPortal } from './screens/Portal'
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 10_000, retry: 1, refetchOnWindowFocus: false } },
@@ -23,6 +24,14 @@ const queryClient = new QueryClient({
 
 function Boot() {
   return <div className="boot" aria-busy="true" />
+}
+
+/** The root: a session goes to the portal; a visitor sees the public tiles. */
+function Landing() {
+  const { session, loading } = useSession()
+  if (loading) return <Boot />
+  if (session) return <Navigate to="/portal" replace />
+  return <PublicPortal />
 }
 
 /** Gate: everything under here needs a session; 401 anywhere routes to /login. */
@@ -36,7 +45,7 @@ function Authed() {
 /** Admin screens need at least one admin permission; a plain member is sent to My account. */
 function AdminOnly() {
   const { isAdmin } = useSession()
-  if (!isAdmin) return <Navigate to="/me" replace />
+  if (!isAdmin) return <Navigate to="/portal" replace />
   return <Outlet />
 }
 
@@ -51,13 +60,14 @@ const routes = [
     element: <><Title /><Outlet /></>,
     children: [
       { path: '/login', element: <Login /> },
+      { path: '/', element: <Landing /> },
       {
         element: <Authed />,
         children: [
           {
             element: <Shell />,
             children: [
-              { path: '/', element: <Navigate to="/me" replace /> },
+              { path: '/portal', element: <Portal /> },
               { path: '/me', element: <MyAccount /> },
               {
                 element: <AdminOnly />,
@@ -74,7 +84,7 @@ const routes = [
                   { path: '/system', element: <System /> },
                 ],
               },
-              { path: '*', element: <Navigate to="/me" replace /> },
+              { path: '*', element: <Navigate to="/portal" replace /> },
             ],
           },
         ],

@@ -15,6 +15,9 @@ export const Mark = () => (
 export const IconMe = () => (
   <svg {...P}><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" strokeWidth="1.6" /><circle cx="8" cy="6.5" r="2.2" fill="currentColor" /><path d="M4 12.5c.8-1.8 2.3-2.7 4-2.7s3.2.9 4 2.7" fill="currentColor" /></svg>
 )
+export const IconPortal = () => (
+  <svg {...P}><rect x="1.5" y="1.5" width="5.5" height="5.5" rx="1.2" fill="currentColor" /><rect x="9" y="1.5" width="5.5" height="5.5" rx="1.2" fill="currentColor" /><rect x="1.5" y="9" width="5.5" height="5.5" rx="1.2" fill="currentColor" /><rect x="9" y="9" width="5.5" height="5.5" rx="1.2" fill="currentColor" /></svg>
+)
 export const IconPeople = () => (
   <svg {...P}><circle cx="8" cy="5" r="3" fill="currentColor" /><path d="M2 14c0-3 2.7-5 6-5s6 2 6 5" fill="currentColor" /></svg>
 )

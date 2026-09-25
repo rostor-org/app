@@ -346,7 +346,17 @@ func GroupPaths(ctx context.Context, q Querier, tenantID, principalID string) (m
 		}
 		out[g] = path
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	// Every principal is in `everyone` without a membership row (SPEC-portal).
+	var everyone string
+	if err := q.QueryRow(ctx, `SELECT id FROM groups WHERE tenant_id=$1 AND name=$2`, tenantID, EveryoneGroup).Scan(&everyone); err == nil && everyone != "" {
+		if _, ok := out[everyone]; !ok {
+			out[everyone] = []string{everyone}
+		}
+	}
+	return out, nil
 }
 
 // ---- Resources & roles ------------------------------------------------------

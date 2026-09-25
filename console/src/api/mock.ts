@@ -3,7 +3,7 @@
 import type { LoginMethod,
   Api, AuditRow, AuthSettings, CA, CAList, Device, Downloads, Explanation, Grant, Group, GroupDetail, LiveEvent, LiveHandlers, LoginOK, LoginResponse,
   LiveState, Member, Plugin, Role, Session, Summary, SystemInfo, UpdateState, User, UserDetail, Binding, Reason, ResourceNode, Agent, AgentDetail, HeldRight, BadgeFormat,
-  Script, ScriptDetail, ScriptRun,
+  Script, ScriptDetail, ScriptRun, Tile,
 } from './types'
 import catalogEn from '../../catalog.en.json'
 
@@ -130,6 +130,7 @@ const grants: Grant[] = [
   { id: 'grt_77aa1b02', subject: { kind: 'user', id: 'usr_9b2c11d0', name: 'dana' }, role: 'steward', resource: { type: 'equipment', id: 'laser-cutter-2' }, condition: '', condition_class: 'online', not_before: null, expires_at: '2026-12-31T00:00:00Z' },
   { id: 'grt_c4d5e6f7', subject: { kind: 'group', id: 'grp_admins', name: 'directory-admins' }, role: 'admin', resource: { type: 'directory', id: 'root' }, condition: '', condition_class: 'offline', not_before: null, expires_at: null },
   { id: 'grt_a0b1c2d3', subject: { kind: 'group', id: 'grp_agent_owners', name: 'agent-owners' }, role: 'agent-owner', resource: { type: 'directory', id: 'root' }, condition: '', condition_class: 'offline', not_before: null, expires_at: null },
+  { id: 'grt_b1c2d3e4', subject: { kind: 'group', id: 'grp_members', name: 'members' }, role: 'viewer', resource: { type: 'portal.tile', id: 'booking' }, condition: '', condition_class: 'offline', not_before: null, expires_at: null },
   { id: 'grt_1a2b3c4d', subject: { kind: 'group', id: 'grp_board', name: 'board' }, role: 'auditor', resource: { type: 'directory', id: 'root' }, condition: '', condition_class: 'offline', not_before: null, expires_at: null },
 ]
 
@@ -152,6 +153,23 @@ function heldBy(ownerId: string): HeldRight[] {
   }
   return out
 }
+
+// SPEC-portal: the console's screens as tiles, plus two links.
+const tileOf = (id: string, href: string, category: string, icon: string, requires: string, order: number, title: string, description: string): Tile =>
+  ({ id, kind: 'screen', href, category, order, icon, title, description, public: false, builtin: true, requires, grants: 0 })
+const tiles: Tile[] = [
+  tileOf('my-account', '/me', 'you', 'me', 'session', 10, 'My account', 'Who you are here, and how you sign in.'),
+  tileOf('people', '/people', 'admin', 'people', 'users.read', 10, 'People', 'Members, staff and service accounts.'),
+  tileOf('groups', '/groups', 'admin', 'groups', 'groups.read', 20, 'Groups', 'Who belongs together.'),
+  tileOf('access', '/access', 'admin', 'access', 'grants.read', 30, 'Access', 'Who may do what, on which resource.'),
+  tileOf('devices', '/devices', 'admin', 'devices', 'devices.read', 40, 'Devices', 'Workstations and doors with their certificates.'),
+  tileOf('scripts', '/scripts', 'admin', 'scripts', 'scripts.read', 50, 'Scripts', 'PowerShell pushed to workstations.'),
+  tileOf('audit', '/audit', 'admin', 'audit', 'audit.read', 60, 'Audit', 'Every act, hash-chained.'),
+  tileOf('plugins', '/plugins', 'admin', 'plugins', 'plugins.read', 70, 'Plugins', 'Doors, equipment, inventory and more.'),
+  tileOf('system', '/system', 'admin', 'system', 'system.read', 80, 'System', 'Version, updates, sign-in settings, certificates.'),
+  { id: 'wiki', kind: 'link', href: 'https://wiki.chattlab.org', category: 'links', order: 10, icon: 'W', title: 'Wiki', description: 'How things work at the lab.', public: true, builtin: false, requires: '', grants: 1 },
+  { id: 'booking', kind: 'link', href: 'https://booking.chattlab.org', category: 'links', order: 20, icon: 'B', title: 'Booking', description: 'Reserve the laser and the CNC.', public: false, builtin: false, requires: '', grants: 1 },
+]
 
 const roles: Role[] = [
   { resource_type: 'directory', name: 'admin', permissions: ['*'] },
@@ -957,6 +975,50 @@ export function createMockApi(_opts: { onUnauthorized?: () => void } = {}): Api 
       const wiegand26 = `${facility}:${card}`
       const stored: Record<string, string> = badgeFormat === 'wiegand26' ? { 'badge.wiegand26': wiegand26 } : { 'badge.printed': String(value24), 'badge.wiegand26': wiegand26 }
       return { format: badgeFormat, stored, wiegand26, facility, card, value24 }
+    },
+    async portal() {
+      await delay(80)
+      const ses = session
+      const admin = ses?.permissions.includes('*')
+      const perms = new Set(ses?.permissions ?? [])
+      const inGroupOf = (t: Tile) => !!ses && grants.some((g) => g.resource.type === 'portal.tile' && g.resource.id === t.id && g.subject.kind === 'group' && byId(ses.principal.id)?.groups.some((m) => m.id === g.subject.id))
+      const visible = tiles.filter((t) => t.public || (ses && (admin || t.requires === 'session' || (t.requires !== '' && perms.has(t.requires)) || (t.requires === '' && inGroupOf(t)))))
+      return { signed_in: !!ses, tiles: clone(visible) }
+    },
+    async tiles() { await delay(); return { items: clone(tiles), total: tiles.length } },
+    async createTile(body) {
+      await delay(250)
+      const id = body.id || (body.title ?? '').toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+      if (!id || !body.title?.trim()) throw mockErr(400, 'request.malformed', { field: 'title' })
+      if (!/^(https?:\/\/|\/)/.test(body.href ?? '')) throw mockErr(400, 'request.malformed', { field: 'href' })
+      if (tiles.some((t) => t.id === id)) throw mockErr(409, 'request.conflict', { field: 'id' })
+      const t: Tile = { id, kind: 'link', href: body.href ?? '', category: body.category || 'links', order: body.order || 100, icon: body.icon ?? '', title: body.title.trim(),
+        description: body.description ?? '', public: !!body.public, builtin: false, requires: '', grants: body.public ? 1 : 0 }
+      tiles.push(t)
+      append(`user:${session?.principal.id ?? ''}`, 'tile.create', `portal.tile:${id}`, 'session', 'AL1', 'ok', { title: t.title })
+      return clone(t)
+    },
+    async updateTile(id, body) {
+      await delay(200)
+      const t = tiles.find((x) => x.id === id)
+      if (!t) throw mockErr(404, 'request.not_found', { type: 'tile' })
+      if (!t.builtin) {
+        if (body.title?.trim()) t.title = body.title.trim()
+        if (body.description !== undefined) t.description = body.description
+        if (body.href) t.href = body.href
+        if (body.icon !== undefined) t.icon = body.icon
+      }
+      if (body.category) t.category = body.category
+      if (body.order) t.order = body.order
+      if (body.public !== undefined) { t.public = body.public; t.grants = body.public ? Math.max(1, t.grants) : Math.max(0, t.grants - 1) }
+      return clone(t)
+    },
+    async deleteTile(id) {
+      await delay(200)
+      const i = tiles.findIndex((x) => x.id === id)
+      if (i < 0) throw mockErr(404, 'request.not_found', { type: 'tile' })
+      if (tiles[i]!.builtin) throw mockErr(403, 'request.forbidden', { reason: 'builtin_tile' })
+      tiles.splice(i, 1)
     },
     async authSettings() { await delay(); return authSettings() },
     async setAuthSettings(body) {
