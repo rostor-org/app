@@ -256,3 +256,27 @@ Write-Output "lock screen image set from $url"
 
 Windows applies it at the next lock. Windows 10/11 Pro and above honour
 these keys; Home ignores them.
+
+## Badge-first tile, organisation name, default tile, shared account (v0.13.0)
+
+The `ui` pipe reply now carries `heading` ("Sign in to ChattLab", or "Tap
+your badge · ChattLab" under a badge policy; the tenant name comes from
+`GET /v1/devices/self/policy`, and a nameless tenant gets "Sign in" /
+"Tap your badge"), `switch_to_username`, `switch_to_badge` and
+`default_provider`. The credential provider has eight fields: a masked
+identifier (`CPFT_PASSWORD_TEXT`) beside the plain one, and a command link
+that toggles between them. Under a badge policy the tile opens on the
+masked field with the password field hidden, so a reader burst shows as
+dots and is always sent as a badge; "Use username" swaps in the plain
+field and password; PIN handling is unchanged in both modes. An older
+deputy without the link texts leaves the tile exactly as before.
+`default_provider: windows` makes `GetCredentialCount` report
+`CREDENTIAL_PROVIDER_NO_DEFAULT`, so Windows selects its own password tile
+and Rostor stays one click away. When an ALLOW carries `session_account`,
+the deputy enables that shared local account (display name equal to its
+name) instead of the person's derived one and logs `ALLOW as shared local
+<account> for <person>`. `--mock-core` reports tenant "Mock Lab",
+`default_provider: rostor`, no shared account. `cp_test --badge` drives
+the masked path (through the link when needed); `--badge-plain` keeps the
+plain-field heuristic; `test.cmd` links `pipeclient.cpp` into the harness
+so it can read the `ui` reply itself.

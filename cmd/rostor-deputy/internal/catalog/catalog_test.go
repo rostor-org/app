@@ -1,6 +1,9 @@
 package catalog
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestUIHasAllContractKeys(t *testing.T) {
 	ui, err := UI("en-US")
@@ -49,5 +52,59 @@ func TestLocaleFallback(t *testing.T) {
 		if ui["tile_label"] == "" {
 			t.Errorf("locale %q did not fall back", loc)
 		}
+	}
+}
+
+func TestUIHasHeadingAndSwitchKeys(t *testing.T) {
+	// v0.13.0: the heading carries the organisation name through a {tenant}
+	// placeholder, with a no-tenant twin so an unnamed tenant never sees
+	// "Sign in to " with nothing after it; the two command-link texts are
+	// plain entries.
+	ui, err := UI("en-US")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, k := range []string{"heading", "heading_badge", "heading_no_tenant", "heading_badge_no_tenant", "switch_to_username", "switch_to_badge"} {
+		if ui[k] == "" {
+			t.Errorf("missing ui key %q", k)
+		}
+	}
+	for _, k := range []string{"heading", "heading_badge"} {
+		if !strings.Contains(ui[k], "{tenant}") {
+			t.Errorf("%s must carry the {tenant} placeholder, got %q", k, ui[k])
+		}
+	}
+	for _, k := range []string{"heading_no_tenant", "heading_badge_no_tenant", "switch_to_username", "switch_to_badge"} {
+		if strings.Contains(ui[k], "{") {
+			t.Errorf("%s must not carry a placeholder, got %q", k, ui[k])
+		}
+	}
+	if ui["switch_to_username"] == ui["switch_to_badge"] {
+		t.Fatalf("the two link texts must differ: %+v", ui)
+	}
+}
+
+func TestFill(t *testing.T) {
+	ui, err := UI("en-US")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cases := []struct{ in, tenant, want string }{
+		{ui["heading"], "ChattLab", "Sign in to ChattLab"},
+		{ui["heading_badge"], "ChattLab", "Tap your badge · ChattLab"},
+		{ui["heading_no_tenant"], "", "Sign in"},
+		{"{tenant}{tenant}", "x", "xx"},
+		{"no placeholders", "x", "no placeholders"},
+		{"{unknown} stays", "x", "{unknown} stays"},
+		{"{unterminated", "x", "{unterminated"},
+		{"a {tenant} b", "", "a  b"},
+	}
+	for _, c := range cases {
+		if got := Fill(c.in, map[string]string{"tenant": c.tenant}); got != c.want {
+			t.Errorf("Fill(%q, %q) = %q, want %q", c.in, c.tenant, got, c.want)
+		}
+	}
+	if got := Fill("{tenant}", nil); got != "{tenant}" {
+		t.Errorf("nil params: %q", got)
 	}
 }

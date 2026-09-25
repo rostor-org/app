@@ -64,7 +64,10 @@ IFACEMETHODIMP CRostorProvider::SetUsageScenario(CREDENTIAL_PROVIDER_USAGE_SCENA
     if (!PipeFetchUi(ui))
         ui = UiStrings(); // deputy down: empty labels, never invented text
     _ui = ui;
-    LogLine("provider: scenario %d, tile label '%s'", (int)cpus, WideToUtf8(_ui.tile_label).c_str());
+    LogLine("provider: scenario %d, tile label '%s', heading '%s', default method '%s', opens in %s mode%s, default tile %s",
+            (int)cpus, WideToUtf8(_ui.tile_label).c_str(), WideToUtf8(_ui.heading).c_str(),
+            WideToUtf8(_ui.default_method).c_str(), OpensInBadgeMode(_ui) ? "badge" : "username",
+            HasSwitchLink(_ui) ? "" : " (no switch link)", WindowsIsDefaultTile(_ui) ? "windows" : "rostor");
 
     CRostorCredential* pCred = new (std::nothrow) CRostorCredential();
     if (!pCred) return E_OUTOFMEMORY;
@@ -101,12 +104,19 @@ IFACEMETHODIMP CRostorProvider::GetFieldDescriptorAt(DWORD dwIndex, CREDENTIAL_P
 IFACEMETHODIMP CRostorProvider::GetCredentialCount(DWORD* pdwCount, DWORD* pdwDefault, BOOL* pbAutoLogonWithDefault)
 {
     *pdwCount = _pCredential ? 1 : 0;
-    // Rostor is the default tile on the "Other user" form, so the form opens
-    // with the identifier field focused. The built-in password provider is
-    // still listed under Sign-in options as the local admin's safety net
-    // (contract §4); only the "Microsoft account" provider is excluded, and
-    // that by installer policy, not here.
-    *pdwDefault = _pCredential ? 0 : CREDENTIAL_PROVIDER_NO_DEFAULT;
+    // Which tile is selected when the lock screen appears (contract §2.1,
+    // v0.13.0) comes from the `ui` reply's default_provider. "rostor" (or an
+    // older deputy that sends nothing): Rostor is the default tile on the
+    // "Other user" form, so the form opens with the identifier field
+    // focused. "windows": no default from this provider, so Windows selects
+    // its own password tile and Rostor stays one click away. The reply was
+    // fetched in SetUsageScenario, which LogonUI always calls before this,
+    // so the answer is fixed for the whole LogonUI session and never
+    // changes mid-flight. The built-in password provider is still listed
+    // under Sign-in options as the local admin's safety net (contract §4);
+    // only the "Microsoft account" provider is excluded, and that by
+    // installer policy, not here.
+    *pdwDefault = (_pCredential && !WindowsIsDefaultTile(_ui)) ? 0 : CREDENTIAL_PROVIDER_NO_DEFAULT;
     *pbAutoLogonWithDefault = FALSE;
     return S_OK;
 }

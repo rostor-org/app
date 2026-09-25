@@ -21,6 +21,10 @@ const (
 	MockPIN        = "2468"
 )
 
+// MockTenantName is the organisation name the mock policy reports (§1.5a),
+// so the tile heading can be seen end to end without a core.
+const MockTenantName = "Mock Lab"
+
 // Verify implements Verifier.
 func (m Mock) Verify(_ context.Context, req VerifyRequest) (*VerifyResponse, error) {
 	c := req.Credential
@@ -56,10 +60,12 @@ func (m Mock) Scripts(_ context.Context) ([]Script, error) { return nil, nil }
 // ReportRun accepts and discards a run report.
 func (m Mock) ReportRun(_ context.Context, _ string, _ ScriptRun) error { return nil }
 
-// Policy implements the §1.5 fetch for the mock: password first, no badges.
+// Policy implements the §1.5 fetch for the mock: password first, no badges,
+// tenant "Mock Lab".
 func (m Mock) Policy(_ context.Context) (*PolicyResponse, error) {
 	var p PolicyResponse
 	p.Login.DefaultMethod = DefaultMethodPassword
 	p.Badge.Format = "none"
+	p.TenantName = MockTenantName
 	return &p, nil
 }

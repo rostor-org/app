@@ -8,7 +8,13 @@
     "pin_label": "PIN",
     "badge_hint": "Tap your badge or type your username",
     "tile_label_badge": "Tap your badge",
-    "username_label_badge": "Badge, or username"
+    "username_label_badge": "Badge, or username",
+    "heading": "Sign in to {tenant}",
+    "heading_badge": "Tap your badge · {tenant}",
+    "heading_no_tenant": "Sign in",
+    "heading_badge_no_tenant": "Tap your badge",
+    "switch_to_username": "Use username",
+    "switch_to_badge": "Use badge"
   },
   "messages": {
     "deputy.core_unreachable": "Rostor could not be reached. Try again, or sign in with a local account.",

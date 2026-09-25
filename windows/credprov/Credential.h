@@ -47,9 +47,20 @@ public:
 private:
     virtual ~CRostorCredential();
     void ClearSecret();
+    void ZeroField(DWORD fieldID);
     void SetFieldValue(DWORD fieldID, PCWSTR value);
     void EnterPinMode(PCWSTR badgeNumber, const std::wstring& prompt);
     void ResetToInitial(bool clearIdentifier);
+
+    // Mode → field states. ApplyFieldStates recomputes _rgFieldStatePairs
+    // from _badgeMode/_pinMode/_haveSwitch; PushFieldStates tells LogonUI
+    // (when it is listening) the states, the focus and where the submit
+    // button sits. Every mode change goes through the pair.
+    void ApplyFieldStates();
+    void PushFieldStates();
+    DWORD IdentifierField() const { return _badgeMode ? SFI_BADGE : SFI_USERNAME; }
+    DWORD SubmitAdjacentTo() const;
+    PCWSTR SwitchLinkText() const;
 
     LONG _cRef;
     CREDENTIAL_PROVIDER_USAGE_SCENARIO _cpus;
@@ -64,5 +75,10 @@ private:
     // auth.continue; the tile then hides the secret field, shows the PIN
     // field and resends the same badge number with the PIN on the next submit.
     bool _pinMode;
+    // Badge-first tile (contract §2.1, v0.13.0): which identifier field is
+    // live (the masked SFI_BADGE or the plain SFI_USERNAME), and whether the
+    // deputy sent the two link texts that make the command link usable.
+    bool _badgeMode;
+    bool _haveSwitch;
     std::wstring _badgeNumber;
 };

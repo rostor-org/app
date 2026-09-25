@@ -73,12 +73,47 @@ func resolve(locale string) (bundle, error) {
 
 // UI returns the credential-provider labels for locale. Keys mirror the
 // contract §2.1 reply so callers can copy them straight into the wire type.
+// Entries may carry {name} placeholders (today only {tenant}); Fill renders
+// them. The heading entries come in pairs — "heading" / "heading_no_tenant",
+// "heading_badge" / "heading_badge_no_tenant" — so a tenant without a name
+// gets a sentence that still reads well instead of a dangling "Sign in to".
 func UI(locale string) (map[string]string, error) {
 	b, err := resolve(locale)
 	if err != nil {
 		return nil, err
 	}
 	return b.UI, nil
+}
+
+// Fill substitutes {name} placeholders in a catalog entry with params.
+// Unknown placeholders are left as written so a catalog gap stays visible
+// rather than silently vanishing; no wording lives in code.
+func Fill(s string, params map[string]string) string {
+	if len(params) == 0 || !strings.Contains(s, "{") {
+		return s
+	}
+	var sb strings.Builder
+	for {
+		open := strings.IndexByte(s, '{')
+		if open < 0 {
+			break
+		}
+		close := strings.IndexByte(s[open:], '}')
+		if close < 0 {
+			break
+		}
+		name := s[open+1 : open+close]
+		v, ok := params[name]
+		if !ok {
+			sb.WriteString(s[:open+close+1])
+		} else {
+			sb.WriteString(s[:open])
+			sb.WriteString(v)
+		}
+		s = s[open+close+1:]
+	}
+	sb.WriteString(s)
+	return sb.String()
 }
 
 // Message renders an deputy-local code. Unknown codes return the code itself:

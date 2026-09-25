@@ -34,14 +34,21 @@ type Badge struct {
 }
 
 // UIStrings are the display strings the credential provider renders (§2.1).
+// Heading, SwitchToUsername and SwitchToBadge arrived in v0.13.0 ("Badge-first
+// tile and the organisation name") and are omitted when empty so an older
+// reply shape stays byte-identical; a credential provider that does not find
+// them keeps its previous labels.
 type UIStrings struct {
-	TileLabel     string `json:"tile_label"`
-	UsernameLabel string `json:"username_label"`
-	PasswordLabel string `json:"password_label"`
-	SubmitLabel   string `json:"submit_label"`
-	Connecting    string `json:"connecting"`
-	PinLabel      string `json:"pin_label"`
-	BadgeHint     string `json:"badge_hint"`
+	TileLabel        string `json:"tile_label"`
+	UsernameLabel    string `json:"username_label"`
+	PasswordLabel    string `json:"password_label"`
+	SubmitLabel      string `json:"submit_label"`
+	Connecting       string `json:"connecting"`
+	PinLabel         string `json:"pin_label"`
+	BadgeHint        string `json:"badge_hint"`
+	Heading          string `json:"heading,omitempty"`
+	SwitchToUsername string `json:"switch_to_username,omitempty"`
+	SwitchToBadge    string `json:"switch_to_badge,omitempty"`
 }
 
 // Reply is the deputy→client message. Exactly one of the shapes in the
@@ -50,15 +57,19 @@ type UIStrings struct {
 // what the credential provider must collect next ("pin"). DefaultMethod
 // accompanies Strings on a `ui` reply (§2.1, v0.11.0) and names the sign-in
 // method the effective policy puts first ("password", "passkey", "badge").
+// DefaultProvider ("Which tile is the default", v0.13.0) also rides on the
+// `ui` reply: "rostor" keeps the Rostor tile selected when the lock screen
+// appears, "windows" hands the selection to Windows' own password tile.
 type Reply struct {
-	OK            bool       `json:"ok"`
-	Strings       *UIStrings `json:"strings,omitempty"`
-	DefaultMethod string     `json:"default_method,omitempty"`
-	LocalUser     string     `json:"local_user,omitempty"`
-	LocalSecret   string     `json:"local_secret,omitempty"`
-	Code          string     `json:"code,omitempty"`
-	Message       string     `json:"message,omitempty"`
-	Need          string     `json:"need,omitempty"`
+	OK              bool       `json:"ok"`
+	Strings         *UIStrings `json:"strings,omitempty"`
+	DefaultMethod   string     `json:"default_method,omitempty"`
+	DefaultProvider string     `json:"default_provider,omitempty"`
+	LocalUser       string     `json:"local_user,omitempty"`
+	LocalSecret     string     `json:"local_secret,omitempty"`
+	Code            string     `json:"code,omitempty"`
+	Message         string     `json:"message,omitempty"`
+	Need            string     `json:"need,omitempty"`
 }
 
 // ErrLineTooLong is returned when a frame exceeds MaxLine.

@@ -128,5 +128,12 @@ bool PipeFetchUi(UiStrings& out)
     out.connecting     = Utf8ToWide(reply["strings.connecting"]);
     out.pin_label      = Utf8ToWide(reply["strings.pin_label"]);
     out.badge_hint     = Utf8ToWide(reply["strings.badge_hint"]);
+    // v0.11.0 / v0.13.0 additions; an older deputy leaves them empty and the
+    // tile keeps its previous form (plain field, no link, tile_label on top).
+    out.default_method     = Utf8ToWide(reply["default_method"]);
+    out.default_provider   = Utf8ToWide(reply["default_provider"]);
+    out.heading            = Utf8ToWide(reply["strings.heading"]);
+    out.switch_to_username = Utf8ToWide(reply["strings.switch_to_username"]);
+    out.switch_to_badge    = Utf8ToWide(reply["strings.switch_to_badge"]);
     return true;
 }

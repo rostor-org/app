@@ -183,7 +183,7 @@ func TestPolicy(t *testing.T) {
 	mux.HandleFunc("/v1/devices/self/policy", func(w http.ResponseWriter, r *http.Request) {
 		gotMethod, gotPath = r.Method, r.URL.Path
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"login":{"default_method":"badge"},"badge":{"format":"wiegand26"}}`))
+		_, _ = w.Write([]byte(`{"login":{"default_method":"badge"},"badge":{"format":"wiegand26"},"tenant_name":"ChattLab","logon":{"session_account":"chattlab","default_provider":"windows"}}`))
 	})
 	c := newMTLSServer(t, mux)
 	pol, err := c.Policy(context.Background())
@@ -194,6 +194,49 @@ func TestPolicy(t *testing.T) {
 		t.Fatalf("request: %s %s", gotMethod, gotPath)
 	}
 	if pol.Login.DefaultMethod != DefaultMethodBadge || pol.Badge.Format != "wiegand26" {
+		t.Fatalf("policy: %+v", pol)
+	}
+	// §1.5a: the organisation name rides along for the tile heading.
+	if pol.TenantName != "ChattLab" {
+		t.Fatalf("tenant_name: %+v", pol)
+	}
+	// v0.13.0 lock-screen policy: which tile is selected, shared account.
+	if pol.Logon.DefaultProvider != DefaultProviderWindows || pol.Logon.SessionAccount != "chattlab" {
+		t.Fatalf("logon: %+v", pol)
+	}
+}
+
+func TestVerifyResponseSessionAccount(t *testing.T) {
+	// "Shared session account" (v0.13.0): an ALLOW may name the local
+	// account the session runs as; it is absent on every other reply.
+	var resp VerifyResponse
+	if err := json.Unmarshal([]byte(`{"decision":"ALLOW","principal":{"id":"usr_1","username":"dan","display_name":"Dan"},"assurance":"AL1","session_account":"chattlab"}`), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp.SessionAccount != "chattlab" || resp.Principal == nil || resp.Principal.Username != "dan" {
+		t.Fatalf("got %+v", resp)
+	}
+	var plain VerifyResponse
+	if err := json.Unmarshal([]byte(`{"decision":"ALLOW","principal":{"id":"usr_1","username":"dan"}}`), &plain); err != nil {
+		t.Fatal(err)
+	}
+	if plain.SessionAccount != "" {
+		t.Fatalf("got %+v", plain)
+	}
+}
+
+func TestPolicyWithoutTenantName(t *testing.T) {
+	// A core older than v0.13.0 omits tenant_name; that is not an error,
+	// the heading is simply rendered without it.
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/devices/self/policy", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"login":{"default_method":"password"},"badge":{"format":"none"}}`))
+	})
+	pol, err := newMTLSServer(t, mux).Policy(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pol.TenantName != "" || pol.Login.DefaultMethod != DefaultMethodPassword {
 		t.Fatalf("policy: %+v", pol)
 	}
 }
@@ -249,18 +292,21 @@ func TestMockPolicy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if pol.Login.DefaultMethod != DefaultMethodPassword || pol.Badge.Format != "none" {
+	if pol.Login.DefaultMethod != DefaultMethodPassword || pol.Badge.Format != "none" || pol.TenantName != MockTenantName {
 		t.Fatalf("mock policy: %+v", pol)
 	}
 }
 
 func TestPolicyWireShape(t *testing.T) {
-	// Field names on the wire are the contract's.
+	// Field names on the wire are the contract's (§1.5 + §1.5a).
 	var pol PolicyResponse
 	pol.Login.DefaultMethod = "badge"
 	pol.Badge.Format = "wiegand26"
+	pol.TenantName = "ChattLab"
+	pol.Logon.SessionAccount = "chattlab"
+	pol.Logon.DefaultProvider = "windows"
 	b, _ := json.Marshal(pol)
-	if string(b) != `{"login":{"default_method":"badge"},"badge":{"format":"wiegand26"}}` {
+	if string(b) != `{"login":{"default_method":"badge"},"badge":{"format":"wiegand26"},"tenant_name":"ChattLab","logon":{"session_account":"chattlab","default_provider":"windows"}}` {
 		t.Fatalf("wire: %s", b)
 	}
 }

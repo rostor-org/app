@@ -58,13 +58,17 @@ const (
 // CodeContinue is the reason code that accompanies DecisionContinue.
 const CodeContinue = "auth.continue"
 
-// VerifyResponse is the §1.2 response body for any decision.
+// VerifyResponse is the §1.2 response body for any decision. SessionAccount
+// ("Shared session account", v0.13.0) names a local account the session
+// must run as instead of the person's own derived account; the person is
+// still the one core audited and the one named in the deputy's log.
 type VerifyResponse struct {
-	Decision  string     `json:"decision"`
-	Principal *Principal `json:"principal,omitempty"`
-	Assurance string     `json:"assurance,omitempty"`
-	Reason    []Reason   `json:"reason,omitempty"`
-	Message   string     `json:"message,omitempty"`
+	Decision       string     `json:"decision"`
+	Principal      *Principal `json:"principal,omitempty"`
+	Assurance      string     `json:"assurance,omitempty"`
+	Reason         []Reason   `json:"reason,omitempty"`
+	Message        string     `json:"message,omitempty"`
+	SessionAccount string     `json:"session_account,omitempty"`
 }
 
 // Verifier is the one core operation the logon path depends on.
@@ -158,7 +162,14 @@ const (
 // PolicyResponse is GET /v1/devices/self/policy (§1.5): the tenant's auth
 // policy as it applies to this device. Login.DefaultMethod is one of the
 // DefaultMethod* constants; Badge.Format names the card format the tenant's
-// readers produce ("none" when badges are not in use).
+// readers produce ("none" when badges are not in use). TenantName (§1.5a,
+// v0.13.0) is the organisation's display name for the lock-screen heading;
+// a core older than the contract omits it and the heading is rendered
+// without it. Logon (v0.13.0) carries the lock-screen policy: which tile
+// is selected when the lock screen appears (DefaultProvider, one of the
+// DefaultProvider* constants, empty meaning rostor) and the shared local
+// account a session runs as, if any (SessionAccount; informational here,
+// the value that counts arrives on the ALLOW itself).
 type PolicyResponse struct {
 	Login struct {
 		DefaultMethod string `json:"default_method"`
@@ -166,6 +177,11 @@ type PolicyResponse struct {
 	Badge struct {
 		Format string `json:"format"`
 	} `json:"badge"`
+	TenantName string `json:"tenant_name"`
+	Logon      struct {
+		SessionAccount  string `json:"session_account"`
+		DefaultProvider string `json:"default_provider"`
+	} `json:"logon"`
 }
 
 // Default sign-in methods a policy can name (§1.5).
@@ -173,4 +189,12 @@ const (
 	DefaultMethodPassword = "password"
 	DefaultMethodPasskey  = "passkey"
 	DefaultMethodBadge    = "badge"
+)
+
+// Lock-screen default providers a policy can name ("Which tile is the
+// default", v0.13.0): rostor selects the Rostor tile, windows leaves the
+// selection to Windows' own password tile with Rostor one click away.
+const (
+	DefaultProviderRostor  = "rostor"
+	DefaultProviderWindows = "windows"
 )

@@ -112,3 +112,77 @@ func TestUIReplyDefaultMethod(t *testing.T) {
 		t.Fatalf("got %+v %v", old, err)
 	}
 }
+
+func TestUIReplyBadgeFirstStrings(t *testing.T) {
+	// v0.13.0: heading, switch_to_username and switch_to_badge ride in
+	// `strings`, after the seven original keys, and round-trip intact.
+	var buf bytes.Buffer
+	in := Reply{OK: true, DefaultMethod: "badge", Strings: &UIStrings{TileLabel: "Tap your badge", UsernameLabel: "Badge, or username",
+		PasswordLabel: "Password", SubmitLabel: "Sign in", Connecting: "Contacting Rostor…", PinLabel: "PIN", BadgeHint: "Tap your badge or type your username",
+		Heading: "Tap your badge · ChattLab", SwitchToUsername: "Use username", SwitchToBadge: "Use badge"}}
+	if err := Write(&buf, in); err != nil {
+		t.Fatal(err)
+	}
+	wire := strings.TrimSpace(buf.String())
+	if !strings.Contains(wire, `"badge_hint":"Tap your badge or type your username","heading":"Tap your badge · ChattLab","switch_to_username":"Use username","switch_to_badge":"Use badge"}`) {
+		t.Fatalf("wire: %s", wire)
+	}
+	out, err := ReadReply(bufio.NewReader(&buf))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.Strings == nil || *out.Strings != *in.Strings {
+		t.Fatalf("got %+v", out.Strings)
+	}
+
+	// Empty new strings are omitted, so a reply that does not carry them is
+	// byte-for-byte the pre-v0.13.0 shape.
+	buf.Reset()
+	_ = Write(&buf, Reply{OK: true, DefaultMethod: "password", Strings: &UIStrings{TileLabel: "Rostor", UsernameLabel: "Username",
+		PasswordLabel: "Password", SubmitLabel: "Sign in", Connecting: "Contacting Rostor…", PinLabel: "PIN", BadgeHint: "Tap your badge or type your username"}})
+	if got, want := strings.TrimSpace(buf.String()), `{"ok":true,"strings":{"tile_label":"Rostor","username_label":"Username","password_label":"Password","submit_label":"Sign in","connecting":"Contacting Rostor…","pin_label":"PIN","badge_hint":"Tap your badge or type your username"},"default_method":"password"}`; got != want {
+		t.Fatalf("got %s\nwant %s", got, want)
+	}
+	for _, k := range []string{"heading", "switch_to_username", "switch_to_badge"} {
+		if strings.Contains(buf.String(), k) {
+			t.Fatalf("%s leaked into %s", k, buf.String())
+		}
+	}
+
+	// An older deputy's reply (no new strings) parses with them empty, which
+	// is what tells the credential provider to keep its previous labels.
+	old, err := ReadReply(bufio.NewReader(strings.NewReader(`{"ok":true,"strings":{"tile_label":"Rostor"},"default_method":"badge"}` + "\n")))
+	if err != nil || old.Strings == nil || old.Strings.Heading != "" || old.Strings.SwitchToUsername != "" || old.Strings.SwitchToBadge != "" {
+		t.Fatalf("got %+v %v", old, err)
+	}
+}
+
+func TestUIReplyDefaultProvider(t *testing.T) {
+	// "Which tile is the default" (v0.13.0): default_provider rides on the
+	// `ui` reply beside default_method and nowhere else.
+	var buf bytes.Buffer
+	_ = Write(&buf, Reply{OK: true, DefaultMethod: "password", DefaultProvider: "windows", Strings: &UIStrings{TileLabel: "Rostor"}})
+	if got, want := strings.TrimSpace(buf.String()), `{"ok":true,"strings":{"tile_label":"Rostor","username_label":"","password_label":"","submit_label":"","connecting":"","pin_label":"","badge_hint":""},"default_method":"password","default_provider":"windows"}`; got != want {
+		t.Fatalf("got %s\nwant %s", got, want)
+	}
+	out, err := ReadReply(bufio.NewReader(&buf))
+	if err != nil || out.DefaultProvider != "windows" {
+		t.Fatalf("got %+v %v", out, err)
+	}
+	for _, rep := range []Reply{
+		{OK: true, LocalUser: "dan", LocalSecret: "x"},
+		{OK: false, Code: "auth.failed", Message: "Sign-in failed."},
+		{OK: true, DefaultMethod: "password", Strings: &UIStrings{TileLabel: "Rostor"}},
+	} {
+		buf.Reset()
+		_ = Write(&buf, rep)
+		if strings.Contains(buf.String(), "default_provider") {
+			t.Fatalf("default_provider leaked into %s", buf.String())
+		}
+	}
+	// A pre-v0.13.0 reply parses with it empty; the credprov treats that as rostor.
+	old, err := ReadReply(bufio.NewReader(strings.NewReader(`{"ok":true,"strings":{"tile_label":"Rostor"},"default_method":"badge"}` + "\n")))
+	if err != nil || old.DefaultProvider != "" {
+		t.Fatalf("got %+v %v", old, err)
+	}
+}

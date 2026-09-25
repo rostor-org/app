@@ -80,10 +80,35 @@ func (b *Broker) Handle(ctx context.Context, req pipeproto.Request) pipeproto.Re
 	}
 }
 
+// TenantName is the organisation name from the current policy (§1.5a), or
+// "" before any policy is known or when core did not send one.
+func (b *Broker) TenantName() string {
+	p, ok := b.policy.Load().(core.PolicyResponse)
+	if !ok {
+		return ""
+	}
+	return p.TenantName
+}
+
+// DefaultProvider is which tile the lock screen selects ("Which tile is the
+// default", v0.13.0): windows only when the policy says so; rostor before
+// any policy is known, when core sent nothing, and for any value this
+// deputy does not recognise, so the credprov is never handed a choice it
+// cannot act on.
+func (b *Broker) DefaultProvider() string {
+	p, ok := b.policy.Load().(core.PolicyResponse)
+	if ok && p.Logon.DefaultProvider == core.DefaultProviderWindows {
+		return core.DefaultProviderWindows
+	}
+	return core.DefaultProviderRostor
+}
+
 // ui builds the §2.1 reply. When the effective policy puts badges first the
-// tile and identifier labels switch to their badge-first catalog entries;
-// the credprov renders whatever it is given, so a policy change shows at
-// the next lock without a credprov update.
+// tile and identifier labels switch to their badge-first catalog entries and
+// the heading reads "Tap your badge · <tenant>" instead of "Sign in to
+// <tenant>" (v0.13.0); the credprov renders whatever it is given, so a
+// policy change shows at the next lock without a credprov update. A tenant
+// with no name gets the "_no_tenant" heading so nothing dangles.
 func (b *Broker) ui(locale string) pipeproto.Reply {
 	m, err := catalog.UI(locale)
 	if err != nil {
@@ -91,18 +116,27 @@ func (b *Broker) ui(locale string) pipeproto.Reply {
 		return pipeproto.Reply{OK: false, Code: "deputy.bad_request"}
 	}
 	method := b.DefaultMethod()
-	tileKey, userKey := "tile_label", "username_label"
+	tileKey, userKey, headKey := "tile_label", "username_label", "heading"
 	if method == core.DefaultMethodBadge {
-		tileKey, userKey = "tile_label_badge", "username_label_badge"
+		tileKey, userKey, headKey = "tile_label_badge", "username_label_badge", "heading_badge"
 	}
-	return pipeproto.Reply{OK: true, DefaultMethod: method, Strings: &pipeproto.UIStrings{
-		TileLabel:     m[tileKey],
-		UsernameLabel: m[userKey],
-		PasswordLabel: m["password_label"],
-		SubmitLabel:   m["submit_label"],
-		Connecting:    m["connecting"],
-		PinLabel:      m["pin_label"],
-		BadgeHint:     m["badge_hint"],
+	tenant := b.TenantName()
+	if tenant == "" {
+		if s, ok := m[headKey+"_no_tenant"]; ok && s != "" {
+			headKey += "_no_tenant"
+		}
+	}
+	return pipeproto.Reply{OK: true, DefaultMethod: method, DefaultProvider: b.DefaultProvider(), Strings: &pipeproto.UIStrings{
+		TileLabel:        m[tileKey],
+		UsernameLabel:    m[userKey],
+		PasswordLabel:    m["password_label"],
+		SubmitLabel:      m["submit_label"],
+		Connecting:       m["connecting"],
+		PinLabel:         m["pin_label"],
+		BadgeHint:        m["badge_hint"],
+		Heading:          catalog.Fill(m[headKey], map[string]string{"tenant": tenant}),
+		SwitchToUsername: m["switch_to_username"],
+		SwitchToBadge:    m["switch_to_badge"],
 	}}
 }
 
@@ -185,22 +219,43 @@ func tail(s string, n int) string {
 
 // allow builds the ALLOW reply. who is the log label; presented is the
 // identifier as typed, empty for a badge.
+//
+// The local account is normally derived from the principal's username. When
+// core names a shared session account ("Shared session account", v0.13.0)
+// that account is the one created or enabled and handed to LogonUI — owned
+// and rotated exactly like a derived one, display name equal to its own
+// name — and the person's derived account is not touched; the log line and
+// the sign-in hook still name the person.
 func (b *Broker) allow(locale, who, presented string, resp *core.VerifyResponse) pipeproto.Reply {
 	if resp.Principal == nil || resp.Principal.Username == "" {
 		b.logf("logon %q: ALLOW without principal", who)
 		return b.fail(locale, "deputy.local_account_failed", "")
 	}
 	username, ok := localuser.NormalizeUsername(resp.Principal.Username)
+	displayName := resp.Principal.DisplayName
+	shared := resp.SessionAccount != ""
+	if shared {
+		username, ok = localuser.NormalizeUsername(resp.SessionAccount)
+		displayName = username
+	}
 	if !ok {
-		b.logf("logon %q: principal username %q not usable locally", who, resp.Principal.Username)
+		if shared {
+			b.logf("logon %q: session account %q not usable locally", who, resp.SessionAccount)
+		} else {
+			b.logf("logon %q: principal username %q not usable locally", who, resp.Principal.Username)
+		}
 		return b.fail(locale, "deputy.local_account_failed", "")
 	}
-	secret, err := b.Accounts.EnsureEnabled(username, resp.Principal.DisplayName)
+	secret, err := b.Accounts.EnsureEnabled(username, displayName)
 	if err != nil {
 		b.logf("logon %q: local account %q: %v", who, username, err)
 		return b.fail(locale, "deputy.local_account_failed", "")
 	}
-	b.logf("logon %q: ALLOW as local %q (assurance %s)", who, username, resp.Assurance)
+	if shared {
+		b.logf("logon %q: ALLOW as shared local %q for %q (assurance %s)", who, username, resp.Principal.Username, resp.Assurance)
+	} else {
+		b.logf("logon %q: ALLOW as local %q (assurance %s)", who, username, resp.Assurance)
+	}
 	if hook := b.OnLogon; hook != nil {
 		identifier := presented
 		if identifier == "" {

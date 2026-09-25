@@ -139,7 +139,14 @@ func buildBroker(logger *log.Logger, mock bool) (*broker.Broker, error) {
 		Logger:   logger,
 	}
 	if mock {
-		b.Verifier = core.Mock{AllowIdentifier: "testuser"}
+		m := core.Mock{AllowIdentifier: "testuser"}
+		b.Verifier = m
+		// No heartbeat runs against the mock, so hand it the mock policy
+		// here: password first, tenant "Mock Lab" (§1.5a), which is what
+		// makes the heading visible on a workstation without a core.
+		if pol, err := m.Policy(context.Background()); err == nil {
+			b.SetPolicy(*pol)
+		}
 		return b, nil
 	}
 	cfg, err := enroll.LoadConfig(paths.DeputyJSON)
@@ -245,8 +252,9 @@ func heartbeat(mgr *trust.Manager, coord *scripts.Coordinator, b *broker.Broker,
 		if pol, err := mgr.Client.Policy(ctx); err != nil {
 			logger.Printf("policy: %v (keeping %s)", err, b.DefaultMethod())
 		} else {
-			if pol.Login.DefaultMethod != b.DefaultMethod() {
-				logger.Printf("policy: default method %s (badge format %s)", pol.Login.DefaultMethod, pol.Badge.Format)
+			if pol.Login.DefaultMethod != b.DefaultMethod() || pol.TenantName != b.TenantName() || pol.Logon.DefaultProvider != b.DefaultProvider() {
+				logger.Printf("policy: default method %s (badge format %s, tenant %q, default provider %q, session account %q)",
+					pol.Login.DefaultMethod, pol.Badge.Format, pol.TenantName, pol.Logon.DefaultProvider, pol.Logon.SessionAccount)
 			}
 			b.SetPolicy(*pol)
 		}

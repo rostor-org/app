@@ -14,15 +14,17 @@ import (
 
 type fakeAccounts struct {
 	enabled  []string
+	names    []string // display name passed with each EnsureEnabled
 	disabled []string
 	failWith error
 }
 
-func (f *fakeAccounts) EnsureEnabled(u, _ string) (string, error) {
+func (f *fakeAccounts) EnsureEnabled(u, displayName string) (string, error) {
 	if f.failWith != nil {
 		return "", f.failWith
 	}
 	f.enabled = append(f.enabled, u)
+	f.names = append(f.names, displayName)
 	return "SECRETSECRETSECRETSECRETSECRET12", nil
 }
 
@@ -80,12 +82,13 @@ func TestUIFollowsPolicy(t *testing.T) {
 	if rep.DefaultMethod != "badge" || rep.Strings.TileLabel != "Tap your badge" || rep.Strings.UsernameLabel != "Badge, or username" {
 		t.Fatalf("badge policy: %+v %+v", rep.DefaultMethod, rep.Strings)
 	}
-	// Only the tile and identifier labels change; the rest of the strings
-	// (including badge_hint, which the tile shows on both) are untouched.
+	// Only the tile and identifier labels and the heading change; the rest
+	// of the strings (including badge_hint, which the tile shows on both)
+	// are untouched.
 	badge := *rep.Strings
-	badge.TileLabel, badge.UsernameLabel = password.TileLabel, password.UsernameLabel
+	badge.TileLabel, badge.UsernameLabel, badge.Heading = password.TileLabel, password.UsernameLabel, password.Heading
 	if badge != password {
-		t.Fatalf("badge policy changed more than the two labels: %+v vs %+v", rep.Strings, password)
+		t.Fatalf("badge policy changed more than the two labels and the heading: %+v vs %+v", rep.Strings, password)
 	}
 
 	// Passkey is reported as such but rendered with the password strings:
@@ -120,7 +123,8 @@ func TestUIFollowsPolicy(t *testing.T) {
 }
 
 func TestUIWithMockPolicy(t *testing.T) {
-	// --mock-core hands the broker the mock's policy: password, no badges.
+	// --mock-core hands the broker the mock's policy: password, no badges,
+	// tenant "Mock Lab".
 	b := &Broker{Verifier: core.Mock{AllowIdentifier: "testuser"}, Accounts: &fakeAccounts{}}
 	pol, err := core.Mock{}.Policy(context.Background())
 	if err != nil {
@@ -128,8 +132,71 @@ func TestUIWithMockPolicy(t *testing.T) {
 	}
 	b.SetPolicy(*pol)
 	rep := b.Handle(context.Background(), pipeproto.Request{Op: "ui"})
-	if rep.DefaultMethod != "password" || rep.Strings.TileLabel != "Rostor" {
+	if rep.DefaultMethod != "password" || rep.Strings.TileLabel != "Rostor" || rep.Strings.Heading != "Sign in to Mock Lab" {
 		t.Fatalf("got %+v %+v", rep.DefaultMethod, rep.Strings)
+	}
+}
+
+func TestUIHeadingAndSwitchStrings(t *testing.T) {
+	// v0.13.0 "Badge-first tile and the organisation name": the heading
+	// names the tenant and follows the default method; the two command-link
+	// texts are always present so the credprov can offer the other method.
+	b := &Broker{}
+	ui := func() pipeproto.UIStrings {
+		t.Helper()
+		rep := b.Handle(context.Background(), pipeproto.Request{Op: "ui", Locale: "en-US"})
+		if !rep.OK || rep.Strings == nil {
+			t.Fatalf("bad ui reply: %+v", rep)
+		}
+		return *rep.Strings
+	}
+	// No policy at all: password, no tenant, nothing dangling.
+	s := ui()
+	if s.Heading != "Sign in" || s.SwitchToUsername != "Use username" || s.SwitchToBadge != "Use badge" {
+		t.Fatalf("no policy: %+v", s)
+	}
+
+	var pol core.PolicyResponse
+	pol.Login.DefaultMethod = core.DefaultMethodPassword
+	pol.TenantName = "ChattLab"
+	b.SetPolicy(pol)
+	if s = ui(); s.Heading != "Sign in to ChattLab" || s.SwitchToUsername != "Use username" || s.SwitchToBadge != "Use badge" {
+		t.Fatalf("password+tenant: %+v", s)
+	}
+
+	pol.Login.DefaultMethod = core.DefaultMethodBadge
+	b.SetPolicy(pol)
+	if s = ui(); s.Heading != "Tap your badge · ChattLab" || s.TileLabel != "Tap your badge" || s.SwitchToUsername != "Use username" || s.SwitchToBadge != "Use badge" {
+		t.Fatalf("badge+tenant: %+v", s)
+	}
+
+	// Passkey renders like password (the tile still collects a username).
+	pol.Login.DefaultMethod = core.DefaultMethodPasskey
+	b.SetPolicy(pol)
+	if s = ui(); s.Heading != "Sign in to ChattLab" {
+		t.Fatalf("passkey+tenant: %+v", s)
+	}
+
+	// A core that sends no tenant name (older than §1.5a, or an unnamed
+	// tenant): the " to …" / " · …" tail is dropped, not left half-empty.
+	pol.TenantName = ""
+	pol.Login.DefaultMethod = core.DefaultMethodPassword
+	b.SetPolicy(pol)
+	if s = ui(); s.Heading != "Sign in" {
+		t.Fatalf("password, no tenant: %+v", s)
+	}
+	pol.Login.DefaultMethod = core.DefaultMethodBadge
+	b.SetPolicy(pol)
+	if s = ui(); s.Heading != "Tap your badge" || s.TileLabel != "Tap your badge" {
+		t.Fatalf("badge, no tenant: %+v", s)
+	}
+	if b.TenantName() != "" {
+		t.Fatalf("TenantName: %q", b.TenantName())
+	}
+	pol.TenantName = "ChattLab"
+	b.SetPolicy(pol)
+	if b.TenantName() != "ChattLab" {
+		t.Fatalf("TenantName: %q", b.TenantName())
 	}
 }
 
@@ -429,5 +496,111 @@ func TestOnLogonHookNotCalledOnDenyOrFailure(t *testing.T) {
 	rep := (&Broker{Verifier: allow, Accounts: &fakeAccounts{}}).Handle(context.Background(), pipeproto.Request{Op: "logon", Identifier: "dan"})
 	if !rep.OK {
 		t.Fatalf("nil hook: %+v", rep)
+	}
+}
+
+// ---- lock-screen default tile (v0.13.0) -------------------------------------
+
+func TestUIDefaultProvider(t *testing.T) {
+	b := &Broker{}
+	ui := func() pipeproto.Reply {
+		t.Helper()
+		rep := b.Handle(context.Background(), pipeproto.Request{Op: "ui"})
+		if !rep.OK {
+			t.Fatalf("bad ui reply: %+v", rep)
+		}
+		return rep
+	}
+	// No policy yet: the Rostor tile is the default.
+	if rep := ui(); rep.DefaultProvider != "rostor" {
+		t.Fatalf("no policy: %+v", rep)
+	}
+	var pol core.PolicyResponse
+	pol.Login.DefaultMethod = core.DefaultMethodPassword
+	b.SetPolicy(pol) // core sent no logon block: still rostor
+	if rep := ui(); rep.DefaultProvider != "rostor" {
+		t.Fatalf("empty: %+v", rep)
+	}
+	pol.Logon.DefaultProvider = core.DefaultProviderWindows
+	b.SetPolicy(pol)
+	if rep := ui(); rep.DefaultProvider != "windows" {
+		t.Fatalf("windows: %+v", rep)
+	}
+	pol.Logon.DefaultProvider = core.DefaultProviderRostor
+	b.SetPolicy(pol)
+	if rep := ui(); rep.DefaultProvider != "rostor" {
+		t.Fatalf("rostor: %+v", rep)
+	}
+	// A value this deputy does not know is never forwarded to the credprov.
+	pol.Logon.DefaultProvider = "macos"
+	b.SetPolicy(pol)
+	if rep := ui(); rep.DefaultProvider != "rostor" {
+		t.Fatalf("unknown: %+v", rep)
+	}
+	// It never appears on a logon reply.
+	rep := (&Broker{Verifier: core.Mock{AllowIdentifier: "testuser"}, Accounts: &fakeAccounts{}}).Handle(
+		context.Background(), pipeproto.Request{Op: "logon", Identifier: "testuser", Secret: "x"})
+	if !rep.OK || rep.DefaultProvider != "" {
+		t.Fatalf("logon reply: %+v", rep)
+	}
+}
+
+// ---- shared session account (v0.13.0) ---------------------------------------
+
+func TestSharedSessionAccountUsedWhenPresent(t *testing.T) {
+	acc := &fakeAccounts{}
+	h := &hookCalls{done: make(chan struct{}, 1)}
+	v := &fakeVerifier{resp: &core.VerifyResponse{Decision: "ALLOW", SessionAccount: "ChattLab",
+		Principal: &core.Principal{ID: "usr_9", Username: "Dan.Evans", DisplayName: "Dan Evans"}}}
+	b := &Broker{Verifier: v, Accounts: acc, OnLogon: h.fn}
+	rep := b.Handle(context.Background(), pipeproto.Request{Op: "logon", Identifier: "dan", Secret: "p"})
+	if !rep.OK || rep.LocalUser != "chattlab" || len(rep.LocalSecret) != 32 {
+		t.Fatalf("got %+v", rep)
+	}
+	// Only the shared account is touched, never the person's derived one,
+	// and its display name is its own name.
+	if len(acc.enabled) != 1 || acc.enabled[0] != "chattlab" || acc.names[0] != "chattlab" {
+		t.Fatalf("accounts: %+v", acc)
+	}
+	// The sign-in hook still names the person, with the shared account as the local one.
+	if got := h.wait(t); got != [3]string{"dan", "usr_9", "chattlab"} {
+		t.Fatalf("hook args: %v", got)
+	}
+	// Same on the badge path.
+	rep = b.Handle(context.Background(), pipeproto.Request{Op: "logon", Badge: &pipeproto.Badge{Number: "123456"}})
+	if !rep.OK || rep.LocalUser != "chattlab" {
+		t.Fatalf("badge: got %+v", rep)
+	}
+	if got := h.wait(t); got != [3]string{"Dan.Evans", "usr_9", "chattlab"} {
+		t.Fatalf("badge hook args: %v", got)
+	}
+}
+
+func TestDerivedAccountWhenNoSessionAccount(t *testing.T) {
+	acc := &fakeAccounts{}
+	v := &fakeVerifier{resp: &core.VerifyResponse{Decision: "ALLOW",
+		Principal: &core.Principal{ID: "usr_9", Username: "Dan.Evans", DisplayName: "Dan Evans"}}}
+	rep := (&Broker{Verifier: v, Accounts: acc}).Handle(context.Background(), pipeproto.Request{Op: "logon", Identifier: "dan", Secret: "p"})
+	if !rep.OK || rep.LocalUser != "dan.evans" {
+		t.Fatalf("got %+v", rep)
+	}
+	if len(acc.enabled) != 1 || acc.enabled[0] != "dan.evans" || acc.names[0] != "Dan Evans" {
+		t.Fatalf("accounts: %+v", acc)
+	}
+}
+
+func TestUnusableSessionAccountFailsCleanly(t *testing.T) {
+	for _, bad := range []string{"chatt lab", "a-name-that-is-far-too-long-for-sam", "kiosk/1"} {
+		acc := &fakeAccounts{}
+		v := &fakeVerifier{resp: &core.VerifyResponse{Decision: "ALLOW", SessionAccount: bad,
+			Principal: &core.Principal{ID: "usr_9", Username: "dan"}}}
+		rep := (&Broker{Verifier: v, Accounts: acc}).Handle(context.Background(), pipeproto.Request{Op: "logon", Identifier: "dan", Secret: "p"})
+		if rep.OK || rep.Code != "deputy.local_account_failed" || rep.Message == "" || rep.LocalSecret != "" {
+			t.Fatalf("%q: got %+v", bad, rep)
+		}
+		// Neither the shared name nor the person's derived account is touched.
+		if len(acc.enabled)+len(acc.disabled) != 0 {
+			t.Fatalf("%q: accounts touched: %+v", bad, acc)
+		}
 	}
 }
