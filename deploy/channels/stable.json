@@ -1,24 +1,24 @@
 {
   "channel": "stable",
-  "version": "v0.11.1",
-  "published": "2026-09-25T16:18:52.540349Z",
-  "notes": "Wording: scripts are described as scripts for devices rather than PowerShell for workstations, ahead of the macOS and Linux agents.",
+  "version": "v0.12.0",
+  "published": "2026-09-25T16:36:48.496872Z",
+  "notes": "The Windows agent is now the deputy: service RostorDeputy, binary rostor-deputy.exe. Install the v0.12.0 bundle on each workstation; it migrates the existing install in place and keeps the enrollment. The word agent now means an AI agent only.",
   "files": {
-    "agent-windows-amd64": {
-      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/588739026",
-      "sha256": "fec49f2fa91e09d9ad3abc507a1255509c194d424ebd056239450516eff842e7",
+    "deputy-windows-amd64": {
+      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/588770988",
+      "sha256": "734b7d9033cba88a9bbb64ee56a80dd2ac2d5d41e21889f1dcc9483b2ec3ed03",
       "size": 8028672
     },
     "linux-amd64": {
-      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/588739027",
-      "sha256": "e5f889ab459304bdd7caf6a164e1eafd012fb4771ea0b7bbcbf526fe68ed7fa4",
+      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/588770986",
+      "sha256": "6d85f8700f146f60377b3e35133db66967e5bacbae79a3098aeb7f84e15709ec",
       "size": 24359072
     },
     "linux-arm64": {
-      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/588739029",
-      "sha256": "eea71e4a6956d860ba26577a0a895a474f10aef534c8fffb7e0a10ecdc4d1b96",
+      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/588770990",
+      "sha256": "522baa12a5269d314d2590f99c86ee3a33af9c65f4cca5df90fa66d0107f50c6",
       "size": 22937760
     }
   },
-  "signature": "q4E7OBv92PGmKFExIi1HQwDVcbeZ7c0j7aAcM0hoBO4EnfQDToka+E368tsVDqQgKQc7cEMqpaWgjlbFhSp3Cg=="
+  "signature": "nm5hoQ1O33oxWgQVVHDwAlvsgvcPyVanNKU5QpMKNI6TcLVnR8Rptr27ebN5qAZje3Ox1B/VUjNGqrJJ9ixwCg=="
 }
