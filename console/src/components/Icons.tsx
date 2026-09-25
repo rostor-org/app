@@ -27,6 +27,10 @@ export const IconAccess = () => (
 export const IconDevices = () => (
   <svg {...P}><rect x="2" y="3" width="12" height="8" rx="1.5" fill="currentColor" /><rect x="5" y="12" width="6" height="1.6" fill="currentColor" /></svg>
 )
+/** Scripts (a terminal window with a prompt). */
+export const IconScripts = () => (
+  <svg {...P}><rect x="2" y="3" width="12" height="10" rx="1.5" fill="currentColor" /><path d="M4.5 6.5l2 1.5-2 1.5M8 9.5h3.5" fill="none" stroke="var(--rail)" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" /></svg>
+)
 export const IconAudit = () => (
   <svg {...P}><path d="M3 2h10v12H3z" fill="currentColor" /><path d="M5 5h6M5 8h6M5 11h4" stroke="var(--rail)" strokeWidth="1.4" /></svg>
 )

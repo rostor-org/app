@@ -11,6 +11,7 @@ import { People } from './screens/People'
 import { Groups } from './screens/Groups'
 import { Access } from './screens/Access'
 import { Devices } from './screens/Devices'
+import { Scripts } from './screens/Scripts'
 import { Audit } from './screens/Audit'
 import { Plugins } from './screens/Plugins'
 import { System } from './screens/System'
@@ -67,6 +68,7 @@ const routes = [
                   { path: '/groups/:name', element: <Groups /> },
                   { path: '/access', element: <Access /> },
                   { path: '/devices', element: <Devices /> },
+                  { path: '/scripts', element: <Scripts /> },
                   { path: '/audit', element: <Audit /> },
                   { path: '/plugins', element: <Plugins /> },
                   { path: '/system', element: <System /> },

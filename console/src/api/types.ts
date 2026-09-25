@@ -474,6 +474,75 @@ export interface AgentGrant {
   expires_at?: string | null
 }
 
+// ---- scripts (SPEC-scripts, v0.9.0) -----------------------------------------
+// Text pushed to workstations and run by the agent in position order. Every
+// write needs scripts.write and an AL2 session (403 request.assurance_required).
+
+export type ScriptMode = 'immediate' | 'signin'
+export type ScriptTargetKind = 'all' | 'group'
+/** How a run ended; the agent reports one of these (others render as their code). */
+export type ScriptRunStatus = 'ok' | 'failed' | 'timeout' | 'error' | (string & {})
+export interface ScriptAssignment {
+  id: string
+  /** `all` targets every device of a resource type (id "workstation"); `group` names a device group. */
+  target: { kind: ScriptTargetKind; id: string; name: string }
+  mode: ScriptMode
+}
+export interface ScriptLastRun {
+  at: string
+  exit_code: number
+  status: ScriptRunStatus
+  device: { id: string; name: string }
+}
+export interface Script {
+  id: string
+  name: string
+  description: string
+  language: string // powershell only in this slice
+  position: number
+  version: number
+  updated_at: string
+  updated_by: { id: string; name: string }
+  assignments: ScriptAssignment[]
+  last_run: ScriptLastRun | null
+}
+export interface ScriptRun {
+  id: string
+  device: { id: string; name: string }
+  /** The person signing in, for sign-in runs; null for immediate runs. */
+  principal: { id: string; name: string } | null
+  version: number
+  mode: ScriptMode
+  started_at: string
+  finished_at: string
+  exit_code: number
+  status: ScriptRunStatus
+  /** Last 4 KB of stdout+stderr. */
+  output_tail: string
+}
+/** GET /v1/admin/scripts/{id}: the list row plus the body and the last 50 runs, newest first. */
+export interface ScriptDetail extends Script {
+  body: string
+  runs: ScriptRun[]
+}
+export interface CreateScript {
+  name: string
+  description?: string
+  language?: string
+  body: string
+}
+export interface UpdateScript {
+  name?: string
+  description?: string
+  body?: string
+}
+export interface AssignScript {
+  target_kind: ScriptTargetKind
+  /** "workstation" for `all`, the group name for `group`. */
+  target: string
+  mode: ScriptMode
+}
+
 export interface CreateGrant {
   subject_kind: 'principal' | 'group'
   subject: string
@@ -574,6 +643,20 @@ export interface Api {
   revokeGrant(id: string): Promise<void>
   devices(q?: string): Promise<List<Device>>
   enrollmentToken(resourceType: string, ttlSeconds: number): Promise<EnrollmentToken>
+  /** Scripts in position order, without bodies (scripts.read). */
+  scripts(): Promise<List<Script>>
+  script(id: string): Promise<ScriptDetail>
+  /** Writes need scripts.write and an AL2 session. Create and update answer with the script (body included). */
+  createScript(body: CreateScript): Promise<Script & { body?: string }>
+  /** The version increments when the body changes. */
+  updateScript(id: string, body: UpdateScript): Promise<Script & { body?: string }>
+  deleteScript(id: string): Promise<void>
+  /** Positions follow the order of `ids`. */
+  orderScripts(ids: string[]): Promise<void>
+  assignScript(id: string, body: AssignScript): Promise<ScriptAssignment>
+  unassignScript(id: string, aid: string): Promise<void>
+  /** Run history, newest first; the detail already carries the last 50. */
+  scriptRuns(id: string, limit?: number): Promise<{ items: ScriptRun[] }>
   audit(q?: AuditQuery): Promise<AuditPage>
   auditVerify(): Promise<AuditVerify>
   why(q: WhyQuery): Promise<Explanation>

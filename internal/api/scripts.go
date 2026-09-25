@@ -216,9 +216,11 @@ func (s *Server) handleCreateScript(w http.ResponseWriter, r *http.Request) {
 		if err := tx.QueryRow(r.Context(), `SELECT coalesce(max(position),0)+10 FROM scripts WHERE tenant_id=$1`, s.TenantID).Scan(&pos); err != nil {
 			return err
 		}
-		_, err := tx.Exec(r.Context(), `INSERT INTO scripts (tenant_id, id, name, description, language, body, version, position, updated_by)
-			VALUES ($1,$2,$3,$4,$5,$6,1,$7,$8)`, s.TenantID, id, name, desc, lang, *req.Body, pos, actorOf(r).ID)
-		return err
+		if _, err := tx.Exec(r.Context(), `INSERT INTO scripts (tenant_id, id, name, description, language, body, version, position, updated_by)
+			VALUES ($1,$2,$3,$4,$5,$6,1,$7,$8)`, s.TenantID, id, name, desc, lang, *req.Body, pos, actorOf(r).ID); err != nil {
+			return err
+		}
+		return directory.Emit(r.Context(), tx, s.TenantID, "script.created", actorOf(r), "script", id)
 	})
 	if err != nil {
 		s.fail(w, r, err)
@@ -289,9 +291,11 @@ func (s *Server) handleUpdateScript(w http.ResponseWriter, r *http.Request) {
 			version++
 			bumped = true
 		}
-		_, err := tx.Exec(r.Context(), `UPDATE scripts SET name=$3, description=$4, body=$5, version=$6, updated_at=now(), updated_by=$7 WHERE tenant_id=$1 AND id=$2`,
-			s.TenantID, id, name, desc, body, version, actorOf(r).ID)
-		return err
+		if _, err := tx.Exec(r.Context(), `UPDATE scripts SET name=$3, description=$4, body=$5, version=$6, updated_at=now(), updated_by=$7 WHERE tenant_id=$1 AND id=$2`,
+			s.TenantID, id, name, desc, body, version, actorOf(r).ID); err != nil {
+			return err
+		}
+		return directory.Emit(r.Context(), tx, s.TenantID, "script.updated", actorOf(r), "script", id)
 	})
 	if err != nil {
 		s.fail(w, r, err)
@@ -315,7 +319,7 @@ func (s *Server) handleDeleteScript(w http.ResponseWriter, r *http.Request) {
 		if tag.RowsAffected() == 0 {
 			return directory.Err("request.not_found", "type", "script")
 		}
-		return nil
+		return directory.Emit(r.Context(), tx, s.TenantID, "script.deleted", actorOf(r), "script", id)
 	})
 	if err != nil {
 		s.fail(w, r, err)
@@ -373,7 +377,7 @@ func (s *Server) handleOrderScripts(w http.ResponseWriter, r *http.Request) {
 			}
 			pos += 10
 		}
-		return nil
+		return directory.Emit(r.Context(), tx, s.TenantID, "script.ordered", actorOf(r), "script", "")
 	})
 	if err != nil {
 		s.fail(w, r, err)
@@ -430,9 +434,11 @@ func (s *Server) handleAssignScript(w http.ResponseWriter, r *http.Request) {
 		if !exists {
 			return directory.Err("request.not_found", "type", "script")
 		}
-		_, err := tx.Exec(r.Context(), `INSERT INTO script_assignments (tenant_id, id, script_id, target_kind, target_id, mode) VALUES ($1,$2,$3,$4,$5,$6)`,
-			s.TenantID, aid, id, req.TargetKind, targetID, req.Mode)
-		return err
+		if _, err := tx.Exec(r.Context(), `INSERT INTO script_assignments (tenant_id, id, script_id, target_kind, target_id, mode) VALUES ($1,$2,$3,$4,$5,$6)`,
+			s.TenantID, aid, id, req.TargetKind, targetID, req.Mode); err != nil {
+			return err
+		}
+		return directory.Emit(r.Context(), tx, s.TenantID, "script.assigned", actorOf(r), "script", id)
 	})
 	if err != nil {
 		s.fail(w, r, err)
@@ -456,7 +462,7 @@ func (s *Server) handleUnassignScript(w http.ResponseWriter, r *http.Request) {
 		if tag.RowsAffected() == 0 {
 			return directory.Err("request.not_found", "type", "assignment")
 		}
-		return nil
+		return directory.Emit(r.Context(), tx, s.TenantID, "script.unassigned", actorOf(r), "script", id)
 	})
 	if err != nil {
 		s.fail(w, r, err)
@@ -598,10 +604,12 @@ func (s *Server) handleDeviceScriptRun(w http.ResponseWriter, r *http.Request) {
 		if req.Status != "ok" {
 			outcome = "error"
 		}
-		_, err := audit.Append(r.Context(), tx, s.TenantID, audit.Event{ActorKind: "device", ActorID: d.Principal.ID, Action: "script.run",
+		if _, err := audit.Append(r.Context(), tx, s.TenantID, audit.Event{ActorKind: "device", ActorID: d.Principal.ID, Action: "script.run",
 			TargetType: "script", TargetID: id, Outcome: outcome, Detail: map[string]any{"run": runID, "version": req.Version, "mode": req.Mode,
-				"principal_id": req.PrincipalID, "exit_code": req.ExitCode, "status": req.Status}, CorrelationID: corrOf(r)})
-		return err
+				"principal_id": req.PrincipalID, "exit_code": req.ExitCode, "status": req.Status}, CorrelationID: corrOf(r)}); err != nil {
+			return err
+		}
+		return directory.Emit(r.Context(), tx, s.TenantID, "script.run", directory.Actor{Kind: "device", ID: d.Principal.ID, CorrelationID: corrOf(r)}, "script", id)
 	})
 	if err != nil {
 		s.fail(w, r, err)

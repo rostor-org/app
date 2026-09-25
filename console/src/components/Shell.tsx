@@ -6,15 +6,17 @@ import { useSession } from '../auth/session'
 import { useLive } from '../live/LiveProvider'
 import { useFormat } from '../lib/format'
 import { reloadApp, useVersion } from '../lib/version'
-import { IconAccess, IconAudit, IconDevices, IconGroups, IconMe, IconPeople, IconPlugins, IconSystem, Mark } from './Icons'
+import { IconAccess, IconAudit, IconDevices, IconGroups, IconMe, IconPeople, IconPlugins, IconScripts, IconSystem, Mark } from './Icons'
 import { ToastHost } from './Toast'
 
-const NAV = [
+// `perm` hides an entry from admins who lack that permission; the others are open to any admin.
+const NAV: Array<{ to: string; code: string; Icon: () => JSX.Element; perm?: string }> = [
   { to: '/me', code: 'ui.nav.me', Icon: IconMe },
   { to: '/people', code: 'ui.nav.people', Icon: IconPeople },
   { to: '/groups', code: 'ui.nav.groups', Icon: IconGroups },
   { to: '/access', code: 'ui.nav.access', Icon: IconAccess },
   { to: '/devices', code: 'ui.nav.devices', Icon: IconDevices },
+  { to: '/scripts', code: 'ui.nav.scripts', Icon: IconScripts, perm: 'scripts.read' },
   { to: '/audit', code: 'ui.nav.audit', Icon: IconAudit },
   { to: '/plugins', code: 'ui.nav.plugins', Icon: IconPlugins },
   { to: '/system', code: 'ui.nav.system', Icon: IconSystem },
@@ -27,7 +29,7 @@ const NAV = [
 export function Shell() {
   const t = useT()
   const f = useFormat()
-  const { session, isAdmin, logout } = useSession()
+  const { session, isAdmin, can, logout } = useSession()
   const live = useLive()
   const brand = useQuery({ queryKey: ['brand'], queryFn: () => api.brand(), staleTime: Infinity, retry: 1 })
 
@@ -85,7 +87,7 @@ export function Shell() {
         <NavLink to="/me" className="wordmark"><Mark />ROSTOR</NavLink>
         <div className="tenant">{tenant}</div>
         <nav className="nav" aria-label={t('ui.nav.sections')}>
-          {NAV.map(({ to, code, Icon }) => (
+          {NAV.filter(({ perm }) => !perm || can(perm)).map(({ to, code, Icon }) => (
             <NavLink key={to} to={to}><Icon />{t(code)}</NavLink>
           ))}
         </nav>

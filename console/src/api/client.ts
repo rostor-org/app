@@ -2,7 +2,7 @@ import type {
   Api, ApiErrorBody, AuditPage, AuditQuery, AuditVerify, AuthSettings, Binding, Brand, CA, CAList, Catalog, CreationOptionsJSON, Device, Downloads,
   EnrollmentToken, Explanation, Grant, Group, GroupDetail, List, LiveHandlers, LoginOK,
   LoginRequest, LoginResponse, PasskeyCeremony, Plugin, Principal, RequestOptionsJSON, Role, Session, SetupStatus, Summary, SystemInfo, UpdateState,
-  User, UserDetail, WhyQuery, ResourceCatalog, Agent, AgentDetail, BadgeReading,
+  User, UserDetail, WhyQuery, ResourceCatalog, Agent, AgentDetail, BadgeReading, Script, ScriptDetail, ScriptAssignment, ScriptRun,
 } from './types'
 
 export class ApiError extends Error {
@@ -100,6 +100,15 @@ export function createHttpApi(opts: ClientOptions = {}): Api {
     devices: (q) => call<List<Device>>('GET', `/v1/admin/devices${qs({ q })}`),
     enrollmentToken: (resource_type, ttl_seconds) =>
       call<EnrollmentToken>('POST', '/v1/admin/enrollment-tokens', { resource_type, ttl_seconds }),
+    scripts: () => call<List<Script>>('GET', '/v1/admin/scripts'),
+    script: (id) => call<ScriptDetail>('GET', `/v1/admin/scripts/${encodeURIComponent(id)}`),
+    createScript: (body) => call<Script & { body?: string }>('POST', '/v1/admin/scripts', body),
+    updateScript: (id, body) => call<Script & { body?: string }>('PUT', `/v1/admin/scripts/${encodeURIComponent(id)}`, body),
+    deleteScript: (id) => call<void>('DELETE', `/v1/admin/scripts/${encodeURIComponent(id)}`),
+    orderScripts: (ids) => call<void>('PUT', '/v1/admin/scripts/order', { ids }),
+    assignScript: (id, body) => call<ScriptAssignment>('POST', `/v1/admin/scripts/${encodeURIComponent(id)}/assignments`, body),
+    unassignScript: (id, aid) => call<void>('DELETE', `/v1/admin/scripts/${encodeURIComponent(id)}/assignments/${encodeURIComponent(aid)}`),
+    scriptRuns: (id, limit) => call<{ items: ScriptRun[] }>('GET', `/v1/admin/scripts/${encodeURIComponent(id)}/runs${qs({ limit })}`),
     audit: (q: AuditQuery = {}) => call<AuditPage>('GET', `/v1/admin/audit${qs({ limit: q.limit, before: q.before, q: q.q, include_system: q.include_system ? '1' : undefined })}`),
     auditVerify: () => call<AuditVerify>('GET', '/v1/admin/audit/verify'),
     why: (q: WhyQuery) => call<Explanation>('GET', `/v1/admin/why${qs({ ...q })}`),

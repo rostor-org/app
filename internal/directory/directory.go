@@ -649,6 +649,12 @@ func CreatePolicy(ctx context.Context, tx pgx.Tx, tenantID string, actor Actor, 
 
 // ---- helpers ----------------------------------------------------------------
 
+// Emit publishes a live event (SSE) from outside this package, for objects
+// the directory does not own itself (scripts).
+func Emit(ctx context.Context, tx pgx.Tx, tenantID, typ string, actor Actor, targetType, targetID string) error {
+	return emit(ctx, tx, tenantID, typ, actor.ID, targetType, targetID, nil, actor.corr())
+}
+
 func emit(ctx context.Context, tx pgx.Tx, tenantID, typ, actorID, targetType, targetID string, payload map[string]any, corr string) error {
 	if payload == nil {
 		payload = map[string]any{}

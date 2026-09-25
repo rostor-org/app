@@ -22,6 +22,7 @@ function keysFor(type: string): string[][] {
   if (type.startsWith('grant.')) return [['grants'], ['group'], ['summary'], ['why']]
   if (type.startsWith('group.')) return [['groups'], ['group'], ['users'], ['summary'], ['why']]
   if (type.startsWith('device.')) return [['devices'], ['summary'], ['ca']]
+  if (type.startsWith('script.')) return [['scripts'], ['script']]
   if (type === 'audit.appended') return [['audit'], ['user'], ['ca']]
   if (type === 'update.state') return [['updates'], ['system'], ['downloads']]
   return []

@@ -3,6 +3,7 @@
 import type { LoginMethod,
   Api, AuditRow, AuthSettings, CA, CAList, Device, Downloads, Explanation, Grant, Group, GroupDetail, LiveEvent, LiveHandlers, LoginOK, LoginResponse,
   LiveState, Member, Plugin, Role, Session, Summary, SystemInfo, UpdateState, User, UserDetail, Binding, Reason, ResourceNode, Agent, AgentDetail, HeldRight, BadgeFormat,
+  Script, ScriptDetail, ScriptRun,
 } from './types'
 import catalogEn from '../../catalog.en.json'
 
@@ -198,6 +199,49 @@ const devices: Device[] = [
   { id: 'dev_77e0f5a2c318', display_name: 'Laser interlock', resource: { type: 'interlock', id: 'laser-cutter-2' }, lifecycle: 'degraded', last_seen_at: iso(now - 26 * hour),
     posture: { model: 'ESP32', snapshot: 'v402', ladder: 'staff-only' }, cert_not_after: iso(now + 60 * day), ca_key_id: 'cak_3f0a5b7e', trust_version: trustVersion, cert_renewed_at: iso(now - 30 * day) },
 ]
+
+// ---- scripts (SPEC-scripts) --------------------------------------------------
+// Bodies live beside the rows so the list can be served without them, as the
+// server does. Runs are kept per script, newest first.
+const DAN = { id: 'usr_f40101ae', name: 'Dan Evans' }
+const WORKSTATION = { id: 'dev_12ce4c4b9f0a', name: 'DESKTOP-UPJD27E' }
+const scripts: ScriptDetail[] = [
+  {
+    id: 'scr_4e1a9c2b', name: 'Map shared drives', description: 'Maps S: to the members share and P: to the projects share.', language: 'powershell',
+    position: 1, version: 3, updated_at: iso(now - 2 * day), updated_by: DAN,
+    assignments: [{ id: 'sas_0a1b2c3d', target: { kind: 'all', id: 'workstation', name: 'workstation' }, mode: 'signin' }],
+    last_run: { at: iso(now - 2 * hour), exit_code: 0, status: 'ok', device: WORKSTATION },
+    body: '$ErrorActionPreference = "Stop"\nNew-PSDrive -Name S -PSProvider FileSystem -Root "\\\\nas\\members" -Persist -Scope Global\nNew-PSDrive -Name P -PSProvider FileSystem -Root "\\\\nas\\projects" -Persist -Scope Global\nWrite-Output "Drives mapped for $env:ROSTOR_USER"\n',
+    runs: [],
+  },
+  {
+    id: 'scr_7f3d5e8a', name: 'Install LightBurn', description: 'Installs the laser cutter software once, if it is missing.', language: 'powershell',
+    position: 2, version: 1, updated_at: iso(now - 5 * day), updated_by: DAN,
+    assignments: [{ id: 'sas_4d5e6f70', target: { kind: 'group', id: groupRefs.laser.id, name: groupRefs.laser.name }, mode: 'immediate' }],
+    last_run: { at: iso(now - 26 * hour), exit_code: 1, status: 'failed', device: WORKSTATION },
+    body: 'if (Test-Path "C:\\Program Files\\LightBurn\\LightBurn.exe") { Write-Output "already installed"; exit 0 }\n$msi = "$env:TEMP\\LightBurn.msi"\nInvoke-WebRequest -Uri "https://downloads.example.org/LightBurn.msi" -OutFile $msi\nStart-Process msiexec.exe -ArgumentList "/i `"$msi`" /qn" -Wait\n',
+    runs: [],
+  },
+]
+const runsOf: Record<string, ScriptRun[]> = {
+  scr_4e1a9c2b: [
+    { id: 'run_01', device: WORKSTATION, principal: { id: 'usr_f40101ae', name: 'dan' }, version: 3, mode: 'signin', started_at: iso(now - 2 * hour), finished_at: iso(now - 2 * hour + 1800), exit_code: 0, status: 'ok', output_tail: 'Drives mapped for dan\n' },
+    { id: 'run_02', device: WORKSTATION, principal: { id: 'usr_9b2c11d0', name: 'dana' }, version: 3, mode: 'signin', started_at: iso(now - 1 * day), finished_at: iso(now - 1 * day + 2100), exit_code: 0, status: 'ok', output_tail: 'Drives mapped for dana\n' },
+    { id: 'run_03', device: WORKSTATION, principal: { id: 'usr_f40101ae', name: 'dan' }, version: 2, mode: 'signin', started_at: iso(now - 3 * day), finished_at: iso(now - 3 * day + 1700), exit_code: 0, status: 'ok', output_tail: 'Drives mapped for dan\n' },
+  ],
+  scr_7f3d5e8a: [
+    { id: 'run_04', device: WORKSTATION, principal: null, version: 1, mode: 'immediate', started_at: iso(now - 26 * hour), finished_at: iso(now - 26 * hour + 14_200), exit_code: 1, status: 'failed',
+      output_tail: 'Invoke-WebRequest : The remote name could not be resolved: \'downloads.example.org\'\nAt C:\\ProgramData\\Rostor\\scripts\\scr_7f3d5e8a.ps1:3 char:1\n+ Invoke-WebRequest -Uri "https://downloads.example.org/LightBurn.msi" -OutFile $msi\n+ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n    + CategoryInfo          : InvalidOperation: (System.Net.HttpWebRequest:HttpWebRequest) [Invoke-WebRequest], WebException\n    + FullyQualifiedErrorId : WebCmdletWebResponseException,Microsoft.PowerShell.Commands.InvokeWebRequestCommand\n' },
+  ],
+}
+/** The list row: everything but the body and the runs. */
+function scriptRow(s: ScriptDetail): Script {
+  const { body: _body, runs: _runs, ...row } = s
+  return clone(row)
+}
+const scriptById = (id: string) => scripts.find((s) => s.id === id)
+/** Positions follow the array order, 1-based, so a delete leaves no gaps. */
+function renumberScripts() { scripts.sort((a, b) => a.position - b.position).forEach((s, i) => { s.position = i + 1 }) }
 
 // ---- downloads (v0.5.0) ------------------------------------------------------
 // The bundle is "not cached yet" until the first download; the console asks
@@ -728,6 +772,100 @@ export function createMockApi(_opts: { onUnauthorized?: () => void } = {}): Api 
       await delay(200)
       append(`user:${session?.principal.id ?? ''}`, 'enrollment_token.mint', `resource_type:${resource_type}`, 'session', 'AL1', 'ok', { ttl_seconds: ttl })
       return { enrollment_token: 'enr_' + Math.random().toString(36).slice(2, 14), expires_in: ttl }
+    },
+    async scripts() { await delay(); renumberScripts(); return { items: scripts.map(scriptRow), total: scripts.length } },
+    async script(id) {
+      await delay()
+      const sc = scriptById(id)
+      if (!sc) throw mockErr(404, 'request.not_found')
+      return { ...scriptRow(sc), body: sc.body, runs: clone((runsOf[id] ?? []).slice(0, 50)) }
+    },
+    async createScript(body) {
+      await delay(250)
+      const name = body.name.trim()
+      if (!name) throw mockErr(400, 'request.malformed', { field: 'name' })
+      if (!body.body.trim()) throw mockErr(400, 'request.malformed', { field: 'body' })
+      if ((body.language ?? 'powershell') !== 'powershell') throw mockErr(400, 'request.malformed', { field: 'language' })
+      const me = { id: session?.principal.id ?? '', name: session?.principal.username ?? '' }
+      const sc: ScriptDetail = { id: 'scr_' + hex(8), name, description: (body.description ?? '').trim(), language: 'powershell', position: scripts.length + 1, version: 1,
+        updated_at: iso(Date.now()), updated_by: me, assignments: [], last_run: null, body: body.body, runs: [] }
+      scripts.push(sc)
+      append(`user:${me.id}`, 'script.create', `script:${sc.id}`, 'session', session?.assurance ?? 'AL1', 'ok', { name, version: 1 })
+      emit('script.created')
+      return { ...scriptRow(sc), body: sc.body }
+    },
+    async updateScript(id, body) {
+      await delay(250)
+      const sc = scriptById(id)
+      if (!sc) throw mockErr(404, 'request.not_found')
+      if (body.name !== undefined) {
+        if (!body.name.trim()) throw mockErr(400, 'request.malformed', { field: 'name' })
+        sc.name = body.name.trim()
+      }
+      if (body.description !== undefined) sc.description = body.description.trim()
+      const bumped = body.body !== undefined && body.body !== sc.body
+      if (bumped) { sc.body = body.body!; sc.version++ }
+      sc.updated_at = iso(Date.now())
+      sc.updated_by = { id: session?.principal.id ?? '', name: session?.principal.username ?? '' }
+      append(`user:${sc.updated_by.id}`, 'script.update', `script:${sc.id}`, 'session', session?.assurance ?? 'AL1', 'ok', { name: sc.name, version: sc.version, body_changed: bumped })
+      emit('script.updated')
+      return { ...scriptRow(sc), body: sc.body }
+    },
+    async deleteScript(id) {
+      await delay(200)
+      const i = scripts.findIndex((s) => s.id === id)
+      if (i < 0) throw mockErr(404, 'request.not_found')
+      const [sc] = scripts.splice(i, 1)
+      delete runsOf[id]
+      renumberScripts()
+      append(`user:${session?.principal.id ?? ''}`, 'script.delete', `script:${id}`, 'session', session?.assurance ?? 'AL1', 'ok', { name: sc?.name })
+      emit('script.deleted')
+    },
+    async orderScripts(ids) {
+      await delay(150)
+      if (ids.some((id) => !scriptById(id))) throw mockErr(404, 'request.not_found')
+      // Listed ids take the leading positions in that order; anything unlisted follows in its old order.
+      const rest = scripts.filter((s) => !ids.includes(s.id)).sort((a, b) => a.position - b.position)
+      ids.forEach((id, i) => { scriptById(id)!.position = i + 1 })
+      rest.forEach((s, i) => { s.position = ids.length + i + 1 })
+      renumberScripts()
+      append(`user:${session?.principal.id ?? ''}`, 'script.order', 'script:all', 'session', session?.assurance ?? 'AL1', 'ok', { ids })
+      emit('script.ordered')
+    },
+    async assignScript(id, body) {
+      await delay(200)
+      const sc = scriptById(id)
+      if (!sc) throw mockErr(404, 'request.not_found')
+      if (body.mode !== 'immediate' && body.mode !== 'signin') throw mockErr(400, 'request.malformed', { field: 'mode' })
+      let target: Script['assignments'][number]['target']
+      if (body.target_kind === 'all') {
+        if (body.target !== 'workstation') throw mockErr(400, 'request.malformed', { field: 'target' })
+        target = { kind: 'all', id: 'workstation', name: 'workstation' }
+      } else if (body.target_kind === 'group') {
+        const g = groups.find((x) => x.name === body.target || x.id === body.target)
+        if (!g) throw mockErr(404, 'request.not_found', { field: 'target' })
+        target = { kind: 'group', id: g.id, name: g.name }
+      } else throw mockErr(400, 'request.malformed', { field: 'target_kind' })
+      if (sc.assignments.some((a) => a.target.kind === target.kind && a.target.id === target.id && a.mode === body.mode)) throw mockErr(409, 'request.conflict', { field: 'target' })
+      const a = { id: 'sas_' + hex(8), target, mode: body.mode }
+      sc.assignments.push(a)
+      append(`user:${session?.principal.id ?? ''}`, 'script.assign', `script:${sc.id}`, 'session', session?.assurance ?? 'AL1', 'ok', { target: `${target.kind}:${target.name}`, mode: body.mode })
+      emit('script.assigned')
+      return clone(a)
+    },
+    async unassignScript(id, aid) {
+      await delay(150)
+      const sc = scriptById(id)
+      const i = sc?.assignments.findIndex((a) => a.id === aid) ?? -1
+      if (!sc || i < 0) throw mockErr(404, 'request.not_found')
+      const [a] = sc.assignments.splice(i, 1)
+      append(`user:${session?.principal.id ?? ''}`, 'script.unassign', `script:${sc.id}`, 'session', session?.assurance ?? 'AL1', 'ok', { target: a ? `${a.target.kind}:${a.target.name}` : '', mode: a?.mode })
+      emit('script.unassigned')
+    },
+    async scriptRuns(id, limit) {
+      await delay()
+      if (!scriptById(id)) throw mockErr(404, 'request.not_found')
+      return { items: clone((runsOf[id] ?? []).slice(0, limit ?? 50)) }
     },
     async audit(q = {}) {
       await delay()
