@@ -1,24 +1,24 @@
 {
   "channel": "stable",
-  "version": "v0.9.0",
-  "published": "2026-09-25T15:36:28.537599Z",
-  "notes": "Scripts: PowerShell pushed to workstations. Write a script, assign it to every workstation or a device group, choose now or at sign-in, and order the list; the core signs each delivery, the agent runs them one at a time in order as SYSTEM and reports every run. Authoring needs a passkey or badge-with-PIN sign-in. Install the new Windows bundle on workstations to enable it.",
+  "version": "v0.10.0",
+  "published": "2026-09-25T16:01:55.375912Z",
+  "notes": "Portal: the console opens on a page of tiles grouped by category, one place for everything you can reach. Visitors see public tiles and a Sign in button; members see My account and whatever links they have been granted; admins see the administration screens. Add link tiles under System, make them public or grant them to groups under Access.",
   "files": {
     "agent-windows-amd64": {
-      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/588658510",
-      "sha256": "2f301b05918a64bb4ea8c15450ba3fc09eea1d62e6df781acd579bc0b8f37421",
+      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/588707098",
+      "sha256": "d025f312a7a31cad710e5ca2f92a6e22d089dc2e3304c874fb0b148603412952",
       "size": 8023552
     },
     "linux-amd64": {
-      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/588658508",
-      "sha256": "f1b90be699f14a6aa162cb2bc9360660125ba5d7684408e730b989830ce34247",
-      "size": 24281248
+      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/588707103",
+      "sha256": "d82ab3ad91445e15ec8e783a5403ef14e700ce6a98faa7f082be31dd412903db",
+      "size": 24334496
     },
     "linux-arm64": {
-      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/588658513",
-      "sha256": "45293700e6fbe1f2a2b6bc2f756122ccdb44d865889a51fcaefe1c5a6cb14eb9",
-      "size": 22806688
+      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/588707104",
+      "sha256": "315322fc8b0193e7844d0d5c08c995640733003315d77d83fc98c5df1142a4af",
+      "size": 22872224
     }
   },
-  "signature": "+jgjNP7nxG4n4EwKILfBfs8KPtgKbKZEtVlnvlRCUXiS9fjK85Zwuy1QKoARKcqEl+0Q/Cw6uRbxG8W27Kq6Bg=="
+  "signature": "nOa8STSN+BkJe8S3+LATuJfrEt21V1Isq6sHmh7bXTwlRoWfYTwe3tKEF75NbgZrUxiPHPURzOKWJMq5kvpwAg=="
 }
