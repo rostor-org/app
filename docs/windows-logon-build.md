@@ -232,3 +232,27 @@ provider renders whatever it is given, so a policy change in the console
 shows at the next lock without a DLL update. `--mock-core` reports
 `password` with badge format `none`. A method the deputy does not
 recognise is reported and rendered as `password`.
+
+## Branded lock screen (a script, not a provider feature)
+
+The credential provider owns only its tile; the picture behind it belongs to
+Windows and is set by policy. This script, assigned to every workstation
+in "as soon as it arrives" mode, fetches an image once and points the lock
+screen at it. Rerunning is safe; bump the script body (a new version) when
+the image changes.
+
+```powershell
+# Lock-screen image for every workstation. Runs as SYSTEM via the deputy.
+$url  = 'https://rostor.example.org/assets/lockscreen.jpg'   # any https URL the machine can reach
+$dest = 'C:\ProgramData\Rostor\lockscreen.jpg'
+Invoke-WebRequest -Uri $url -OutFile $dest -UseBasicParsing
+$key = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\PersonalizationCSP'
+New-Item -Path $key -Force | Out-Null
+Set-ItemProperty -Path $key -Name LockScreenImagePath   -Value $dest -Type String
+Set-ItemProperty -Path $key -Name LockScreenImageUrl    -Value $dest -Type String
+Set-ItemProperty -Path $key -Name LockScreenImageStatus -Value 1     -Type DWord
+Write-Output "lock screen image set from $url"
+```
+
+Windows applies it at the next lock. Windows 10/11 Pro and above honour
+these keys; Home ignores them.
