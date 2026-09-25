@@ -1,24 +1,24 @@
 {
   "channel": "stable",
-  "version": "v0.12.0",
-  "published": "2026-09-25T16:36:48.496872Z",
-  "notes": "The Windows agent is now the deputy: service RostorDeputy, binary rostor-deputy.exe. Install the v0.12.0 bundle on each workstation; it migrates the existing install in place and keeps the enrollment. The word agent now means an AI agent only.",
+  "version": "v0.13.0",
+  "published": "2026-09-25T17:03:04.458082Z",
+  "notes": "Windows lock screen: the badge number is masked as it is tapped, the tile says the organisation name, a Use username link switches to the plain form. Choose whether the lock screen opens on Rostor or on Windows sign-in, tenant-wide or per group. A workstation group can run every session as one shared local account for licensed software. Install the v0.13.0 bundle on workstations; it upgrades any earlier install in place.",
   "files": {
     "deputy-windows-amd64": {
-      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/588770988",
-      "sha256": "734b7d9033cba88a9bbb64ee56a80dd2ac2d5d41e21889f1dcc9483b2ec3ed03",
-      "size": 8028672
+      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/588818241",
+      "sha256": "59bc7631113afe110a450476abd9f0b595c79a1286e8d346b14c9309555f47fa",
+      "size": 8037376
     },
     "linux-amd64": {
-      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/588770986",
-      "sha256": "6d85f8700f146f60377b3e35133db66967e5bacbae79a3098aeb7f84e15709ec",
-      "size": 24359072
+      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/588818240",
+      "sha256": "5d11ac283e62bc9a2b260cbd03f9dee91f45af3933d324a5a28897c3517d036e",
+      "size": 24371360
     },
     "linux-arm64": {
-      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/588770990",
-      "sha256": "522baa12a5269d314d2590f99c86ee3a33af9c65f4cca5df90fa66d0107f50c6",
+      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/588818242",
+      "sha256": "c707fcaabd3cb50494668a42490d1623182458b98dc24527ce9c0503f7121d5c",
       "size": 22937760
     }
   },
-  "signature": "nm5hoQ1O33oxWgQVVHDwAlvsgvcPyVanNKU5QpMKNI6TcLVnR8Rptr27ebN5qAZje3Ox1B/VUjNGqrJJ9ixwCg=="
+  "signature": "2C4VO6VqhxBNK0vOwVRc8uUk2pb7q3zvZTwtWCBsveTX2hrozyvP2M9Jdvs04ffw0hULvIsitEclK0BeSDlRDQ=="
 }
