@@ -149,8 +149,13 @@ plugin registry, key rotation, policy counts on groups.
   screens on the badge). `GET /v1/admin/settings/auth/overrides`
   (system.read) → `{items:[{group:{id,name}, login:{default_method},
   created_at}]}`; `PUT /v1/admin/settings/auth/overrides/{group}`
-  (policies.write) `{login:{default_method}}` → the item (creates or
-  replaces; the policy is named `auth:<group>`); `DELETE
+  (policies.write) `{login:{default_method}?, logon:{session_account}?}` →
+  the item (creates or replaces; the policy is named `auth:<group>`; at
+  least one of the two must be given). `logon.session_account` (v0.13.0,
+  lowercase, ≤ 20 chars) makes every session on the group's devices run as
+  that shared local account, for a workstation whose software is licensed
+  to one account; the person who signed in is still the one in the audit,
+  and the verify reply to the deputy carries `session_account`. `DELETE
   /v1/admin/settings/auth/overrides/{group}` → 204. When a principal is in
   several overridden groups the newest override wins. Devices read their
   effective policy at `GET /v1/devices/self/policy`. Audit:

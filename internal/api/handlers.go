@@ -85,6 +85,9 @@ type verifyResponse struct {
 	Reason    []authz.Reason `json:"reason"`
 	Session   map[string]any `json:"session,omitempty"`
 	Message   string         `json:"message,omitempty"`
+	// SessionAccount is set when the device's policy says every session on
+	// it runs as one shared local account (logon.session_account).
+	SessionAccount string `json:"session_account,omitempty"`
 }
 
 func (s *Server) handleVerify(w http.ResponseWriter, r *http.Request) {
@@ -192,12 +195,19 @@ func (s *Server) handleVerify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p := out.Principal
+	// A licensed workstation runs every session as one shared local account;
+	// the person is still the one audited above.
+	sessionAccount := ""
+	if dp, _, err := directory.EffectivePolicy(r.Context(), s.DB, s.TenantID, "auth", dev.Principal.ID); err == nil {
+		sessionAccount, _ = dp["logon.session_account"].(string)
+	}
 	s.writeJSON(w, 200, verifyResponse{
-		Decision:  "ALLOW",
-		Principal: map[string]any{"id": p.ID, "username": p.Username, "display_name": displayName(p, req.Locale)},
-		Assurance: out.Assertion.Assurance,
-		Reason:    decision.Reasons,
-		Session:   map[string]any{"token": session.Token, "expires_at": session.ExpiresAt},
+		Decision:       "ALLOW",
+		Principal:      map[string]any{"id": p.ID, "username": p.Username, "display_name": displayName(p, req.Locale)},
+		Assurance:      out.Assertion.Assurance,
+		Reason:         decision.Reasons,
+		Session:        map[string]any{"token": session.Token, "expires_at": session.ExpiresAt},
+		SessionAccount: sessionAccount,
 	})
 }
 

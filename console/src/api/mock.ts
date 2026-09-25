@@ -107,7 +107,8 @@ const enrolledPasskeys = () => Object.values(bindings).flat().filter((b) => b.me
 let badgeFormat: BadgeFormat = 'none'
 // Sign-in overrides by group (v0.11.0): the workstation group opens its lock screens on the badge.
 const overrides: AuthOverride[] = [
-  { group: { id: 'grp_staff', name: 'staff' }, login: { default_method: 'badge' }, created_at: daysAgo(3, 9, 12) },
+  { group: { id: 'grp_staff', name: 'staff' }, login: { default_method: 'badge' }, logon: { session_account: '' }, created_at: daysAgo(3, 9, 12) },
+  { group: { id: 'grp_laser', name: 'laser-certified' }, login: { default_method: 'badge' }, logon: { session_account: 'chattlab' }, created_at: daysAgo(1, 10, 0) },
 ]
 const authSettings = (): AuthSettings => ({ webauthn: { ...webauthn, origins: [...webauthn.origins], enrolled_passkeys: enrolledPasskeys() }, login: { default_method: defaultMethod }, badge: { format: badgeFormat } })
 
@@ -1042,11 +1043,15 @@ export function createMockApi(_opts: { onUnauthorized?: () => void } = {}): Api 
       await delay(250)
       const g = groups.find((x) => x.name === name)
       if (!g) throw mockErr(404, 'request.not_found', { type: 'group' })
-      if (!['password', 'passkey', 'badge'].includes(body?.login?.default_method)) throw mockErr(400, 'request.malformed', { field: 'login.default_method' })
-      const o: AuthOverride = { group: { id: g.id, name: g.name }, login: { default_method: body.login.default_method }, created_at: iso(Date.now()) }
+      const method = body.login?.default_method ?? ''
+      if (method !== '' && !['password', 'passkey', 'badge'].includes(method)) throw mockErr(400, 'request.malformed', { field: 'login.default_method' })
+      const account = (body.logon?.session_account ?? '').trim().toLowerCase()
+      if (account !== '' && !/^[a-z][a-z0-9._-]{0,19}$/.test(account)) throw mockErr(400, 'request.malformed', { field: 'logon.session_account' })
+      if (method === '' && account === '') throw mockErr(400, 'request.malformed', { field: 'override' })
+      const o: AuthOverride = { group: { id: g.id, name: g.name }, login: { default_method: method }, logon: { session_account: account }, created_at: iso(Date.now()) }
       const i = overrides.findIndex((x) => x.group.name === name)
       if (i < 0) overrides.push(o); else overrides[i] = o
-      append(`user:${session?.principal.id ?? ''}`, 'policy.update', `policy:auth:${g.name}`, 'session', 'AL1', 'ok', { group: g.name, 'login.default_method': o.login.default_method })
+      append(`user:${session?.principal.id ?? ''}`, 'policy.update', `policy:auth:${g.name}`, 'session', 'AL1', 'ok', { group: g.name, 'login.default_method': o.login.default_method, 'logon.session_account': o.logon.session_account })
       return clone(o)
     },
     async deleteAuthOverride(name) {

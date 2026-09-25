@@ -273,11 +273,15 @@ function SignInOverrides({ canWrite }: { canWrite: boolean }) {
   const list = useQuery({ queryKey: ['auth-overrides'], queryFn: () => api.authOverrides() })
   const groups = useQuery({ queryKey: ['groups', ''], queryFn: () => api.groups(), enabled: canWrite, staleTime: 60_000 })
   const [group, setGroup] = useState('')
-  const [method, setMethod] = useState<LoginMethod>('badge')
+  const [method, setMethod] = useState<LoginMethod | ''>('badge')
+  const [account, setAccount] = useState('')
   const refresh = () => { void qc.invalidateQueries({ queryKey: ['auth-overrides'] }); void qc.invalidateQueries({ queryKey: ['audit'] }) }
   const add = useMutation({
-    mutationFn: (v: { group: string; method: LoginMethod }) => api.setAuthOverride(v.group, { login: { default_method: v.method } }),
-    onSuccess: (o) => { refresh(); setGroup(''); toast(t('ui.signin.overrides.added_toast', { group: o.group.name, method: t(METHOD_LABEL[o.login.default_method]) })) },
+    mutationFn: (v: { group: string; method: LoginMethod | ''; account: string }) => api.setAuthOverride(v.group, {
+      ...(v.method ? { login: { default_method: v.method } } : {}),
+      ...(v.account.trim() ? { logon: { session_account: v.account.trim().toLowerCase() } } : {}),
+    }),
+    onSuccess: (o) => { refresh(); setGroup(''); setAccount(''); toast(t('ui.signin.overrides.added_toast', { group: o.group.name, method: o.login.default_method ? t(METHOD_LABEL[o.login.default_method]) : t('ui.signin.overrides.method_default') })) },
   })
   const remove = useMutation({
     mutationFn: (name: string) => api.deleteAuthOverride(name),
@@ -286,7 +290,7 @@ function SignInOverrides({ canWrite }: { canWrite: boolean }) {
   const items = list.data?.items ?? []
   const taken = new Set(items.map((o) => o.group.name))
   const available = (groups.data?.items ?? []).filter((g) => !taken.has(g.name))
-  const submit = (e: FormEvent) => { e.preventDefault(); if (group) add.mutate({ group, method }) }
+  const submit = (e: FormEvent) => { e.preventDefault(); if (group && (method || account.trim())) add.mutate({ group, method, account }) }
   return (
     <div style={{ marginTop: 18 }}>
       <b>{t('ui.signin.overrides.title')}</b>
@@ -298,7 +302,8 @@ function SignInOverrides({ canWrite }: { canWrite: boolean }) {
         <ul className="list">
           {items.map((o) => (
             <li key={o.group.id} className="inline">
-              <span><b>{o.group.name}</b> <span className="muted">→</span> {t(METHOD_LABEL[o.login.default_method] ?? 'ui.common.none')}</span>
+              <span><b>{o.group.name}</b> <span className="muted">→</span> {o.login.default_method ? t(METHOD_LABEL[o.login.default_method]) : t('ui.signin.overrides.method_default')}
+                {o.logon?.session_account && <> <span className="muted">·</span> {t('ui.signin.overrides.as_account', { account: o.logon.session_account })}</>}</span>
               {canWrite && (
                 <span className="actions">
                   <button type="button" className="btn quiet danger" disabled={remove.isPending} onClick={() => remove.mutate(o.group.name)}>{t('ui.common.remove')}</button>
@@ -314,10 +319,12 @@ function SignInOverrides({ canWrite }: { canWrite: boolean }) {
             <option value="">{t('ui.signin.overrides.choose_group')}</option>
             {available.map((g) => <option key={g.id} value={g.name}>{g.name}</option>)}
           </select>
-          <select id={ids.method} className="input" aria-label={t('ui.signin.overrides.method')} value={method} onChange={(e) => setMethod(e.target.value as LoginMethod)} disabled={add.isPending}>
+          <select id={ids.method} className="input" aria-label={t('ui.signin.overrides.method')} value={method} onChange={(e) => setMethod(e.target.value as LoginMethod | '')} disabled={add.isPending}>
+            <option value="">{t('ui.signin.overrides.method_default')}</option>
             {METHODS.map((m) => <option key={m} value={m}>{t(METHOD_LABEL[m])}</option>)}
           </select>
-          <button type="submit" className="btn" disabled={!group || add.isPending}>{t(add.isPending ? 'ui.common.working' : 'ui.common.add')}</button>
+          <input className="input mono" aria-label={t('ui.signin.overrides.session_account')} placeholder={t('ui.signin.overrides.session_account')} value={account} onChange={(e) => setAccount(e.target.value)} maxLength={20} autoComplete="off" autoCapitalize="none" spellCheck={false} disabled={add.isPending} />
+          <button type="submit" className="btn" disabled={!group || (!method && !account.trim()) || add.isPending}>{t(add.isPending ? 'ui.common.working' : 'ui.common.add')}</button>
         </form>
       )}
     </div>

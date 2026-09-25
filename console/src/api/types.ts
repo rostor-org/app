@@ -102,11 +102,14 @@ export interface AuthSettingsUpdate {
  */
 export interface AuthOverride {
   group: GroupRef
-  login: { default_method: LoginMethod }
+  login: { default_method: LoginMethod | '' }
+  /** A shared local account every session on the group's devices runs as (licensed workstations); empty when none. */
+  logon: { session_account: string }
   created_at: string
 }
 export interface AuthOverrideUpdate {
-  login: { default_method: LoginMethod }
+  login?: { default_method: LoginMethod }
+  logon?: { session_account: string }
 }
 
 export interface Session {

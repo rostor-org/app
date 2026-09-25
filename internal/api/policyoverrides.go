@@ -6,6 +6,8 @@ package api
 
 import (
 	"net/http"
+	"regexp"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -14,6 +16,10 @@ import (
 	"rostor.org/app/internal/devices"
 	"rostor.org/app/internal/directory"
 )
+
+// sessionAccountRe is what SAM accepts as a local account name and what the
+// deputy derives (cmd/rostor-deputy/internal/localuser): lowercase, ≤ 20.
+var sessionAccountRe = regexp.MustCompile(`^[a-z][a-z0-9._-]{0,19}$`)
 
 // GET /v1/devices/self/policy: the auth policy as it applies to this device.
 func (s *Server) handleDevicePolicy(w http.ResponseWriter, r *http.Request) {
@@ -34,7 +40,9 @@ func (s *Server) handleDevicePolicy(w http.ResponseWriter, r *http.Request) {
 	}
 	var tenant string
 	_ = s.DB.QueryRow(r.Context(), `SELECT name FROM tenants WHERE id=$1`, s.TenantID).Scan(&tenant)
-	s.writeJSON(w, 200, map[string]any{"login": map[string]string{"default_method": method}, "badge": map[string]string{"format": format}, "tenant_name": tenant})
+	account, _ := pol["logon.session_account"].(string)
+	s.writeJSON(w, 200, map[string]any{"login": map[string]string{"default_method": method}, "badge": map[string]string{"format": format},
+		"logon": map[string]string{"session_account": account}, "tenant_name": tenant})
 }
 
 func (s *Server) overrideRows(r *http.Request) ([]map[string]any, error) {
@@ -55,8 +63,9 @@ func (s *Server) overrideRows(r *http.Request) ([]map[string]any, error) {
 			return nil, err
 		}
 		method, _ := doc["login.default_method"].(string)
+		account, _ := doc["logon.session_account"].(string)
 		out = append(out, map[string]any{"policy_id": pid, "group": map[string]string{"id": gid, "name": gname},
-			"login": map[string]string{"default_method": method}, "created_at": created})
+			"login": map[string]string{"default_method": method}, "logon": map[string]string{"session_account": account}, "created_at": created})
 	}
 	return out, rows.Err()
 }
@@ -79,15 +88,31 @@ func (s *Server) handlePutAuthOverride(w http.ResponseWriter, r *http.Request) {
 		Login struct {
 			DefaultMethod string `json:"default_method"`
 		} `json:"login"`
+		Logon struct {
+			// SessionAccount: the local Windows account every allowed person's
+			// session runs as on devices in the group (a licensed workstation).
+			// The deputy owns it like any derived account; the audit still
+			// names the person who signed in.
+			SessionAccount string `json:"session_account"`
+		} `json:"logon"`
 	}
 	if err := decode(r, &req); err != nil {
 		s.fail(w, r, err)
 		return
 	}
 	switch req.Login.DefaultMethod {
-	case "password", "passkey", "badge":
+	case "", "password", "passkey", "badge":
 	default:
 		s.fail(w, r, directory.Err("request.malformed", "field", "login.default_method"))
+		return
+	}
+	account := strings.ToLower(strings.TrimSpace(req.Logon.SessionAccount))
+	if account != "" && !sessionAccountRe.MatchString(account) {
+		s.fail(w, r, directory.Err("request.malformed", "field", "logon.session_account"))
+		return
+	}
+	if req.Login.DefaultMethod == "" && account == "" {
+		s.fail(w, r, directory.Err("request.malformed", "field", "override"))
 		return
 	}
 	g, err := directory.GetGroupByName(r.Context(), s.DB, s.TenantID, r.PathValue("group"))
@@ -96,7 +121,13 @@ func (s *Server) handlePutAuthOverride(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name := "auth:" + g.Name
-	doc := map[string]any{"login.default_method": req.Login.DefaultMethod}
+	doc := map[string]any{}
+	if req.Login.DefaultMethod != "" {
+		doc["login.default_method"] = req.Login.DefaultMethod
+	}
+	if account != "" {
+		doc["logon.session_account"] = account
+	}
 	err = s.tx(r, func(tx pgx.Tx) error {
 		if _, err := tx.Exec(r.Context(), `DELETE FROM policies WHERE tenant_id=$1 AND domain='auth' AND name=$2`, s.TenantID, name); err != nil {
 			return err
@@ -109,7 +140,7 @@ func (s *Server) handlePutAuthOverride(w http.ResponseWriter, r *http.Request) {
 			return err
 		}
 		_, err := audit.Append(r.Context(), tx, s.TenantID, audit.Event{ActorKind: actorOf(r).Kind, ActorID: actorOf(r).ID, Action: "policy.update",
-			TargetType: "policy", TargetID: name, Outcome: "ok", Detail: map[string]any{"group": g.Name, "login.default_method": req.Login.DefaultMethod}, CorrelationID: corrOf(r)})
+			TargetType: "policy", TargetID: name, Outcome: "ok", Detail: map[string]any{"group": g.Name, "login.default_method": req.Login.DefaultMethod, "logon.session_account": account}, CorrelationID: corrOf(r)})
 		return err
 	})
 	if err != nil {

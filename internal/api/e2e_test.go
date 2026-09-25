@@ -1627,4 +1627,39 @@ func TestAuthPolicyForDevices(t *testing.T) {
 	if got := h.adminCall("GET", "/v1/admin/settings/auth", nil)["login"].(map[string]any)["default_method"]; got != "password" {
 		t.Fatalf("tenant setting changed: %v", got)
 	}
+
+	// A shared session account for a licensed workstation group: the lab PC
+	// is told to run every session as "chattlab"; the office PC is not.
+	if st, out := h.call(h.client(nil), "PUT", "/v1/admin/settings/auth/overrides/lab-pcs", h.admin, map[string]any{"logon": map[string]any{"session_account": "Chatt Lab!"}}); st != 400 {
+		t.Fatalf("bad account name: %d %v", st, out)
+	}
+	ov = h.adminCall("PUT", "/v1/admin/settings/auth/overrides/lab-pcs", map[string]any{"login": map[string]any{"default_method": "badge"}, "logon": map[string]any{"session_account": "ChattLab"}})
+	if ov["logon"].(map[string]any)["session_account"] != "chattlab" {
+		t.Fatalf("override should carry the account, lowercased: %v", ov)
+	}
+	st, out := h.call(lab, "GET", "/v1/devices/self/policy", "", nil)
+	if st != 200 || out["logon"].(map[string]any)["session_account"] != "chattlab" {
+		t.Fatalf("lab policy: %d %v", st, out)
+	}
+	h.adminCall("POST", "/v1/admin/users", map[string]any{"username": "dana"})
+	h.adminCall("POST", "/v1/admin/users/dana/bindings", map[string]any{"method": "password", "fields": map[string]string{"password": "hunter2hunter2"}})
+	h.adminCall("POST", "/v1/admin/groups", map[string]any{"name": "members"})
+	h.adminCall("POST", "/v1/admin/groups/members/members", map[string]any{"member_kind": "principal", "member": "dana"})
+	h.adminCall("POST", "/v1/admin/grants", map[string]any{"subject_kind": "group", "subject": "members", "role": "user", "resource_type": "workstations", "resource_id": "all"})
+	verify := func(c *http.Client, host string) map[string]any {
+		_, out := h.call(c, "POST", "/v1/verify", "", map[string]any{"credential": map[string]string{"type": "password", "identifier": "dana", "secret": "hunter2hunter2"},
+			"action": "logon", "resource": map[string]string{"type": "workstation", "id": host}})
+		return out
+	}
+	if out := verify(lab, "LAB-1"); out["decision"] != "ALLOW" || out["session_account"] != "chattlab" || out["principal"].(map[string]any)["username"] != "dana" {
+		t.Fatalf("lab verify should name the shared account and still the person: %v", out)
+	}
+	if out := verify(office, "OFFICE-1"); out["decision"] != "ALLOW" || out["session_account"] != nil {
+		t.Fatalf("office verify should not carry a shared account: %v", out)
+	}
+	// The audit names dana, not the shared account.
+	rows := h.adminCall("GET", "/v1/admin/audit?q=verify&include_system=1", nil)["items"].([]any)
+	if len(rows) == 0 || rows[0].(map[string]any)["detail"].(map[string]any)["principal_name"] != "dana" {
+		t.Fatalf("verify audit should name the person: %v", rows)
+	}
 }

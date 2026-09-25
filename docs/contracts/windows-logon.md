@@ -245,6 +245,15 @@ the identifier-first shape of §2.2. PIN handling is unchanged. When
 `default_method` is `password` or `passkey` the tile opens on the plain
 field with `switch_to_badge` offered.
 
+#### Shared session account (v0.13.0)
+
+An ALLOW from `POST /v1/verify` may carry `"session_account":"chattlab"`
+(from the device's `logon.session_account` policy). The deputy then
+creates or enables **that** local account (owned and rotated like a
+derived one) and hands the session to it instead of the person's derived
+account; the person is still the one Rostor audited. `GET
+/v1/devices/self/policy` also reports it under `logon.session_account`.
+
 ### 2.2 `logon` — authenticate and obtain the local credential
 
 Request:
