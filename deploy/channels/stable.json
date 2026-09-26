@@ -1,24 +1,24 @@
 {
   "channel": "stable",
-  "version": "v0.14.4",
-  "published": "2026-09-25T18:53:19.699432Z",
-  "notes": "Lock screen: the badge field in badge mode is labelled Badge; use the Use username link to type a name.",
+  "version": "v0.14.5",
+  "published": "2026-09-26T22:27:23.18269Z",
+  "notes": "Devices: the posture column no longer shows the raw update record; the deputy version and its updates live in the Deputy column.",
   "files": {
     "deputy-windows-amd64": {
-      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/589016273",
-      "sha256": "963b22e40d2c2e8559bbe3af560c2487357c6f2f19e668d99d76a3be8823adf4",
+      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/591582032",
+      "sha256": "6cdb16f9cf7317d1589274993f7ea2acff99625248188dba01db4761623bb6a9",
       "size": 8273408
     },
     "linux-amd64": {
-      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/589016268",
-      "sha256": "adc5aa093497978af0740ae61b0268777f9d0370d29d416aa5635b407fd8b1b7",
+      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/591582031",
+      "sha256": "a7a960276e89490ef299277a5fd85a569245a9d40cc50da27ceb66c42631d25f",
       "size": 24420512
     },
     "linux-arm64": {
-      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/589016272",
-      "sha256": "a280027e2d399b8aadf42ce8b0aa6ed3c866c0478465b72980a5f8a60c45a408",
+      "url": "https://api.github.com/repos/rostor-org/app/releases/assets/591582045",
+      "sha256": "4f098a43c89def9d5de86babdbc03328ce80f82adb84dd5858109a5468ae6e32",
       "size": 22937760
     }
   },
-  "signature": "iFADp6uzOGJDXx1LGrgIJLrsC8+jvcF87evVi16XfqkWCLMqLbcRADqB2fMgWptNKLMvYhf8qhW7A+78Xq3nAg=="
+  "signature": "m+6rVvzitGedbin6ASxc+kbk9m/oyLlyD2JnG0XAa6WX5Z/fmAEXhzeplkyenhNuGvYBUBYZ3ucP/+AnIWZCAQ=="
 }
