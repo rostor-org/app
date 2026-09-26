@@ -263,7 +263,17 @@ function InstallDrawer({ open, onClose }: { open: boolean; onClose: () => void }
   )
 }
 
+/**
+ * The posture cell shows what the device reported about itself, minus what
+ * other columns already show (model, via, the deputy version and its update
+ * record) and minus the pre-rename `agent_version` once a `deputy_version`
+ * exists. Nested values are printed as JSON rather than "[object Object]".
+ */
+const POSTURE_HIDDEN = new Set(['model', 'via', 'deputy_version', 'deputy_update'])
 function posture(p: Record<string, unknown> | null): string {
   if (!p) return ''
-  return Object.entries(p).filter(([k]) => k !== 'model' && k !== 'via').map(([k, v]) => `${k} ${String(v)}`).join(' · ')
+  return Object.entries(p)
+    .filter(([k]) => !POSTURE_HIDDEN.has(k) && !(k === 'agent_version' && 'deputy_version' in p))
+    .map(([k, v]) => `${k} ${typeof v === 'object' && v !== null ? JSON.stringify(v) : String(v)}`)
+    .join(' · ')
 }
